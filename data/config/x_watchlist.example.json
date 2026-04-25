@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "headless": true,
+  "page_wait_sec": 6.0,
+  "inter_account_delay_sec": 1.5,
+  "inter_account_delay_jitter_sec": 1.0,
+  "exclude_old_posts": true,
+  "max_post_age_days": 5,
+  "nitter_instances": [
+    "nitter.tiekoetter.com",
+    "xcancel.com",
+    "nitter.catsarch.com"
+  ],
+  "accounts": [
+    {
+      "name": "market-watch",
+      "profile_url": "https://x.com/example_account",
+      "limit": 5
+    }
+  ]
+}

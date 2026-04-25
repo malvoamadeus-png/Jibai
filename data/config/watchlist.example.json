@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "browser_channel": "chrome",
+  "headless": false,
+  "inter_account_delay_sec": 5.0,
+  "inter_account_delay_jitter_sec": 3.0,
+  "detail_delay_sec": 0.8,
+  "detail_fallback_enabled": true,
+  "detail_fallback_limit_per_account": 2,
+  "exclude_old_posts": true,
+  "max_post_age_days": 5,
+  "accounts": [
+    {
+      "name": "tech-observer",
+      "profile_url": "https://www.xiaohongshu.com/user/profile/EXAMPLE_USER_ID?xsec_token=EXAMPLE_XSEC_TOKEN&xsec_source=pc_feed",
+      "limit": 5
+    }
+  ]
+}

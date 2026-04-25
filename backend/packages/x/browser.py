@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import sys
+import time
+import urllib.parse
+from pathlib import Path
+from typing import Any
+
+from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
+
+
+TIMELINE_JS = """() => {
+  const items = document.querySelectorAll(".timeline-item");
+  const results = [];
+  for (const item of items) {
+    const link = item.querySelector("a.tweet-link");
+    const href = link ? link.getAttribute("href") : "";
+    const match = href ? href.match(/status\\/(\\d+)/) : null;
+    const tweetId = match ? match[1] : "";
+
+    const fullname = item.querySelector("a.fullname");
+    const username = item.querySelector("a.username");
+    const dateEl = item.querySelector(".tweet-date a");
+    const content = item.querySelector(".tweet-content");
+
+    let replies = 0;
+    let retweets = 0;
+    let likes = 0;
+    let views = 0;
+    const statsEls = item.querySelectorAll(".tweet-stat");
+    for (const stat of statsEls) {
+      const value = parseInt(stat.textContent.replace(/,/g, "").trim()) || 0;
+      if (stat.querySelector(".icon-comment")) replies = value;
+      else if (stat.querySelector(".icon-retweet")) retweets = value;
+      else if (stat.querySelector(".icon-heart")) likes = value;
+      else if (stat.querySelector(".icon-stats")) views = value;
+    }
+
+    const mediaImgs = item.querySelectorAll(".attachments img.still-image");
+    const media = [];
+    for (const img of mediaImgs) {
+      const src = img.getAttribute("src") || "";
+      if (!src.startsWith("/pic/")) continue;
+      const decoded = decodeURIComponent(src.replace("/pic/", ""));
+      if (decoded.startsWith("media/")) {
+        media.push("https://pbs.twimg.com/media/" + decoded.slice(6));
+      }
+    }
+
+    const retweetBanner = item.querySelector(".retweet-header");
+    const retweetedBy = retweetBanner
+      ? retweetBanner.textContent.trim().replace(/ retweeted$/, "").trim()
+      : null;
+
+    results.push({
+      tweet_id: tweetId,
+      author_name: fullname ? fullname.textContent.trim() : "",
+      author: username ? username.textContent.trim() : "",
+      time_ago: dateEl ? dateEl.textContent.trim() : "",
+      text: content ? content.textContent.trim() : "",
+      replies,
+      retweets,
+      likes,
+      views,
+      media,
+      retweeted_by: retweetedBy
+    });
+  }
+  return results;
+}"""
+
+CURSOR_JS = """() => {
+  const moreLink = document.querySelector("a.show-more[href*='cursor'], .show-more a[href*='cursor']");
+  if (!moreLink) return null;
+  const href = moreLink.getAttribute("href");
+  const match = href ? href.match(/[?&]cursor=([^&#]+)/) : null;
+  return match ? decodeURIComponent(match[1]) : null;
+}"""
+
+
+def _launch_browser(playwright: Playwright, *, headless: bool) -> Browser:
+    return playwright.chromium.launch(
+        headless=headless,
+        args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-blink-features=AutomationControlled",
+        ],
+    )
+
+
+def _new_context(browser: Browser) -> BrowserContext:
+    return browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        locale="en-US",
+        viewport={"width": 1280, "height": 900},
+    )
+
+
+def _safe_goto(page: Page, url: str) -> None:
+    try:
+        page.goto(url, timeout=30000, wait_until="domcontentloaded")
+    except Exception:
+        pass
+
+
+def _write_debug_snapshot(page: Page, target_dir: Path, prefix: str) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(target_dir / f"{prefix}.png"), full_page=True)
+    (target_dir / f"{prefix}.html").write_text(page.content(), encoding="utf-8")
+
+
+def fetch_timeline_page(
+    *,
+    username: str,
+    nitter_instance: str,
+    cursor: str | None,
+    wait_sec: float,
+    headless: bool,
+    debug_dir: Path | None = None,
+    debug_prefix: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    if cursor:
+        url = f"https://{nitter_instance}/{username}?cursor={urllib.parse.quote(cursor, safe='')}"
+    else:
+        url = f"https://{nitter_instance}/{username}"
+
+    playwright = sync_playwright().start()
+    browser = None
+    context = None
+    try:
+        browser = _launch_browser(playwright, headless=headless)
+        context = _new_context(browser)
+        page = context.new_page()
+        _safe_goto(page, url)
+        time.sleep(wait_sec)
+        tweets = page.evaluate(TIMELINE_JS) or []
+        next_cursor = page.evaluate(CURSOR_JS)
+
+        if debug_dir and debug_prefix and not tweets:
+            _write_debug_snapshot(page, debug_dir, debug_prefix)
+
+        return tweets, next_cursor
+    except Exception as exc:
+        print(
+            f"[x-browser] failed on {nitter_instance}/{username}: {exc}",
+            file=sys.stderr,
+        )
+        return [], None
+    finally:
+        try:
+            if context is not None:
+                context.close()
+        except Exception:
+            pass
+        try:
+            if browser is not None:
+                browser.close()
+        except Exception:
+            pass
+        try:
+            playwright.stop()
+        except Exception:
+            pass

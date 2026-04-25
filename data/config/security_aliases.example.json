@@ -1,0 +1,38 @@
+{
+  "NVIDIA": {
+    "security_key": "nvidia",
+    "display_name": "NVIDIA",
+    "ticker": "NVDA",
+    "market": "NASDAQ"
+  },
+  "英伟达": {
+    "security_key": "nvidia",
+    "display_name": "NVIDIA",
+    "ticker": "NVDA",
+    "market": "NASDAQ"
+  },
+  "Google": {
+    "security_key": "google",
+    "display_name": "Google",
+    "ticker": "GOOGL",
+    "market": "NASDAQ"
+  },
+  "谷歌": {
+    "security_key": "google",
+    "display_name": "Google",
+    "ticker": "GOOGL",
+    "market": "NASDAQ"
+  },
+  "Tencent": {
+    "security_key": "tencent",
+    "display_name": "Tencent",
+    "ticker": "0700",
+    "market": "HKEX"
+  },
+  "腾讯": {
+    "security_key": "tencent",
+    "display_name": "Tencent",
+    "ticker": "0700",
+    "market": "HKEX"
+  }
+}
