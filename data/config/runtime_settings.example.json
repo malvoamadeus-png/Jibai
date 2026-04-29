@@ -1,3 +1,4 @@
 {
-  "schedule_times": ["10:00", "22:00"]
+  "xiaohongshu_schedule_times": ["10:00", "22:00"],
+  "x_schedule_times": ["10:00", "22:00"]
 }

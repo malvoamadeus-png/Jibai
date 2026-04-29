@@ -32,6 +32,8 @@ import type {
 } from "@/lib/types";
 import { cn, formatCount, stripTime } from "@/lib/utils";
 
+const DEFAULT_ACCOUNT_FETCH_LIMIT = 5;
+
 function SectionField({
   label,
   hint,
@@ -136,6 +138,9 @@ function AccountEditor({
         <div>
           <p className="text-sm font-medium text-[color:var(--ink)]">{title}</p>
           <p className="mt-1 text-xs leading-5 text-[color:var(--muted-ink)]">{hint}</p>
+          <p className="mt-1 text-xs leading-5 text-[color:var(--soft-ink)]">
+            最后一列是每次抓取的最近条数。
+          </p>
         </div>
         <Button
           type="button"
@@ -147,7 +152,7 @@ function AccountEditor({
               {
                 name: "",
                 profileUrl: "",
-                limit: Math.min(5, maxLimit),
+                limit: Math.min(DEFAULT_ACCOUNT_FETCH_LIMIT, maxLimit),
               },
             ])
           }
@@ -189,6 +194,8 @@ function AccountEditor({
               type="number"
               min={1}
               max={maxLimit}
+              placeholder={String(Math.min(DEFAULT_ACCOUNT_FETCH_LIMIT, maxLimit))}
+              title={`每次抓取最近 ${maxLimit} 条以内`}
               value={String(account.limit)}
               onChange={(event) =>
                 onChange(
@@ -315,6 +322,69 @@ function AdvancedSection({
   );
 }
 
+function ScheduleTimeEditor({
+  title,
+  hint,
+  times,
+  defaultTime,
+  onChange,
+}: {
+  title: string;
+  hint: string;
+  times: string[];
+  defaultTime: string;
+  onChange: (nextTimes: string[]) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-[24px] border border-[color:var(--border)] bg-[color:var(--panel)]/55 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-[color:var(--ink)]">{title}</p>
+          <p className="text-xs leading-5 text-[color:var(--muted-ink)]">{hint}</p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => onChange([...times, defaultTime])}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          新增时间
+        </Button>
+      </div>
+      <div className="space-y-3">
+        {times.map((item, index) => (
+          <div
+            key={`${title}-${index}`}
+            className="grid gap-3 rounded-[20px] border border-[color:var(--border)] bg-[color:var(--paper)] p-3 md:grid-cols-[1fr_52px]"
+          >
+            <Input
+              value={item}
+              placeholder={defaultTime}
+              onChange={(event) =>
+                onChange(
+                  times.map((time, timeIndex) =>
+                    timeIndex === index ? event.target.value : time,
+                  ),
+                )
+              }
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={times.length === 1}
+              onClick={() => onChange(times.filter((_, timeIndex) => timeIndex !== index))}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function formatModelList(values: string[]) {
   return values.join(", ");
 }
@@ -362,12 +432,14 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
     return () => window.clearInterval(timer);
   }, [data.runtime.manualRun.status]);
 
-  function setScheduleTimes(nextScheduleTimes: string[]) {
+  function setScheduleTimes(platform: "xiaohongshu" | "x", nextScheduleTimes: string[]) {
     setData((current) => ({
       ...current,
       runtime: {
         ...current.runtime,
-        scheduleTimes: nextScheduleTimes,
+        ...(platform === "xiaohongshu"
+          ? { xiaohongshuScheduleTimes: nextScheduleTimes }
+          : { xScheduleTimes: nextScheduleTimes }),
       },
     }));
   }
@@ -410,7 +482,8 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
       void (async () => {
         try {
           const payload: ControlSavePayload = {
-            scheduleTimes: data.runtime.scheduleTimes,
+            xiaohongshuScheduleTimes: data.runtime.xiaohongshuScheduleTimes,
+            xScheduleTimes: data.runtime.xScheduleTimes,
             xiaohongshu: data.xiaohongshu.config,
             x: data.x.config,
             ai: {
@@ -595,52 +668,21 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-sm font-medium text-[color:var(--ink)]">每日执行时间</p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setScheduleTimes([...data.runtime.scheduleTimes, "22:00"])}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  新增时间
-                </Button>
-              </div>
-              <div className="space-y-3">
-                {data.runtime.scheduleTimes.map((item, index) => (
-                  <div
-                    key={`schedule-${index}`}
-                    className="grid gap-3 rounded-[24px] border border-[color:var(--border)] bg-[color:var(--panel)]/55 p-4 md:grid-cols-[1fr_52px]"
-                  >
-                    <Input
-                      value={item}
-                      placeholder="10:00"
-                      onChange={(event) =>
-                        setScheduleTimes(
-                          data.runtime.scheduleTimes.map((time, timeIndex) =>
-                            timeIndex === index ? event.target.value : time,
-                          ),
-                        )
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={data.runtime.scheduleTimes.length === 1}
-                      onClick={() =>
-                        setScheduleTimes(
-                          data.runtime.scheduleTimes.filter((_, timeIndex) => timeIndex !== index),
-                        )
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+            <div className="grid gap-4 xl:grid-cols-2">
+              <ScheduleTimeEditor
+                title="小红书每日执行时间"
+                hint="只触发小红书抓取与分析。"
+                times={data.runtime.xiaohongshuScheduleTimes}
+                defaultTime="10:00"
+                onChange={(nextTimes) => setScheduleTimes("xiaohongshu", nextTimes)}
+              />
+              <ScheduleTimeEditor
+                title="X 每日执行时间"
+                hint="只触发 X 抓取与分析。"
+                times={data.runtime.xScheduleTimes}
+                defaultTime="22:00"
+                onChange={(nextTimes) => setScheduleTimes("x", nextTimes)}
+              />
             </div>
 
             <div className="space-y-3">
@@ -753,7 +795,15 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
+          <details className="group rounded-[28px] border border-[color:var(--border)] bg-[color:var(--paper)]/70 p-4">
+            <summary className="flex cursor-pointer list-none items-start justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-[color:var(--ink)]">展开 AI 配置</p>
+              </div>
+              <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--soft-ink)] transition group-open:rotate-180" />
+            </summary>
+            <div className="mt-4 space-y-4 border-t border-[color:var(--border)] pt-4">
           <div className="grid gap-4 xl:grid-cols-2">
             <SectionField
               label="Provider"
@@ -767,9 +817,7 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
                     ...current,
                     provider,
                     baseUrl:
-                      provider === "openai-compatible"
-                        ? current.baseUrl ?? "https://api.openai.com/v1"
-                        : null,
+                      provider === "openai-compatible" ? current.baseUrl : null,
                   }));
                 }}
                 className={cn(
@@ -844,7 +892,7 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
             >
               <Input
                 value={data.ai.config.baseUrl ?? ""}
-                placeholder="https://api.openai.com/v1"
+                placeholder="输入 Base URL"
                 onChange={(event) =>
                   setAiConfig((current) => ({
                     ...current,
@@ -890,6 +938,8 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
               </label>
             </div>
           </SectionField>
+            </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -919,7 +969,7 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
             title="账号列表"
             hint="请填写完整的小红书 profile_url；现在也接受不带 https:// 的输入，会自动补全。"
             accounts={data.xiaohongshu.config.accounts}
-            maxLimit={5}
+            maxLimit={20}
             profilePlaceholder="xiaohongshu.com/user/profile/..."
             onChange={(accounts) => setXhsConfig((current) => ({ ...current, accounts }))}
           />
@@ -1061,7 +1111,7 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
             title="账号列表"
             hint="请填写 X 用户主页链接；现在也接受不带 https:// 的输入，会自动补全。"
             accounts={data.x.config.accounts}
-            maxLimit={10}
+            maxLimit={20}
             profilePlaceholder="x.com/username"
             onChange={(accounts) => setXConfig((current) => ({ ...current, accounts }))}
           />

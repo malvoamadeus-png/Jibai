@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatCount, platformLabel, stanceLabel } from "@/lib/utils";
 import type {
@@ -19,6 +20,8 @@ const PAD_TOP = 36;
 const PAD_RIGHT = 20;
 const PAD_BOTTOM = 36;
 const PAD_LEFT = 56;
+const MIN_VISIBLE_CANDLES = 20;
+const DEFAULT_VISIBLE_CANDLES = 180;
 
 type StockIdentity = {
   securityKey: string;
@@ -31,6 +34,20 @@ type EastMoneyPayload = {
     klines?: string[];
   } | null;
 };
+
+type ViewportState = {
+  start: number;
+  visibleCount: number;
+};
+
+type ViewportOverride = {
+  key: string;
+  state: ViewportState;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
 
 function formatPrice(value: number | null | undefined) {
   if (value === null || value === undefined) return "--";
@@ -198,33 +215,71 @@ function renderMarkerNodes(
   x: number,
   highY: number,
   lowY: number,
+  plotBottomY: number,
 ) {
   let bullishCount = 0;
   let bearishCount = 0;
-  let otherCount = 0;
+  let flagCount = 0;
 
   return marker.authorViews.map((view, index) => {
     const bullish = isBullish(view.stance);
     const bearish = isBearish(view.stance);
-    const stackIndex = bullish ? bullishCount++ : bearish ? bearishCount++ : otherCount++;
-    const cy = bullish
-      ? highY - 12 - stackIndex * 12
-      : bearish
-        ? lowY + 12 + stackIndex * 12
-        : highY - 12 - (bullishCount + stackIndex) * 12;
+    const stackIndex = bullish ? bullishCount++ : bearish ? bearishCount++ : flagCount++;
+    const offsetX = markerOffset(stackIndex);
+    const cx = x + offsetX;
+    const fill = markerFill(view.stance);
+    const stroke = "rgba(255,250,242,0.96)";
+
+    if (bullish) {
+      const tipY = lowY + 10 + stackIndex * 18;
+      return (
+        <g key={`${marker.date}-${view.platform}-${view.account_name}-${index}`}>
+          <line x1={cx} y1={tipY + 12} x2={cx} y2={tipY + 4} stroke={fill} strokeWidth="2.2" />
+          <path
+            d={`M ${cx} ${tipY} L ${cx - 6} ${tipY + 7} H ${cx - 2.2} V ${tipY + 13} H ${cx + 2.2} V ${tipY + 7} H ${cx + 6} Z`}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+          <title>{`${marker.date} / ${view.author_nickname || view.account_name} / ${stanceLabel(view.stance)}`}</title>
+        </g>
+      );
+    }
+
+    if (bearish) {
+      const tipY = highY - 10 - stackIndex * 18;
+      return (
+        <g key={`${marker.date}-${view.platform}-${view.account_name}-${index}`}>
+          <line x1={cx} y1={tipY - 12} x2={cx} y2={tipY - 4} stroke={fill} strokeWidth="2.2" />
+          <path
+            d={`M ${cx} ${tipY} L ${cx - 6} ${tipY - 7} H ${cx - 2.2} V ${tipY - 13} H ${cx + 2.2} V ${tipY - 7} H ${cx + 6} Z`}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+          <title>{`${marker.date} / ${view.author_nickname || view.account_name} / ${stanceLabel(view.stance)}`}</title>
+        </g>
+      );
+    }
+
+    const stemBottomY = plotBottomY - 8 - stackIndex * 18;
+    const stemTopY = stemBottomY - 16;
+    const flagTopY = stemTopY + 1.5;
 
     return (
-      <circle
-        key={`${marker.date}-${view.platform}-${view.account_name}-${index}`}
-        cx={x + markerOffset(stackIndex)}
-        cy={cy}
-        r={4.5}
-        fill={markerFill(view.stance)}
-        stroke="rgba(255,250,242,0.95)"
-        strokeWidth="1.2"
-      >
+      <g key={`${marker.date}-${view.platform}-${view.account_name}-${index}`}>
+        <line x1={cx} y1={stemBottomY} x2={cx} y2={stemTopY} stroke={fill} strokeWidth="2.1" />
+        <path
+          d={`M ${cx + 1} ${flagTopY} L ${cx + 10} ${flagTopY + 3.8} L ${cx + 1} ${flagTopY + 8.2} Z`}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
         <title>{`${marker.date} / ${view.author_nickname || view.account_name} / ${stanceLabel(view.stance)}`}</title>
-      </circle>
+      </g>
     );
   });
 }
@@ -236,6 +291,17 @@ function buildPriceScale(candles: StockKlineCandle[]) {
   const max = Math.max(...highs);
   const padding = Math.max((max - min) * 0.12, max * 0.01, 1);
   return { min: min - padding, max: max + padding };
+}
+
+function buildDefaultViewport(totalCandles: number): ViewportState {
+  if (totalCandles <= 0) {
+    return { start: 0, visibleCount: 0 };
+  }
+  const visibleCount = Math.min(totalCandles, DEFAULT_VISIBLE_CANDLES);
+  return {
+    start: Math.max(0, totalCandles - visibleCount),
+    visibleCount,
+  };
 }
 
 function ActiveDayPanel({
@@ -304,7 +370,9 @@ function ActiveDayPanel({
                   <p className="text-sm font-semibold text-[color:var(--ink)]">
                     {view.author_nickname || view.account_name}
                   </p>
-                  <Badge variant="neutral" className="normal-case tracking-[0.04em]">{platformLabel(view.platform)}</Badge>
+                  <Badge variant="neutral" className="normal-case tracking-[0.04em]">
+                    {platformLabel(view.platform)}
+                  </Badge>
                   <Badge variant={markerBadgeVariant(view.stance)}>{stanceLabel(view.stance)}</Badge>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">
@@ -339,7 +407,15 @@ export function StockKlineCard({
     key: string;
     chart: StockKlineData;
   } | null>(null);
+  const [viewportOverride, setViewportOverride] = useState<ViewportOverride | null>(null);
   const attemptedChartKeysRef = useRef<Set<string>>(new Set());
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const dragStateRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    start: number;
+  } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const ashareIdentity = useMemo(() => resolveAshareIdentity(identity), [identity]);
   const chartKey = useMemo(
@@ -406,12 +482,35 @@ export function StockKlineCard({
     (resolvedChart.message ?? "").includes("东财")
       ? null
       : resolvedChart.message;
-  const selectedDate =
-    activeDate && resolvedChart.candles.some((item) => item.date === activeDate)
-      ? activeDate
-      : resolvedChart.markers.at(-1)?.date ?? resolvedChart.candles.at(-1)?.date ?? null;
 
-  if (resolvedChart.candles.length === 0) {
+  const candles = resolvedChart.candles;
+  const totalCandles = candles.length;
+  const viewport =
+    viewportOverride && viewportOverride.key === chartKey
+      ? viewportOverride.state
+      : buildDefaultViewport(totalCandles);
+  const minVisibleCount =
+    totalCandles <= 0 ? 0 : Math.min(totalCandles, MIN_VISIBLE_CANDLES);
+  const visibleCount =
+    totalCandles <= 0
+      ? 0
+      : clamp(
+          viewport.visibleCount || Math.min(totalCandles, DEFAULT_VISIBLE_CANDLES),
+          minVisibleCount,
+          totalCandles,
+        );
+  const maxWindowStart = Math.max(0, totalCandles - visibleCount);
+  const windowStart = clamp(viewport.start, 0, maxWindowStart);
+  const visibleCandles = candles.slice(windowStart, windowStart + visibleCount);
+  const markersByDate = new Map(resolvedChart.markers.map((item) => [item.date, item]));
+  const selectedDate =
+    activeDate && candles.some((item) => item.date === activeDate)
+      ? activeDate
+      : resolvedChart.markers.at(-1)?.date ?? candles.at(-1)?.date ?? null;
+  const activeCandle = selectedDate ? candles.find((item) => item.date === selectedDate) : candles.at(-1);
+  const activeMarker = activeCandle ? markersByDate.get(activeCandle.date) : undefined;
+
+  if (totalCandles === 0) {
     return (
       <Card className="overflow-hidden">
         <CardHeader className="bg-[linear-gradient(135deg,rgba(181,106,59,0.12),rgba(87,112,97,0.08))]">
@@ -421,28 +520,110 @@ export function StockKlineCard({
           </div>
           <CardTitle className="text-2xl">{displayName} 暂时还没有行情图</CardTitle>
           <CardDescription>
-            {bannerMessage || "当前没有拿到可绘制的日线数据，但下方按天观点时间线仍然可正常查看。"}
+            {bannerMessage || "当前没有拿到可绘制的日线数据，但下方按天观点时间线仍然可以正常查看。"}
           </CardDescription>
         </CardHeader>
       </Card>
     );
   }
 
-  const candles = resolvedChart.candles;
-  const markersByDate = new Map(resolvedChart.markers.map((item) => [item.date, item]));
-  const activeCandle = candles.find((item) => item.date === selectedDate) ?? candles.at(-1);
-  const activeMarker = activeCandle ? markersByDate.get(activeCandle.date) : undefined;
-  const scale = buildPriceScale(candles);
+  const scale = buildPriceScale(visibleCandles);
   const plotWidth = SVG_WIDTH - PAD_LEFT - PAD_RIGHT;
   const plotHeight = SVG_HEIGHT - PAD_TOP - PAD_BOTTOM;
-  const step = plotWidth / Math.max(candles.length, 1);
+  const step = plotWidth / Math.max(visibleCandles.length, 1);
   const bodyWidth = Math.max(3, Math.min(10, step * 0.58));
   const latest = candles.at(-1);
   const previous = candles.length > 1 ? candles[candles.length - 2] : null;
   const latestChange = latest && previous ? latest.close - previous.close : null;
-
+  const canPan = totalCandles > visibleCount;
   const priceToY = (price: number) =>
     PAD_TOP + ((scale.max - price) / Math.max(scale.max - scale.min, 0.0001)) * plotHeight;
+
+  function moveWindow(nextStart: number) {
+    setViewportOverride({
+      key: chartKey,
+      state: {
+        start: clamp(nextStart, 0, Math.max(0, totalCandles - visibleCount)),
+        visibleCount,
+      },
+    });
+  }
+
+  function selectDateFromClientX(clientX: number) {
+    const svg = svgRef.current;
+    if (!svg || visibleCandles.length === 0) {
+      return;
+    }
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+    const viewboxX = ((clientX - rect.left) / rect.width) * SVG_WIDTH;
+    const plotX = clamp(viewboxX - PAD_LEFT, 0, plotWidth);
+    const rawIndex = Math.round((plotX - step / 2) / Math.max(step, 0.0001));
+    const candleIndex = clamp(rawIndex, 0, visibleCandles.length - 1);
+    const date = visibleCandles[candleIndex]?.date;
+    if (date) {
+      setActiveDate(date);
+    }
+  }
+
+  function setVisibleWindow(nextVisibleCount: number) {
+    const clampedVisibleCount = clamp(nextVisibleCount, minVisibleCount, totalCandles);
+    setViewportOverride({
+      key: chartKey,
+      state: {
+        start: Math.max(0, totalCandles - clampedVisibleCount),
+        visibleCount: clampedVisibleCount,
+      },
+    });
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    selectDateFromClientX(event.clientX);
+    if (!canPan) {
+      return;
+    }
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      start: windowStart,
+    };
+    setIsDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    selectDateFromClientX(event.clientX);
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+    const candlesPerPixel = visibleCount / plotWidth;
+    const deltaX = event.clientX - dragState.clientX;
+    const nextStart = Math.round(dragState.start - deltaX * candlesPerPixel);
+    moveWindow(nextStart);
+  }
+
+  function stopDragging(event?: React.PointerEvent<HTMLDivElement>) {
+    if (event && dragStateRef.current?.pointerId === event.pointerId) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore release errors when the pointer is already gone.
+      }
+    }
+    dragStateRef.current = null;
+    setIsDragging(false);
+  }
+
+  const rangePresets = [
+    { label: "1M", value: 22 },
+    { label: "3M", value: 66 },
+    { label: "6M", value: 132 },
+    { label: "1Y", value: 252 },
+    { label: "全部", value: totalCandles },
+  ];
 
   return (
     <Card className="overflow-hidden">
@@ -456,7 +637,7 @@ export function StockKlineCard({
           <div className="space-y-2">
             <CardTitle className="text-2xl">日线与观点标记</CardTitle>
             <CardDescription>
-              每根蜡烛是一个交易日，绿色点偏多，红色点偏空，灰色点表示中性或仅提及。
+              每根蜡烛是一个交易日。绿色点偏多，红色点偏空，灰色点表示中性或仅提及。
             </CardDescription>
           </div>
           {latest ? (
@@ -484,113 +665,187 @@ export function StockKlineCard({
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="rounded-[24px] border border-[color:var(--border)] bg-[color:var(--paper-strong)] p-3">
-            <div className="overflow-x-auto">
-              <svg
-                viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-                className="min-w-[760px] w-full"
-                role="img"
-                aria-label={`${displayName} 日线 K 线和作者观点标记`}
-              >
-                {[0, 1, 2, 3, 4].map((tick) => {
-                  const y = PAD_TOP + (plotHeight / 4) * tick;
-                  const price = scale.max - ((scale.max - scale.min) / 4) * tick;
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
+              <p className="text-sm font-medium text-[color:var(--ink)]">时间窗口</p>
+              <div className="flex flex-wrap items-center gap-2">
+                {rangePresets.map((preset) => {
+                  const presetValue = clamp(preset.value, minVisibleCount, totalCandles);
+                  const active = visibleCount === presetValue;
                   return (
-                    <g key={`grid-${tick}`}>
-                      <line
-                        x1={PAD_LEFT}
-                        y1={y}
-                        x2={SVG_WIDTH - PAD_RIGHT}
-                        y2={y}
-                        stroke="rgba(82,60,42,0.1)"
-                        strokeDasharray="4 8"
-                      />
-                      <text
-                        x={PAD_LEFT - 10}
-                        y={y + 4}
-                        fontSize="11"
-                        fill="rgba(107,86,70,0.85)"
-                        textAnchor="end"
-                      >
-                        {formatPrice(price)}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {candles.map((candle, index) => {
-                  const x = PAD_LEFT + step * index + step / 2;
-                  const openY = priceToY(candle.open);
-                  const closeY = priceToY(candle.close);
-                  const highY = priceToY(candle.high);
-                  const lowY = priceToY(candle.low);
-                  const marker = markersByDate.get(candle.date);
-                  const rising = candle.close >= candle.open;
-                  const bodyY = Math.min(openY, closeY);
-                  const bodyHeight = Math.max(Math.abs(closeY - openY), 1.5);
-                  const fill = rising ? "#3b7d5f" : "#b65b54";
-                  const stroke = rising ? "#295845" : "#8f403c";
-
-                  return (
-                    <g
-                      key={candle.date}
-                      onMouseEnter={() => setActiveDate(candle.date)}
-                      onClick={() => setActiveDate(candle.date)}
-                      className="cursor-pointer"
+                    <Button
+                      key={preset.label}
+                      type="button"
+                      size="sm"
+                      variant={active ? "primary" : "secondary"}
+                      onClick={() => setVisibleWindow(presetValue)}
                     >
-                      {selectedDate === candle.date ? (
-                        <rect
-                          x={x - step / 2}
-                          y={PAD_TOP - 10}
-                          width={step}
-                          height={plotHeight + 20}
-                          fill="rgba(181,106,59,0.08)"
-                          rx="8"
-                        />
-                      ) : null}
-                      <line
-                        x1={x}
-                        y1={highY}
-                        x2={x}
-                        y2={lowY}
-                        stroke={stroke}
-                        strokeWidth="1.5"
-                      />
-                      <rect
-                        x={x - bodyWidth / 2}
-                        y={bodyY}
-                        width={bodyWidth}
-                        height={bodyHeight}
-                        rx="1.5"
-                        fill={fill}
-                        stroke={stroke}
-                        strokeWidth="1"
-                      >
-                        <title>{`${candle.date} O ${formatPrice(candle.open)} H ${formatPrice(candle.high)} L ${formatPrice(candle.low)} C ${formatPrice(candle.close)}`}</title>
-                      </rect>
-                      {marker ? renderMarkerNodes(marker, x, highY, lowY) : null}
-                    </g>
+                      {preset.label}
+                    </Button>
                   );
                 })}
-
-                <text
-                  x={PAD_LEFT}
-                  y={SVG_HEIGHT - 8}
-                  fontSize="11"
-                  fill="rgba(107,86,70,0.8)"
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={visibleCount <= minVisibleCount}
+                  onClick={() => setVisibleWindow(Math.max(minVisibleCount, Math.round(visibleCount * 0.7)))}
                 >
-                  {candles[0]?.date}
-                </text>
-                <text
-                  x={SVG_WIDTH - PAD_RIGHT}
-                  y={SVG_HEIGHT - 8}
-                  fontSize="11"
-                  fill="rgba(107,86,70,0.8)"
-                  textAnchor="end"
+                  放大
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={visibleCount >= totalCandles}
+                  onClick={() => setVisibleWindow(Math.min(totalCandles, Math.round(visibleCount * 1.35)))}
                 >
-                  {candles.at(-1)?.date}
-                </text>
-              </svg>
+                  缩小
+                </Button>
+              </div>
             </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-[color:var(--soft-ink)]">
+              <span>{`${visibleCandles[0]?.date} -> ${visibleCandles.at(-1)?.date}`}</span>
+              <span>{selectedDate ?? visibleCandles.at(-1)?.date}</span>
+            </div>
+
+            <div className="mt-3 overflow-x-auto">
+              <div
+                className={cn(
+                  "select-none rounded-[18px]",
+                  canPan ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-default",
+                )}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={stopDragging}
+                onPointerCancel={stopDragging}
+                onPointerLeave={(event) => {
+                  if (dragStateRef.current?.pointerId === event.pointerId) {
+                    stopDragging(event);
+                  }
+                }}
+                style={{ touchAction: "pan-y" }}
+              >
+                <svg
+                  ref={svgRef}
+                  viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+                  className="min-w-[760px] w-full"
+                  role="img"
+                  aria-label={`${displayName} 日线 K 线和作者观点标记`}
+                >
+                  {[0, 1, 2, 3, 4].map((tick) => {
+                    const y = PAD_TOP + (plotHeight / 4) * tick;
+                    const price = scale.max - ((scale.max - scale.min) / 4) * tick;
+                    return (
+                      <g key={`grid-${tick}`}>
+                        <line
+                          x1={PAD_LEFT}
+                          y1={y}
+                          x2={SVG_WIDTH - PAD_RIGHT}
+                          y2={y}
+                          stroke="rgba(82,60,42,0.1)"
+                          strokeDasharray="4 8"
+                        />
+                        <text
+                          x={PAD_LEFT - 10}
+                          y={y + 4}
+                          fontSize="11"
+                          fill="rgba(107,86,70,0.85)"
+                          textAnchor="end"
+                        >
+                          {formatPrice(price)}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {visibleCandles.map((candle, index) => {
+                    const x = PAD_LEFT + step * index + step / 2;
+                    const openY = priceToY(candle.open);
+                    const closeY = priceToY(candle.close);
+                    const highY = priceToY(candle.high);
+                    const lowY = priceToY(candle.low);
+                    const marker = markersByDate.get(candle.date);
+                    const rising = candle.close >= candle.open;
+                    const bodyY = Math.min(openY, closeY);
+                    const bodyHeight = Math.max(Math.abs(closeY - openY), 1.5);
+                    const fill = rising ? "#3b7d5f" : "rgba(255,250,242,0.98)";
+                    const stroke = rising ? "#295845" : "#8f403c";
+
+                    return (
+                      <g
+                        key={candle.date}
+                        className="cursor-pointer"
+                      >
+                        {selectedDate === candle.date ? (
+                          <rect
+                            x={x - step / 2}
+                            y={PAD_TOP - 10}
+                            width={step}
+                            height={plotHeight + 20}
+                            fill="rgba(181,106,59,0.08)"
+                            rx="8"
+                          />
+                        ) : null}
+                        <line
+                          x1={x}
+                          y1={highY}
+                          x2={x}
+                          y2={lowY}
+                          stroke={stroke}
+                          strokeWidth="1.5"
+                        />
+                        <rect
+                          x={x - bodyWidth / 2}
+                          y={bodyY}
+                          width={bodyWidth}
+                          height={bodyHeight}
+                          rx="1.5"
+                          fill={fill}
+                          stroke={stroke}
+                          strokeWidth={rising ? "1" : "1.8"}
+                        >
+                          <title>{`${candle.date} O ${formatPrice(candle.open)} H ${formatPrice(candle.high)} L ${formatPrice(candle.low)} C ${formatPrice(candle.close)}`}</title>
+                        </rect>
+                        {marker ? renderMarkerNodes(marker, x, highY, lowY, PAD_TOP + plotHeight) : null}
+                      </g>
+                    );
+                  })}
+
+                  <text x={PAD_LEFT} y={SVG_HEIGHT - 8} fontSize="11" fill="rgba(107,86,70,0.8)">
+                    {visibleCandles[0]?.date}
+                  </text>
+                  <text
+                    x={SVG_WIDTH - PAD_RIGHT}
+                    y={SVG_HEIGHT - 8}
+                    fontSize="11"
+                    fill="rgba(107,86,70,0.8)"
+                    textAnchor="end"
+                  >
+                    {visibleCandles.at(-1)?.date}
+                  </text>
+                </svg>
+              </div>
+            </div>
+
+            {canPan ? (
+              <div className="mt-4 rounded-[20px] border border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={maxWindowStart}
+                  step={1}
+                  value={windowStart}
+                  onChange={(event) => moveWindow(Number(event.target.value))}
+                  className="w-full accent-[color:var(--accent)]"
+                  aria-label="调整 K 线时间窗口"
+                />
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[color:var(--soft-ink)]">
+                  <span>{candles[0]?.date}</span>
+                  <span>{candles.at(-1)?.date}</span>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <ActiveDayPanel candle={activeCandle} marker={activeMarker} sourceLabel={resolvedChart.sourceLabel} />

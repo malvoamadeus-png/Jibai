@@ -79,8 +79,8 @@ class AccountTarget(BaseModel):
     @field_validator("limit")
     @classmethod
     def _validate_limit(cls, value: int) -> int:
-        if value < 1 or value > 10:
-            raise ValueError("limit must be between 1 and 10.")
+        if value < 1 or value > 20:
+            raise ValueError("limit must be between 1 and 20.")
         return value
 
     @property

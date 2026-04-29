@@ -263,7 +263,8 @@ export type ManualRunState = {
 };
 
 export type RuntimeControlStatus = {
-  scheduleTimes: string[];
+  xiaohongshuScheduleTimes: string[];
+  xScheduleTimes: string[];
   lastRunAt: string | null;
   latestError: string | null;
   dbPresent: boolean;
@@ -279,7 +280,8 @@ export type ControlStats = {
 };
 
 export type ControlSavePayload = {
-  scheduleTimes: string[];
+  xiaohongshuScheduleTimes: string[];
+  xScheduleTimes: string[];
   xiaohongshu: XiaohongshuSettings;
   x: XSettings;
   ai: AiSavePayload;

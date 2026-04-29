@@ -29,7 +29,10 @@ import type {
   XiaohongshuSettings,
 } from "@/lib/types";
 
-const DEFAULT_SCHEDULE_TIMES = ["10:00", "22:00"];
+const DEFAULT_XIAOHONGSHU_SCHEDULE_TIMES = ["10:00", "22:00"];
+const DEFAULT_X_SCHEDULE_TIMES = ["10:00", "22:00"];
+const DEFAULT_ACCOUNT_FETCH_LIMIT = 5;
+const MAX_ACCOUNT_FETCH_LIMIT = 20;
 const DEFAULT_XHS_SETTINGS: XiaohongshuSettings = {
   enabled: true,
   browserChannel: "chrome",
@@ -59,6 +62,7 @@ const scheduleTimeSchema = z
   .string()
   .trim()
   .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "时间必须使用 HH:MM 格式");
+const scheduleTimesSchema = z.array(scheduleTimeSchema).min(1);
 
 function ensureUrlScheme(value: string) {
   const trimmed = value.trim();
@@ -81,7 +85,7 @@ const xhsAccountSchema = z.object({
         "小红书主页链接需要是完整 profile_url，并包含 xsec_token",
       ),
   ),
-  limit: z.coerce.number().int().min(1).max(5),
+  limit: z.coerce.number().int().min(1).max(MAX_ACCOUNT_FETCH_LIMIT),
 });
 
 const xAccountSchema = z.object({
@@ -97,7 +101,7 @@ const xAccountSchema = z.object({
         "X 主页链接需要是 x.com 或 twitter.com 的直接用户主页",
       ),
   ),
-  limit: z.coerce.number().int().min(1).max(10),
+  limit: z.coerce.number().int().min(1).max(MAX_ACCOUNT_FETCH_LIMIT),
 });
 
 const xhsSettingsSchema = z
@@ -147,7 +151,8 @@ const xSettingsSchema = z
   });
 
 const controlSaveSchema = z.object({
-  scheduleTimes: z.array(scheduleTimeSchema).min(1),
+  xiaohongshuScheduleTimes: scheduleTimesSchema,
+  xScheduleTimes: scheduleTimesSchema,
   xiaohongshu: xhsSettingsSchema,
   x: xSettingsSchema,
   ai: aiSaveSchema,
@@ -242,7 +247,7 @@ function toRawAccounts(accounts: unknown) {
     return {
       name: String(record.name ?? ""),
       profileUrl: String(record.profile_url ?? ""),
-      limit: Number(record.limit ?? 5),
+      limit: Number(record.limit ?? DEFAULT_ACCOUNT_FETCH_LIMIT),
     };
   });
 }
@@ -374,10 +379,26 @@ function readXSettings(filePath: string): XSettings {
 
 function readRuntimeScheduleTimes(filePath: string) {
   const raw = readJsonFile<Record<string, unknown>>(filePath, {});
-  const values = Array.isArray(raw.schedule_times)
+  const legacyScheduleTimes = Array.isArray(raw.schedule_times)
     ? raw.schedule_times.map((item) => String(item))
-    : DEFAULT_SCHEDULE_TIMES;
-  return normalizeScheduleTimes(values);
+    : null;
+  const xiaohongshuRaw = Array.isArray(raw.xiaohongshu_schedule_times)
+    ? raw.xiaohongshu_schedule_times
+    : Array.isArray(raw.xhs_schedule_times)
+      ? raw.xhs_schedule_times
+      : null;
+  const xRaw = Array.isArray(raw.x_schedule_times) ? raw.x_schedule_times : null;
+
+  return {
+    xiaohongshuScheduleTimes: normalizeScheduleTimes(
+      (xiaohongshuRaw ?? legacyScheduleTimes ?? DEFAULT_XIAOHONGSHU_SCHEDULE_TIMES).map(
+        (item) => String(item),
+      ),
+    ),
+    xScheduleTimes: normalizeScheduleTimes(
+      (xRaw ?? legacyScheduleTimes ?? DEFAULT_X_SCHEDULE_TIMES).map((item) => String(item)),
+    ),
+  };
 }
 
 function readMonitorState(filePath: string): MonitorState {
@@ -446,7 +467,18 @@ function getLatestErrorText(db: Database.Database | null) {
       `
       SELECT platform, account_name AS accountName, error_text AS errorText
       FROM crawl_account_runs
-      WHERE NULLIF(COALESCE(error_text, ''), '') IS NOT NULL
+      WHERE id IN (
+        SELECT latest.id
+        FROM (
+          SELECT id
+          FROM crawl_account_runs AS inner_runs
+          WHERE inner_runs.platform = crawl_account_runs.platform
+            AND inner_runs.account_name = crawl_account_runs.account_name
+          ORDER BY inner_runs.run_at DESC, inner_runs.id DESC
+          LIMIT 1
+        ) AS latest
+      )
+        AND NULLIF(COALESCE(error_text, ''), '') IS NOT NULL
       ORDER BY run_at DESC, id DESC
       LIMIT 1
       `,
@@ -512,7 +544,7 @@ function buildAccountStatuses(
       typeof bucket?.last_error === "string" && bucket.last_error.trim()
         ? bucket.last_error
         : null;
-    const rawLastError = lastRun?.errorText ?? fallbackLastError;
+    const rawLastError = lastRun ? (lastRun.errorText ?? null) : fallbackLastError;
     const newNoteCount = lastRun?.newNoteCount ?? null;
     const hasBlockingError = Boolean(rawLastError) && (newNoteCount ?? 0) === 0;
 
@@ -680,7 +712,8 @@ export function getControlPanelData(): ControlPanelData {
 
   return {
     runtime: {
-      scheduleTimes,
+      xiaohongshuScheduleTimes: scheduleTimes.xiaohongshuScheduleTimes,
+      xScheduleTimes: scheduleTimes.xScheduleTimes,
       lastRunAt: getLastAnalysisRunAt(db),
       latestError: getLatestErrorText(db),
       dbPresent: existsSync(paths.insightDbPath),
@@ -711,7 +744,8 @@ export function getControlPanelData(): ControlPanelData {
 export function saveControlSettings(payload: unknown): ControlPanelData {
   const parsed = controlSaveSchema.parse(payload);
   const paths = getLocalProjectPaths();
-  const scheduleTimes = normalizeScheduleTimes(parsed.scheduleTimes);
+  const xiaohongshuScheduleTimes = normalizeScheduleTimes(parsed.xiaohongshuScheduleTimes);
+  const xScheduleTimes = normalizeScheduleTimes(parsed.xScheduleTimes);
   const xhsSettings = {
     ...parsed.xiaohongshu,
     accounts: normalizeAccounts(parsed.xiaohongshu.accounts),
@@ -723,7 +757,8 @@ export function saveControlSettings(payload: unknown): ControlPanelData {
   };
 
   writeJsonFile(paths.runtimeSettingsPath, {
-    schedule_times: scheduleTimes,
+    xiaohongshu_schedule_times: xiaohongshuScheduleTimes,
+    x_schedule_times: xScheduleTimes,
   });
   writeAiSettings(paths.aiSettingsPath, parsed.ai);
   writeJsonFile(paths.watchlistPath, {

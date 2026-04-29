@@ -8,7 +8,6 @@ import { z } from "zod";
 import { getServerEnv } from "@/lib/server-env";
 import type { AiProvider, AiSavePayload, AiSettings } from "@/lib/types";
 
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-5.4";
 const DEFAULT_OPENAI_FALLBACK_MODELS = ["gpt-4.1"];
 
@@ -24,15 +23,7 @@ const aiSettingsSchema = z
     hasApiKey: z.boolean(),
     apiKeyHint: z.string().trim().min(1).nullable(),
   })
-  .superRefine((value, ctx) => {
-    if (value.provider === "openai-compatible" && !value.baseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "OpenAI-compatible 模式必须提供 Base URL",
-        path: ["baseUrl"],
-      });
-    }
-  });
+  .superRefine(() => {});
 
 export const aiSaveSchema = z
   .object({
@@ -46,13 +37,6 @@ export const aiSaveSchema = z
   })
   .superRefine((value, ctx) => {
     const normalizedBaseUrl = normalizeOptionalText(value.baseUrl);
-    if (value.provider === "openai-compatible" && !normalizedBaseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "OpenAI-compatible 模式必须提供 Base URL",
-        path: ["baseUrl"],
-      });
-    }
     if (normalizedBaseUrl) {
       try {
         new URL(normalizedBaseUrl);
@@ -218,7 +202,7 @@ function readEffectiveSettings(localConfig: Record<string, unknown>) {
         getServerEnv("AI_BASE_URL"),
         getServerEnv("OPENAI_BASE_URL"),
         getServerEnv("GPT_BASE_URL"),
-      ) ?? DEFAULT_OPENAI_BASE_URL,
+      ) ?? null,
     apiKey: resolveApiKey(localConfig, provider),
   };
 }
@@ -234,7 +218,7 @@ export function readAiSettings(filePath: string): AiSettings {
     reasoningEffort: normalizeOptionalText(resolved.reasoningEffort),
     baseUrl:
       resolved.provider === "openai-compatible"
-        ? normalizeOptionalText(resolved.baseUrl) ?? DEFAULT_OPENAI_BASE_URL
+        ? normalizeOptionalText(resolved.baseUrl)
         : null,
     hasApiKey: Boolean(resolved.apiKey),
     apiKeyHint: maskApiKey(resolved.apiKey),
@@ -244,10 +228,20 @@ export function readAiSettings(filePath: string): AiSettings {
 export function writeAiSettings(filePath: string, payload: AiSavePayload) {
   const parsed = aiSaveSchema.parse(payload);
   const localConfig = readJsonFile(filePath);
-  const currentKey = readEffectiveSettings(localConfig).apiKey;
+  const currentSettings = readEffectiveSettings(localConfig);
+  const currentKey = currentSettings.apiKey;
+  const currentBaseUrl = normalizeOptionalText(currentSettings.baseUrl);
   const nextKey = parsed.clearApiKey
     ? null
     : normalizeOptionalText(parsed.apiKey) ?? currentKey;
+  const nextBaseUrl =
+    parsed.provider === "openai-compatible"
+      ? normalizeOptionalText(parsed.baseUrl) ?? currentBaseUrl
+      : null;
+
+  if (parsed.provider === "openai-compatible" && !nextBaseUrl) {
+    throw new Error("OpenAI-compatible 模式必须提供 Base URL");
+  }
 
   const normalizedPayload: Record<string, unknown> = {
     provider: parsed.provider,
@@ -257,8 +251,7 @@ export function writeAiSettings(filePath: string, payload: AiSavePayload) {
   };
 
   if (parsed.provider === "openai-compatible") {
-    normalizedPayload.base_url =
-      normalizeOptionalText(parsed.baseUrl) ?? DEFAULT_OPENAI_BASE_URL;
+    normalizedPayload.base_url = nextBaseUrl;
   }
   if (nextKey) {
     normalizedPayload.api_key = nextKey;

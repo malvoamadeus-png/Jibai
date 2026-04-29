@@ -522,6 +522,21 @@ def get_reusable_page(context: BrowserContext) -> Page:
     return context.new_page()
 
 
+def minimize_browser_window(context: BrowserContext, page: Page) -> None:
+    try:
+        session = context.new_cdp_session(page)
+        window = session.send("Browser.getWindowForTarget")
+        session.send(
+            "Browser.setWindowBounds",
+            {
+                "windowId": window["windowId"],
+                "bounds": {"windowState": "minimized"},
+            },
+        )
+    except Exception:
+        return
+
+
 def fetch_candidate_notes(
     cfg: WatchlistConfig,
     account: AccountTarget,
@@ -630,12 +645,16 @@ def _new_context(
     user_data_dir: Path,
     *,
     headless_override: bool | None = None,
+    start_minimized: bool = True,
 ) -> BrowserContext:
+    headless = cfg.headless if headless_override is None else headless_override
     launch_kwargs: dict[str, Any] = {
-        "headless": cfg.headless if headless_override is None else headless_override,
+        "headless": headless,
         "locale": "zh-CN",
         "viewport": {"width": 1440, "height": 1200},
     }
+    if start_minimized and not headless:
+        launch_kwargs["args"] = ["--start-minimized"]
     if cfg.browser_channel:
         launch_kwargs["channel"] = cfg.browser_channel
     return playwright.chromium.launch_persistent_context(
@@ -661,6 +680,7 @@ def validate_saved_login(cfg: WatchlistConfig, paths: AppPaths) -> int:
             headless_override=False,
         )
         page = get_reusable_page(context)
+        minimize_browser_window(context, page)
         try:
             candidates = collect_note_candidates(
                 page,
@@ -709,6 +729,7 @@ def login_and_validate(cfg: WatchlistConfig, paths: AppPaths) -> int:
             cfg,
             paths.xhs_user_data_dir,
             headless_override=False,
+            start_minimized=False,
         )
         page = get_reusable_page(context)
         try:
@@ -743,6 +764,8 @@ def run_once(cfg: WatchlistConfig, paths: AppPaths) -> CrawlRunSummary:
     with sync_playwright() as playwright:
         context = _new_context(playwright, cfg, paths.xhs_user_data_dir)
         page = get_reusable_page(context)
+        if not cfg.headless:
+            minimize_browser_window(context, page)
         try:
             for index, account in enumerate(cfg.accounts):
                 run_at = now_iso()
