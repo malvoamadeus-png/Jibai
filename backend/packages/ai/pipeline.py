@@ -17,7 +17,11 @@ from packages.common.models import (
     RawNoteRecord,
     StockDayRecord,
     ThemeDayRecord,
+    ViewConviction,
+    ViewDirection,
+    ViewEvidenceType,
     ViewHorizon,
+    ViewJudgmentType,
     ViewpointRecord,
     ViewStance,
 )
@@ -39,7 +43,7 @@ from .prompts import (
 )
 
 
-ANALYSIS_VERSION = "viewpoints_v2"
+ANALYSIS_VERSION = "viewpoints_v3"
 STANCE_PRIORITY: dict[ViewStance, int] = {
     "strong_bullish": 5,
     "bullish": 4,
@@ -51,6 +55,31 @@ STANCE_PRIORITY: dict[ViewStance, int] = {
     "unknown": -2,
 }
 VALID_STANCES = set(STANCE_PRIORITY)
+VALID_DIRECTIONS: set[ViewDirection] = {"positive", "negative", "neutral", "mixed", "unknown"}
+VALID_JUDGMENT_TYPES: set[ViewJudgmentType] = {
+    "direct",
+    "implied",
+    "factual_only",
+    "quoted",
+    "mention_only",
+    "unknown",
+}
+VALID_CONVICTIONS: set[ViewConviction] = {"strong", "medium", "weak", "none", "unknown"}
+VALID_EVIDENCE_TYPES: set[ViewEvidenceType] = {
+    "price_action",
+    "earnings",
+    "guidance",
+    "management_commentary",
+    "valuation",
+    "policy",
+    "rumor",
+    "position",
+    "capital_flow",
+    "technical",
+    "macro",
+    "other",
+    "unknown",
+}
 VALID_HORIZONS: set[ViewHorizon] = {"short_term", "medium_term", "long_term", "unspecified"}
 
 
@@ -124,6 +153,84 @@ def _combine_stances(left: ViewStance, right: ViewStance) -> ViewStance:
     return "mixed"
 
 
+def _direction_from_stance(stance: ViewStance) -> ViewDirection:
+    if stance in {"strong_bullish", "bullish"}:
+        return "positive"
+    if stance in {"strong_bearish", "bearish"}:
+        return "negative"
+    if stance == "neutral":
+        return "neutral"
+    if stance == "mixed":
+        return "mixed"
+    return "unknown"
+
+
+def _derive_compatible_stance(
+    *,
+    direction: ViewDirection,
+    judgment_type: ViewJudgmentType,
+    conviction: ViewConviction,
+    legacy_stance: ViewStance,
+) -> ViewStance:
+    if judgment_type == "mention_only":
+        return "mention_only"
+    if direction == "positive":
+        return "strong_bullish" if conviction == "strong" else "bullish"
+    if direction == "negative":
+        return "strong_bearish" if conviction == "strong" else "bearish"
+    if direction == "neutral":
+        return "neutral"
+    if direction == "mixed":
+        return "mixed"
+    return legacy_stance
+
+
+def _combine_directions(left: ViewDirection, right: ViewDirection) -> ViewDirection:
+    if left == right:
+        return left
+    if left == "unknown":
+        return right
+    if right == "unknown":
+        return left
+    directional = {left, right} - {"neutral"}
+    if len(directional) == 1:
+        return directional.pop()
+    return "mixed"
+
+
+def _combine_judgment_types(left: ViewJudgmentType, right: ViewJudgmentType) -> ViewJudgmentType:
+    priority: dict[ViewJudgmentType, int] = {
+        "direct": 5,
+        "implied": 4,
+        "factual_only": 3,
+        "quoted": 2,
+        "mention_only": 1,
+        "unknown": 0,
+    }
+    return left if priority[left] >= priority[right] else right
+
+
+def _combine_convictions(left: ViewConviction, right: ViewConviction) -> ViewConviction:
+    priority: dict[ViewConviction, int] = {
+        "strong": 4,
+        "medium": 3,
+        "weak": 2,
+        "none": 1,
+        "unknown": 0,
+    }
+    return left if priority[left] >= priority[right] else right
+
+
+def _combine_evidence_types(left: ViewEvidenceType, right: ViewEvidenceType) -> ViewEvidenceType:
+    if left == right:
+        return left
+    if left == "unknown":
+        return right
+    if right == "unknown":
+        return left
+    return "other"
+
+
 def _fallback_note_summary(note: RawNoteRecord) -> str:
     title = note.title.strip()
     desc = note.desc.strip()
@@ -186,6 +293,12 @@ def _coerce_viewpoint_payloads(payload: dict[str, object]) -> list[dict[str, obj
                     "entity_name": item.get("stock_name") or item.get("stock_code_or_name") or "",
                     "entity_code_or_name": item.get("stock_code_or_name") or item.get("stock_name") or "",
                     "stance": item.get("stance") or "unknown",
+                    "direction": _direction_from_stance(
+                        item.get("stance") if item.get("stance") in VALID_STANCES else "unknown"  # type: ignore[arg-type]
+                    ),
+                    "judgment_type": "unknown",
+                    "conviction": "unknown",
+                    "evidence_type": "unknown",
                     "logic": item.get("view_summary") or "",
                     "evidence": item.get("evidence") or "",
                     "time_horizon": "unspecified",
@@ -213,7 +326,31 @@ def _parse_viewpoint(
         return None
 
     stance_raw = str(raw.get("stance") or "unknown").strip()
-    stance = stance_raw if stance_raw in VALID_STANCES else "unknown"
+    legacy_stance = stance_raw if stance_raw in VALID_STANCES else "unknown"
+    direction_raw = str(raw.get("direction") or "").strip()
+    direction = (
+        direction_raw
+        if direction_raw in VALID_DIRECTIONS
+        else _direction_from_stance(legacy_stance)  # type: ignore[arg-type]
+    )
+    judgment_type_raw = str(raw.get("judgment_type") or "").strip()
+    judgment_type = (
+        judgment_type_raw if judgment_type_raw in VALID_JUDGMENT_TYPES else "unknown"
+    )
+    if judgment_type == "unknown" and legacy_stance == "mention_only":
+        judgment_type = "mention_only"
+    conviction_raw = str(raw.get("conviction") or "").strip()
+    conviction = conviction_raw if conviction_raw in VALID_CONVICTIONS else "unknown"
+    if conviction == "unknown" and judgment_type == "mention_only":
+        conviction = "none"
+    evidence_type_raw = str(raw.get("evidence_type") or "").strip()
+    evidence_type = evidence_type_raw if evidence_type_raw in VALID_EVIDENCE_TYPES else "unknown"
+    stance = _derive_compatible_stance(
+        direction=direction,  # type: ignore[arg-type]
+        judgment_type=judgment_type,  # type: ignore[arg-type]
+        conviction=conviction,  # type: ignore[arg-type]
+        legacy_stance=legacy_stance,  # type: ignore[arg-type]
+    )
     horizon_raw = str(raw.get("time_horizon") or "unspecified").strip()
     time_horizon = horizon_raw if horizon_raw in VALID_HORIZONS else "unspecified"
     logic = str(raw.get("logic") or raw.get("view_summary") or "").strip()
@@ -238,6 +375,10 @@ def _parse_viewpoint(
         entity_name=entity_name,
         entity_code_or_name=entity_code_or_name or entity_name,
         stance=stance,  # type: ignore[arg-type]
+        direction=direction,  # type: ignore[arg-type]
+        judgment_type=judgment_type,  # type: ignore[arg-type]
+        conviction=conviction,  # type: ignore[arg-type]
+        evidence_type=evidence_type,  # type: ignore[arg-type]
         logic=logic,
         evidence=evidence,
         time_horizon=time_horizon,  # type: ignore[arg-type]
@@ -385,10 +526,11 @@ def _analyze_missing_notes(
     store: InsightStore,
     notes: list[RawNoteRecord],
     paths: AppPaths,
+    force: bool = False,
 ) -> tuple[dict[str, NoteExtractRecord], list[NoteExtractRecord], list[str]]:
     aliases = load_security_aliases(paths)
     existing = store.get_analysis_map()
-    missing = [note for note in notes if _needs_reanalysis(note, existing)]
+    missing = notes if force else [note for note in notes if _needs_reanalysis(note, existing)]
     created: list[NoteExtractRecord] = []
     errors: list[str] = []
     if not missing:
@@ -462,6 +604,10 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
                     entity_key=viewpoint.entity_key,
                     entity_name=viewpoint.entity_name,
                     stance=viewpoint.stance,
+                    direction=viewpoint.direction,
+                    judgment_type=viewpoint.judgment_type,
+                    conviction=viewpoint.conviction,
+                    evidence_type=viewpoint.evidence_type,
                     logic=viewpoint.logic,
                     evidence=[],
                     note_ids=[],
@@ -471,6 +617,16 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
                 aggregated[key] = current
             else:
                 current.stance = _combine_stances(current.stance, viewpoint.stance)
+                current.direction = _combine_directions(current.direction, viewpoint.direction)
+                current.judgment_type = _combine_judgment_types(
+                    current.judgment_type,
+                    viewpoint.judgment_type,
+                )
+                current.conviction = _combine_convictions(current.conviction, viewpoint.conviction)
+                current.evidence_type = _combine_evidence_types(
+                    current.evidence_type,
+                    viewpoint.evidence_type,
+                )
                 current.logic = _merge_text(current.logic, viewpoint.logic)
 
             if viewpoint.evidence and viewpoint.evidence not in current.evidence:
@@ -670,6 +826,10 @@ def _materialize_stock_timelines(
                         account_name=extract.account_name,
                         author_nickname=extract.author_nickname,
                         stance=viewpoint.stance,
+                        direction=viewpoint.direction,
+                        judgment_type=viewpoint.judgment_type,
+                        conviction=viewpoint.conviction,
+                        evidence_type=viewpoint.evidence_type,
                         logic="",
                         note_ids=[],
                         note_urls=[],
@@ -678,6 +838,16 @@ def _materialize_stock_timelines(
                     ),
                 )
                 view.stance = _combine_stances(view.stance, viewpoint.stance)
+                view.direction = _combine_directions(view.direction, viewpoint.direction)
+                view.judgment_type = _combine_judgment_types(
+                    view.judgment_type,
+                    viewpoint.judgment_type,
+                )
+                view.conviction = _combine_convictions(view.conviction, viewpoint.conviction)
+                view.evidence_type = _combine_evidence_types(
+                    view.evidence_type,
+                    viewpoint.evidence_type,
+                )
                 view.logic = _merge_text(view.logic, viewpoint.logic)
                 if viewpoint.evidence and viewpoint.evidence not in view.evidence:
                     view.evidence.append(viewpoint.evidence)
@@ -742,6 +912,10 @@ def _materialize_theme_timelines(
                         account_name=extract.account_name,
                         author_nickname=extract.author_nickname,
                         stance=viewpoint.stance,
+                        direction=viewpoint.direction,
+                        judgment_type=viewpoint.judgment_type,
+                        conviction=viewpoint.conviction,
+                        evidence_type=viewpoint.evidence_type,
                         logic="",
                         note_ids=[],
                         note_urls=[],
@@ -750,6 +924,16 @@ def _materialize_theme_timelines(
                     ),
                 )
                 view.stance = _combine_stances(view.stance, viewpoint.stance)
+                view.direction = _combine_directions(view.direction, viewpoint.direction)
+                view.judgment_type = _combine_judgment_types(
+                    view.judgment_type,
+                    viewpoint.judgment_type,
+                )
+                view.conviction = _combine_convictions(view.conviction, viewpoint.conviction)
+                view.evidence_type = _combine_evidence_types(
+                    view.evidence_type,
+                    viewpoint.evidence_type,
+                )
                 view.logic = _merge_text(view.logic, viewpoint.logic)
                 if viewpoint.evidence and viewpoint.evidence not in view.evidence:
                     view.evidence.append(viewpoint.evidence)
@@ -834,11 +1018,27 @@ def normalize_existing_analysis(paths: AppPaths) -> tuple[AnalysisRunSummary, in
     return summary, normalized_count
 
 
+def reanalyze_existing_content(paths: AppPaths) -> AnalysisRunSummary:
+    with sqlite_connection(paths) as conn:
+        init_db(conn)
+        store = InsightStore(conn)
+        notes = store.list_all_content_items()
+
+    return run_analysis(
+        paths=paths,
+        notes=notes,
+        crawl_results=_build_synthetic_crawl_results(notes),
+        crawl_errors=[],
+        force_reanalysis=True,
+    )
+
+
 def run_analysis(
     paths: AppPaths,
     notes: list[RawNoteRecord],
     crawl_results: list[CrawlAccountResult],
     crawl_errors: list[str],
+    force_reanalysis: bool = False,
 ) -> AnalysisRunSummary:
     run_at = now_iso()
     run_id = run_at.replace(":", "").replace("+08:00", "").replace("-", "")
@@ -851,6 +1051,7 @@ def run_analysis(
             store=store,
             notes=notes,
             paths=paths,
+            force=force_reanalysis,
         )
         _refresh_security_entities(store=store, extracts=extracts, aliases=aliases)
         author_records, author_errors = _materialize_author_timelines(

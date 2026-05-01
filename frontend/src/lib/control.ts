@@ -310,11 +310,10 @@ function formatLatestError(
   accountName: string,
   errorText: string | null,
 ) {
-  const message = humanizeCrawlError(errorText, platform);
-  if (!message) {
+  if (!errorText) {
     return null;
   }
-  return `${platformLabel(platform)} / ${accountName}：${message}`;
+  return `${platformLabel(platform)} / ${accountName}: ${errorText}`;
 }
 
 function readXhsSettings(filePath: string): XiaohongshuSettings {
@@ -458,42 +457,14 @@ function getLastAnalysisRunAt(db: Database.Database | null) {
   return row?.runAt ?? null;
 }
 
-function getLatestErrorText(db: Database.Database | null) {
-  if (!db) {
-    return null;
-  }
-  const row = db
-    .prepare(
-      `
-      SELECT platform, account_name AS accountName, error_text AS errorText
-      FROM crawl_account_runs
-      WHERE id IN (
-        SELECT latest.id
-        FROM (
-          SELECT id
-          FROM crawl_account_runs AS inner_runs
-          WHERE inner_runs.platform = crawl_account_runs.platform
-            AND inner_runs.account_name = crawl_account_runs.account_name
-          ORDER BY inner_runs.run_at DESC, inner_runs.id DESC
-          LIMIT 1
-        ) AS latest
-      )
-        AND NULLIF(COALESCE(error_text, ''), '') IS NOT NULL
-      ORDER BY run_at DESC, id DESC
-      LIMIT 1
-      `,
-    )
-    .get() as
-    | {
-        platform: string;
-        accountName: string;
-        errorText: string;
-      }
-    | undefined;
-  if (!row) {
-    return null;
-  }
-  return formatLatestError(row.platform, row.accountName, row.errorText);
+function getLatestErrorText(
+  platforms: Array<{
+    platform: PlatformKey;
+    enabled: boolean;
+    statuses: ControlAccountStatus[];
+  }>,
+) {
+  return getLatestVisibleError(platforms);
 }
 
 function getLatestCrawlRun(
@@ -547,6 +518,7 @@ function buildAccountStatuses(
     const rawLastError = lastRun ? (lastRun.errorText ?? null) : fallbackLastError;
     const newNoteCount = lastRun?.newNoteCount ?? null;
     const hasBlockingError = Boolean(rawLastError) && (newNoteCount ?? 0) === 0;
+    const lastError = hasBlockingError ? humanizeCrawlError(rawLastError, platform) : null;
 
     return {
       name: account.name,
@@ -555,12 +527,40 @@ function buildAccountStatuses(
         : lastRun?.status ??
           (fallbackLastRunAt ? (fallbackLastError ? "failed" : "success") : "idle"),
       lastRunAt: lastRun?.runAt ?? fallbackLastRunAt,
-      lastError: humanizeCrawlError(rawLastError, platform),
+      lastError,
       seenCount: countSeenNotes(bucket),
       candidateCount: lastRun?.candidateCount ?? null,
       newNoteCount,
     };
   });
+}
+
+function getLatestVisibleError(
+  platforms: Array<{
+    platform: PlatformKey;
+    enabled: boolean;
+    statuses: ControlAccountStatus[];
+  }>,
+) {
+  const latest = platforms
+    .flatMap(({ platform, enabled, statuses }) =>
+      enabled
+        ? statuses
+            .filter((item) => item.lastStatus === "failed" && item.lastError)
+            .map((item) => ({
+              platform,
+              accountName: item.name,
+              lastRunAt: item.lastRunAt ?? "",
+              message: item.lastError as string,
+            }))
+        : [],
+    )
+    .sort((left, right) => right.lastRunAt.localeCompare(left.lastRunAt))[0];
+
+  if (!latest) {
+    return null;
+  }
+  return formatLatestError(latest.platform, latest.accountName, latest.message);
 }
 
 function truncateOutput(value: string) {
@@ -709,13 +709,31 @@ export function getControlPanelData(): ControlPanelData {
   const scheduleTimes = readRuntimeScheduleTimes(paths.runtimeSettingsPath);
   const xhsState = readMonitorState(paths.xhsStatePath);
   const xState = readMonitorState(paths.xStatePath);
+  const xhsAccountStatuses = buildAccountStatuses(
+    db,
+    "xiaohongshu",
+    xhsConfig.accounts,
+    xhsState,
+  );
+  const xAccountStatuses = buildAccountStatuses(db, "x", xConfig.accounts, xState);
 
   return {
     runtime: {
       xiaohongshuScheduleTimes: scheduleTimes.xiaohongshuScheduleTimes,
       xScheduleTimes: scheduleTimes.xScheduleTimes,
       lastRunAt: getLastAnalysisRunAt(db),
-      latestError: getLatestErrorText(db),
+      latestError: getLatestErrorText([
+        {
+          platform: "xiaohongshu",
+          enabled: xhsConfig.enabled,
+          statuses: xhsAccountStatuses,
+        },
+        {
+          platform: "x",
+          enabled: xConfig.enabled,
+          statuses: xAccountStatuses,
+        },
+      ]),
       dbPresent: existsSync(paths.insightDbPath),
       dbPath: toRelativeProjectPath(paths.rootDir, paths.insightDbPath),
       manualRun: getManualRunState(),
@@ -729,13 +747,13 @@ export function getControlPanelData(): ControlPanelData {
       status: {
         loginStatus: hasPersistentLogin(paths.xhsUserDataDir) ? "ready" : "missing",
         loginPath: toRelativeProjectPath(paths.rootDir, paths.xhsUserDataDir),
-        accounts: buildAccountStatuses(db, "xiaohongshu", xhsConfig.accounts, xhsState),
+        accounts: xhsAccountStatuses,
       },
     },
     x: {
       config: xConfig,
       status: {
-        accounts: buildAccountStatuses(db, "x", xConfig.accounts, xState),
+        accounts: xAccountStatuses,
       },
     },
   };

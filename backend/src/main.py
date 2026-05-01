@@ -15,6 +15,7 @@ from src.jobs import (  # noqa: E402
     run_normalize_securities_job,
     run_once_job,
     run_once_x_job,
+    run_reanalyze_existing_job,
 )
 from src.scheduler import start_scheduler  # noqa: E402
 
@@ -59,6 +60,10 @@ def parse_args() -> argparse.Namespace:
         "normalize-securities",
         help="Normalize stored stock identities and rebuild materialized timelines.",
     )
+    subparsers.add_parser(
+        "reanalyze-existing",
+        help="Regenerate AI viewpoint extraction for all stored content.",
+    )
     return parser.parse_args()
 
 
@@ -76,6 +81,8 @@ def main() -> int:
         return run_migration_job()
     if args.command == "normalize-securities":
         return run_normalize_securities_job()
+    if args.command == "reanalyze-existing":
+        return run_reanalyze_existing_job()
     raise ValueError(f"Unknown command: {args.command}")
 
 

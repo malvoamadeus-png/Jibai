@@ -162,6 +162,10 @@ def init_db(conn: sqlite3.Connection) -> None:
           raw_name TEXT NOT NULL,
           stock_name TEXT,
           stance TEXT NOT NULL,
+          direction TEXT NOT NULL DEFAULT 'unknown',
+          judgment_type TEXT NOT NULL DEFAULT 'unknown',
+          conviction TEXT NOT NULL DEFAULT 'unknown',
+          evidence_type TEXT NOT NULL DEFAULT 'unknown',
           view_summary TEXT NOT NULL DEFAULT '',
           evidence TEXT NOT NULL DEFAULT '',
           sort_order INTEGER NOT NULL DEFAULT 0,
@@ -178,6 +182,10 @@ def init_db(conn: sqlite3.Connection) -> None:
           entity_name TEXT NOT NULL,
           entity_code_or_name TEXT,
           stance TEXT NOT NULL,
+          direction TEXT NOT NULL DEFAULT 'unknown',
+          judgment_type TEXT NOT NULL DEFAULT 'unknown',
+          conviction TEXT NOT NULL DEFAULT 'unknown',
+          evidence_type TEXT NOT NULL DEFAULT 'unknown',
           logic TEXT NOT NULL DEFAULT '',
           evidence TEXT NOT NULL DEFAULT '',
           time_horizon TEXT NOT NULL DEFAULT 'unspecified',
@@ -255,6 +263,11 @@ def init_db(conn: sqlite3.Connection) -> None:
         "mentioned_themes_json",
         "mentioned_themes_json TEXT NOT NULL DEFAULT '[]'",
     )
+    for table in ("content_viewpoints", "security_mentions"):
+        _ensure_column(conn, table, "direction", "direction TEXT NOT NULL DEFAULT 'unknown'")
+        _ensure_column(conn, table, "judgment_type", "judgment_type TEXT NOT NULL DEFAULT 'unknown'")
+        _ensure_column(conn, table, "conviction", "conviction TEXT NOT NULL DEFAULT 'unknown'")
+        _ensure_column(conn, table, "evidence_type", "evidence_type TEXT NOT NULL DEFAULT 'unknown'")
 
 
 @dataclass(slots=True)
@@ -449,6 +462,10 @@ class InsightStore:
                   entity_name,
                   entity_code_or_name,
                   stance,
+                  direction,
+                  judgment_type,
+                  conviction,
+                  evidence_type,
                   logic,
                   evidence,
                   time_horizon,
@@ -620,12 +637,18 @@ class InsightStore:
                 self.conn.execute(
                     """
                     INSERT INTO security_mentions (
-                      content_id, security_id, raw_name, stock_name, stance, view_summary, evidence, sort_order, updated_at
+                      content_id, security_id, raw_name, stock_name, stance,
+                      direction, judgment_type, conviction, evidence_type,
+                      view_summary, evidence, sort_order, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(content_id, security_id, raw_name, sort_order) DO UPDATE SET
                       stock_name = excluded.stock_name,
                       stance = excluded.stance,
+                      direction = excluded.direction,
+                      judgment_type = excluded.judgment_type,
+                      conviction = excluded.conviction,
+                      evidence_type = excluded.evidence_type,
                       view_summary = excluded.view_summary,
                       evidence = excluded.evidence,
                       updated_at = CURRENT_TIMESTAMP
@@ -636,6 +659,10 @@ class InsightStore:
                         raw_name,
                         viewpoint.entity_name,
                         viewpoint.stance,
+                        viewpoint.direction,
+                        viewpoint.judgment_type,
+                        viewpoint.conviction,
+                        viewpoint.evidence_type,
                         viewpoint.logic,
                         viewpoint.evidence,
                         index,
@@ -648,13 +675,18 @@ class InsightStore:
                 """
                 INSERT INTO content_viewpoints (
                   content_id, entity_type, entity_key, entity_name, entity_code_or_name,
-                  stance, logic, evidence, time_horizon, sort_order, security_id, theme_id, updated_at
+                  stance, direction, judgment_type, conviction, evidence_type,
+                  logic, evidence, time_horizon, sort_order, security_id, theme_id, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(content_id, entity_type, entity_key, sort_order) DO UPDATE SET
                   entity_name = excluded.entity_name,
                   entity_code_or_name = excluded.entity_code_or_name,
                   stance = excluded.stance,
+                  direction = excluded.direction,
+                  judgment_type = excluded.judgment_type,
+                  conviction = excluded.conviction,
+                  evidence_type = excluded.evidence_type,
                   logic = excluded.logic,
                   evidence = excluded.evidence,
                   time_horizon = excluded.time_horizon,
@@ -669,6 +701,10 @@ class InsightStore:
                     viewpoint.entity_name,
                     raw_name,
                     viewpoint.stance,
+                    viewpoint.direction,
+                    viewpoint.judgment_type,
+                    viewpoint.conviction,
+                    viewpoint.evidence_type,
                     viewpoint.logic,
                     viewpoint.evidence,
                     viewpoint.time_horizon,

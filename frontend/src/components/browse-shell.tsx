@@ -128,8 +128,8 @@ function mapRowsToItems(
     return (rows as AuthorListItem[]).map(
       (row): BrowseItem => ({
         key: row.accountKey,
-        title: row.authorNickname || row.accountName,
-        subtitle: row.accountName,
+        title: row.accountName || row.authorNickname,
+        subtitle: row.authorNickname && row.authorNickname !== row.accountName ? row.authorNickname : "",
         eyebrow: platformLabel(row.platform),
         status: row.latestStatus,
         updatedAt: row.updatedAt,

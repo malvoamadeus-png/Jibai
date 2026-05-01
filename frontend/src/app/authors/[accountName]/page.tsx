@@ -39,7 +39,7 @@ export default async function AuthorDetailPage({
             <Badge variant="warm" className="normal-case tracking-[0.04em]">{platformLabel(data.platform)}</Badge>
             {data.authorId ? <Badge variant="neutral">{data.authorId}</Badge> : null}
           </div>
-          <CardTitle className="text-3xl">{data.authorNickname || data.accountName}</CardTitle>
+          <CardTitle className="text-3xl">{data.accountName || data.authorNickname}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {data.profileUrl ? (

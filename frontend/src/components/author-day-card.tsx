@@ -1,17 +1,10 @@
 import Link from "next/link";
 
-import type { AuthorTimelineDay, ViewStance } from "@/lib/types";
+import type { AuthorTimelineDay } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
-import { entityTypeLabel, stanceLabel } from "@/lib/utils";
-
-function stanceVariant(stance: ViewStance) {
-  if (stance === "strong_bullish" || stance === "bullish") return "positive";
-  if (stance === "strong_bearish" || stance === "bearish") return "danger";
-  if (stance === "mixed") return "warm";
-  return "neutral";
-}
+import { entityTypeLabel, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 
 export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
   if (day.viewpoints.length === 0) {
@@ -92,7 +85,7 @@ export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
 
               <div className="flex flex-wrap items-start gap-2">
                 <Badge variant="neutral">{entityTypeLabel(viewpoint.entityType)}</Badge>
-                <Badge variant={stanceVariant(viewpoint.stance)}>{stanceLabel(viewpoint.stance)}</Badge>
+                <Badge variant={viewSignalVariant(viewpoint)}>{viewSignalLabel(viewpoint)}</Badge>
               </div>
 
               <div className="space-y-2">

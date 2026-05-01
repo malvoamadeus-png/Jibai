@@ -242,9 +242,6 @@ function AccountStatusList({
     <div className="space-y-4">
       <div>
         <p className="text-sm font-medium text-[color:var(--ink)]">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-[color:var(--muted-ink)]">
-          页面只展示高层状态，不再显示底层代码错误。
-        </p>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -716,7 +713,6 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
         <Card>
           <CardHeader>
             <CardTitle>手动运行状态</CardTitle>
-            <CardDescription>这里只显示高层结果，不直接展示 stdout、stderr 或代码错误堆栈。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">

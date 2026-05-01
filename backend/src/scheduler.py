@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import signal
 import sys
 from collections.abc import Callable
+from threading import Event
 from threading import Lock
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.base import SchedulerNotRunningError
 from apscheduler.triggers.cron import CronTrigger
 
 from packages.common.paths import get_paths
@@ -19,9 +22,25 @@ def start_scheduler(config_path: str | None) -> int:
     paths = get_paths()
     settings = load_runtime_settings(paths.runtime_settings_path)
     job_lock = Lock()
+    stopping = Event()
+
+    def _shutdown(signum: int | None = None, _frame: object | None = None) -> None:
+        if stopping.is_set():
+            return
+        stopping.set()
+        signal_name = signal.Signals(signum).name if signum is not None else "KeyboardInterrupt"
+        print(f"[scheduler] stopping ({signal_name})...", file=sys.stderr)
+        try:
+            scheduler.shutdown(wait=False)
+        except SchedulerNotRunningError:
+            pass
 
     def _run_xhs_job() -> None:
+        if stopping.is_set():
+            return
         with job_lock:
+            if stopping.is_set():
+                return
             exit_code = run_once_job(config_path)
         print(
             f"[scheduler] xiaohongshu run finished with exit code {exit_code}",
@@ -29,7 +48,11 @@ def start_scheduler(config_path: str | None) -> int:
         )
 
     def _run_x_job() -> None:
+        if stopping.is_set():
+            return
         with job_lock:
+            if stopping.is_set():
+                return
             exit_code = run_once_x_job(None)
         print(
             f"[scheduler] x run finished with exit code {exit_code}",
@@ -72,5 +95,14 @@ def start_scheduler(config_path: str | None) -> int:
         + " Asia/Shanghai.",
         file=sys.stderr,
     )
-    scheduler.start()
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(signum, _shutdown)
+        except (AttributeError, ValueError):
+            pass
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        _shutdown()
+    print("[scheduler] stopped.", file=sys.stderr)
     return 0

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from packages.ai import normalize_existing_analysis, run_analysis
+from packages.ai import normalize_existing_analysis, reanalyze_existing_content, run_analysis
 from packages.common import InsightStore, init_db, migrate_legacy_json_to_sqlite, sqlite_connection
 from packages.common.paths import ensure_runtime_dirs, get_paths
 from packages.x import load_watchlist as load_x_watchlist
@@ -134,6 +134,25 @@ def run_normalize_securities_job() -> int:
         "normalize-securities:",
         f"normalized_extracts={normalized_extracts}",
         f"run_id={summary.snapshot.run_id}",
+        f"author_days={len(summary.snapshot.author_summaries)}",
+        f"stock_days={len(summary.snapshot.stock_views)}",
+        f"theme_days={len(summary.snapshot.theme_views)}",
+        f"errors={len(summary.snapshot.errors)}",
+    )
+    return 1 if summary.exit_code else 0
+
+
+def run_reanalyze_existing_job() -> int:
+    paths = get_paths()
+    ensure_runtime_dirs(paths)
+    if not paths.insight_db_path.exists():
+        migrate_legacy_json_to_sqlite(paths)
+    summary = reanalyze_existing_content(paths)
+    print(
+        "reanalyze-existing:",
+        f"run_id={summary.snapshot.run_id}",
+        f"processed_notes={len(summary.snapshot.processed_note_ids)}",
+        f"reanalyzed_notes={len(summary.snapshot.note_extracts)}",
         f"author_days={len(summary.snapshot.author_summaries)}",
         f"stock_days={len(summary.snapshot.stock_views)}",
         f"theme_days={len(summary.snapshot.theme_views)}",

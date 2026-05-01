@@ -16,6 +16,30 @@ export type ViewStance =
   | "mention_only"
   | "unknown";
 
+export type ViewDirection = "positive" | "negative" | "neutral" | "mixed" | "unknown";
+export type ViewJudgmentType =
+  | "direct"
+  | "implied"
+  | "factual_only"
+  | "quoted"
+  | "mention_only"
+  | "unknown";
+export type ViewConviction = "strong" | "medium" | "weak" | "none" | "unknown";
+export type ViewEvidenceType =
+  | "price_action"
+  | "earnings"
+  | "guidance"
+  | "management_commentary"
+  | "valuation"
+  | "policy"
+  | "rumor"
+  | "position"
+  | "capital_flow"
+  | "technical"
+  | "macro"
+  | "other"
+  | "unknown";
+
 export type ViewEntityType = "stock" | "theme" | "macro" | "other";
 
 export type OverviewData = {
@@ -54,6 +78,10 @@ export type AuthorDayViewpoint = {
   entityKey: string;
   entityName: string;
   stance: ViewStance;
+  direction: ViewDirection;
+  judgmentType: ViewJudgmentType;
+  conviction: ViewConviction;
+  evidenceType: ViewEvidenceType;
   logic: string;
   evidence: string[];
   noteIds: string[];
@@ -100,6 +128,10 @@ export type EntityAuthorView = {
   account_name: string;
   author_nickname: string;
   stance: ViewStance;
+  direction: ViewDirection;
+  judgment_type: ViewJudgmentType;
+  conviction: ViewConviction;
+  evidence_type: ViewEvidenceType;
   logic: string;
   note_ids: string[];
   note_urls: string[];

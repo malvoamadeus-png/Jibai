@@ -1,16 +1,9 @@
 import Link from "next/link";
 
-import type { EntityAuthorView, ViewStance } from "@/lib/types";
+import type { EntityAuthorView } from "@/lib/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { makeAccountKey, platformLabel, stanceLabel } from "@/lib/utils";
-
-function stanceVariant(stance: ViewStance) {
-  if (stance === "strong_bullish" || stance === "bullish") return "positive";
-  if (stance === "strong_bearish" || stance === "bearish") return "danger";
-  if (stance === "mixed") return "warm";
-  return "neutral";
-}
+import { makeAccountKey, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 
 export function EntityDayCard({
   day,
@@ -37,7 +30,7 @@ export function EntityDayCard({
         <div className="overflow-hidden rounded-[24px] border border-[color:var(--border)]">
           <div className="hidden grid-cols-[180px_128px_minmax(0,1fr)_112px] gap-4 bg-[color:var(--paper-strong)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--soft-ink)] md:grid">
             <span>作者</span>
-            <span>平台 / 态度</span>
+            <span>态度</span>
             <span>逻辑</span>
             <span>来源</span>
           </div>
@@ -51,14 +44,12 @@ export function EntityDayCard({
                   href={`/authors/${encodeURIComponent(makeAccountKey(view.platform, view.account_name))}`}
                   className="text-base font-semibold underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
                 >
-                  {view.author_nickname || view.account_name}
+                  {view.account_name || view.author_nickname}
                 </Link>
-                <p className="text-xs font-medium text-[color:var(--soft-ink)]">{platformLabel(view.platform)}</p>
               </div>
 
               <div className="flex flex-wrap items-start gap-2">
-                <Badge variant="neutral" className="normal-case tracking-[0.04em]">{platformLabel(view.platform)}</Badge>
-                <Badge variant={stanceVariant(view.stance)}>{stanceLabel(view.stance)}</Badge>
+                <Badge variant={viewSignalVariant(view)}>{viewSignalLabel(view)}</Badge>
               </div>
 
               <div className="space-y-2">

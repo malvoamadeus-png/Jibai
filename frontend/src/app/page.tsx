@@ -80,7 +80,7 @@ export default function HomePage() {
                 className="flex items-center justify-between rounded-[22px] border border-[color:var(--border)] bg-[color:var(--panel)] px-4 py-4 transition hover:border-[color:var(--accent)] hover:bg-[color:var(--paper)]"
               >
                 <div>
-                  <p className="text-lg font-medium">{author.authorNickname || author.accountName}</p>
+                  <p className="text-lg font-medium">{author.accountName || author.authorNickname}</p>
                   <p className="mt-1 text-sm text-[color:var(--muted-ink)]">
                     {author.platform} · {author.latestDate || "暂无日期"}
                   </p>

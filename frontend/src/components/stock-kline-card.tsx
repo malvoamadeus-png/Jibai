@@ -5,13 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn, formatCount, platformLabel, stanceLabel } from "@/lib/utils";
+import { cn, formatCount, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 import type {
   EntityAuthorView,
   StockKlineCandle,
   StockKlineData,
   StockKlineMarker,
-  ViewStance,
 } from "@/lib/types";
 
 const SVG_WIDTH = 1120;
@@ -170,26 +169,19 @@ function fetchEastMoneyCandlesInBrowser(identity: StockIdentity, days: number) {
   });
 }
 
-function markerFill(stance: ViewStance) {
-  if (stance === "strong_bullish" || stance === "bullish") return "#2f7d56";
-  if (stance === "strong_bearish" || stance === "bearish") return "#b34747";
-  if (stance === "mixed") return "#b56a3b";
+function markerFill(view: EntityAuthorView) {
+  if (viewSignalVariant(view) === "positive") return "#2f7d56";
+  if (viewSignalVariant(view) === "danger") return "#b34747";
+  if (viewSignalVariant(view) === "warm") return "#b56a3b";
   return "#8c7b6a";
 }
 
-function markerBadgeVariant(stance: ViewStance) {
-  if (stance === "strong_bullish" || stance === "bullish") return "positive" as const;
-  if (stance === "strong_bearish" || stance === "bearish") return "danger" as const;
-  if (stance === "mixed") return "warm" as const;
-  return "neutral" as const;
+function isBullish(view: EntityAuthorView) {
+  return viewSignalVariant(view) === "positive";
 }
 
-function isBullish(stance: ViewStance) {
-  return stance === "strong_bullish" || stance === "bullish";
-}
-
-function isBearish(stance: ViewStance) {
-  return stance === "strong_bearish" || stance === "bearish";
+function isBearish(view: EntityAuthorView) {
+  return viewSignalVariant(view) === "danger";
 }
 
 function markerOffset(index: number) {
@@ -201,8 +193,8 @@ function markerOffset(index: number) {
 function summarizeViews(authorViews: EntityAuthorView[]) {
   return authorViews.reduce(
     (accumulator, view) => {
-      if (isBullish(view.stance)) accumulator.bullish += 1;
-      else if (isBearish(view.stance)) accumulator.bearish += 1;
+      if (isBullish(view)) accumulator.bullish += 1;
+      else if (isBearish(view)) accumulator.bearish += 1;
       else accumulator.other += 1;
       return accumulator;
     },
@@ -222,12 +214,12 @@ function renderMarkerNodes(
   let flagCount = 0;
 
   return marker.authorViews.map((view, index) => {
-    const bullish = isBullish(view.stance);
-    const bearish = isBearish(view.stance);
+    const bullish = isBullish(view);
+    const bearish = isBearish(view);
     const stackIndex = bullish ? bullishCount++ : bearish ? bearishCount++ : flagCount++;
     const offsetX = markerOffset(stackIndex);
     const cx = x + offsetX;
-    const fill = markerFill(view.stance);
+    const fill = markerFill(view);
     const stroke = "rgba(255,250,242,0.96)";
 
     if (bullish) {
@@ -242,7 +234,7 @@ function renderMarkerNodes(
             strokeWidth="1.4"
             strokeLinejoin="round"
           />
-          <title>{`${marker.date} / ${view.author_nickname || view.account_name} / ${stanceLabel(view.stance)}`}</title>
+          <title>{`${marker.date} / ${view.account_name || view.author_nickname} / ${viewSignalLabel(view)}`}</title>
         </g>
       );
     }
@@ -259,7 +251,7 @@ function renderMarkerNodes(
             strokeWidth="1.4"
             strokeLinejoin="round"
           />
-          <title>{`${marker.date} / ${view.author_nickname || view.account_name} / ${stanceLabel(view.stance)}`}</title>
+          <title>{`${marker.date} / ${view.account_name || view.author_nickname} / ${viewSignalLabel(view)}`}</title>
         </g>
       );
     }
@@ -278,7 +270,7 @@ function renderMarkerNodes(
           strokeWidth="1.3"
           strokeLinejoin="round"
         />
-        <title>{`${marker.date} / ${view.author_nickname || view.account_name} / ${stanceLabel(view.stance)}`}</title>
+        <title>{`${marker.date} / ${view.account_name || view.author_nickname} / ${viewSignalLabel(view)}`}</title>
       </g>
     );
   });
@@ -368,12 +360,9 @@ function ActiveDayPanel({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold text-[color:var(--ink)]">
-                    {view.author_nickname || view.account_name}
+                    {view.account_name || view.author_nickname}
                   </p>
-                  <Badge variant="neutral" className="normal-case tracking-[0.04em]">
-                    {platformLabel(view.platform)}
-                  </Badge>
-                  <Badge variant={markerBadgeVariant(view.stance)}>{stanceLabel(view.stance)}</Badge>
+                  <Badge variant={viewSignalVariant(view)}>{viewSignalLabel(view)}</Badge>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">
                   {view.logic || "当天有观点提及，但没有写出更细的逻辑说明。"}
@@ -549,19 +538,37 @@ export function StockKlineCard({
     });
   }
 
-  function selectDateFromClientX(clientX: number) {
+  function updateViewport(nextStart: number, nextVisibleCount: number) {
+    const clampedVisibleCount = clamp(nextVisibleCount, minVisibleCount, totalCandles);
+    setViewportOverride({
+      key: chartKey,
+      state: {
+        start: clamp(nextStart, 0, Math.max(0, totalCandles - clampedVisibleCount)),
+        visibleCount: clampedVisibleCount,
+      },
+    });
+  }
+
+  function resolveCandleIndexFromClientX(clientX: number) {
     const svg = svgRef.current;
     if (!svg || visibleCandles.length === 0) {
-      return;
+      return null;
     }
     const rect = svg.getBoundingClientRect();
     if (rect.width <= 0) {
-      return;
+      return null;
     }
     const viewboxX = ((clientX - rect.left) / rect.width) * SVG_WIDTH;
     const plotX = clamp(viewboxX - PAD_LEFT, 0, plotWidth);
     const rawIndex = Math.round((plotX - step / 2) / Math.max(step, 0.0001));
-    const candleIndex = clamp(rawIndex, 0, visibleCandles.length - 1);
+    return clamp(rawIndex, 0, visibleCandles.length - 1);
+  }
+
+  function selectDateFromClientX(clientX: number) {
+    const candleIndex = resolveCandleIndexFromClientX(clientX);
+    if (candleIndex === null) {
+      return;
+    }
     const date = visibleCandles[candleIndex]?.date;
     if (date) {
       setActiveDate(date);
@@ -570,13 +577,15 @@ export function StockKlineCard({
 
   function setVisibleWindow(nextVisibleCount: number) {
     const clampedVisibleCount = clamp(nextVisibleCount, minVisibleCount, totalCandles);
-    setViewportOverride({
-      key: chartKey,
-      state: {
-        start: Math.max(0, totalCandles - clampedVisibleCount),
-        visibleCount: clampedVisibleCount,
-      },
-    });
+    updateViewport(Math.max(0, totalCandles - clampedVisibleCount), clampedVisibleCount);
+  }
+
+  function zoomVisibleWindow(nextVisibleCount: number, anchorIndex: number) {
+    const clampedVisibleCount = clamp(nextVisibleCount, minVisibleCount, totalCandles);
+    const anchorRatio =
+      visibleCount <= 1 ? 1 : clamp((anchorIndex - windowStart) / (visibleCount - 1), 0, 1);
+    const nextStart = Math.round(anchorIndex - anchorRatio * Math.max(clampedVisibleCount - 1, 0));
+    updateViewport(nextStart, clampedVisibleCount);
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -617,6 +626,26 @@ export function StockKlineCard({
     setIsDragging(false);
   }
 
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (event.deltaY === 0 || totalCandles === 0) {
+      return;
+    }
+
+    let nextVisibleCount = Math.round(visibleCount * (event.deltaY > 0 ? 1.12 : 0.88));
+    if (nextVisibleCount === visibleCount) {
+      nextVisibleCount += event.deltaY > 0 ? 1 : -1;
+    }
+    nextVisibleCount = clamp(nextVisibleCount, minVisibleCount, totalCandles);
+    if (nextVisibleCount === visibleCount) {
+      return;
+    }
+
+    event.preventDefault();
+    selectDateFromClientX(event.clientX);
+    const anchorOffset = resolveCandleIndexFromClientX(event.clientX) ?? (visibleCandles.length - 1);
+    zoomVisibleWindow(nextVisibleCount, windowStart + anchorOffset);
+  }
+
   const rangePresets = [
     { label: "1M", value: 22 },
     { label: "3M", value: 66 },
@@ -636,9 +665,6 @@ export function StockKlineCard({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
             <CardTitle className="text-2xl">日线与观点标记</CardTitle>
-            <CardDescription>
-              每根蜡烛是一个交易日。绿色点偏多，红色点偏空，灰色点表示中性或仅提及。
-            </CardDescription>
           </div>
           {latest ? (
             <div className="rounded-[22px] border border-[color:var(--border)] bg-[color:rgba(255,250,242,0.72)] px-4 py-3">
@@ -719,6 +745,7 @@ export function StockKlineCard({
                 onPointerMove={handlePointerMove}
                 onPointerUp={stopDragging}
                 onPointerCancel={stopDragging}
+                onWheel={handleWheel}
                 onPointerLeave={(event) => {
                   if (dragStateRef.current?.pointerId === event.pointerId) {
                     stopDragging(event);

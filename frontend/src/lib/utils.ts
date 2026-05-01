@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-import type { ViewEntityType, ViewStance } from "@/lib/types";
+import type { ViewDirection, ViewEntityType, ViewJudgmentType, ViewStance } from "@/lib/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -59,6 +59,64 @@ export function stanceLabel(stance: ViewStance) {
     unknown: "不明确",
   };
   return mapping[stance];
+}
+
+function directionFromStance(stance: ViewStance): ViewDirection {
+  if (stance === "strong_bullish" || stance === "bullish") return "positive";
+  if (stance === "strong_bearish" || stance === "bearish") return "negative";
+  if (stance === "neutral") return "neutral";
+  if (stance === "mixed") return "mixed";
+  return "unknown";
+}
+
+export function directionLabel(direction: ViewDirection) {
+  const mapping: Record<ViewDirection, string> = {
+    positive: "正向",
+    negative: "负向",
+    neutral: "中性",
+    mixed: "多空混合",
+    unknown: "方向不明",
+  };
+  return mapping[direction];
+}
+
+export function judgmentTypeLabel(judgmentType: ViewJudgmentType) {
+  const mapping: Record<ViewJudgmentType, string> = {
+    direct: "明确判断",
+    implied: "隐含判断",
+    factual_only: "事实陈述",
+    quoted: "转述观点",
+    mention_only: "仅提及",
+    unknown: "判断不明",
+  };
+  return mapping[judgmentType];
+}
+
+type ViewSignal = {
+  stance: ViewStance;
+  direction?: ViewDirection;
+  judgmentType?: ViewJudgmentType;
+  judgment_type?: ViewJudgmentType;
+};
+
+export function viewSignalLabel(view: ViewSignal) {
+  const judgmentType = view.judgmentType ?? view.judgment_type ?? "unknown";
+  if (judgmentType === "mention_only") {
+    return "仅提及";
+  }
+  const direction = view.direction ?? directionFromStance(view.stance);
+  if (direction === "unknown" && judgmentType === "unknown") {
+    return stanceLabel(view.stance);
+  }
+  return `${directionLabel(direction)} · ${judgmentTypeLabel(judgmentType)}`;
+}
+
+export function viewSignalVariant(view: ViewSignal) {
+  const direction = view.direction ?? directionFromStance(view.stance);
+  if (direction === "positive") return "positive" as const;
+  if (direction === "negative") return "danger" as const;
+  if (direction === "mixed") return "warm" as const;
+  return "neutral" as const;
 }
 
 export function entityTypeLabel(entityType: ViewEntityType) {

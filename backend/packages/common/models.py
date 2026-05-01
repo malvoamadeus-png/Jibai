@@ -17,6 +17,31 @@ ViewStance = Literal[
     "mention_only",
     "unknown",
 ]
+ViewDirection = Literal["positive", "negative", "neutral", "mixed", "unknown"]
+ViewJudgmentType = Literal[
+    "direct",
+    "implied",
+    "factual_only",
+    "quoted",
+    "mention_only",
+    "unknown",
+]
+ViewConviction = Literal["strong", "medium", "weak", "none", "unknown"]
+ViewEvidenceType = Literal[
+    "price_action",
+    "earnings",
+    "guidance",
+    "management_commentary",
+    "valuation",
+    "policy",
+    "rumor",
+    "position",
+    "capital_flow",
+    "technical",
+    "macro",
+    "other",
+    "unknown",
+]
 ViewHorizon = Literal["short_term", "medium_term", "long_term", "unspecified"]
 
 
@@ -59,6 +84,10 @@ class ViewpointRecord(BaseModel):
     entity_name: str
     entity_code_or_name: str | None = None
     stance: ViewStance = "unknown"
+    direction: ViewDirection = "unknown"
+    judgment_type: ViewJudgmentType = "unknown"
+    conviction: ViewConviction = "unknown"
+    evidence_type: ViewEvidenceType = "unknown"
     logic: str = ""
     evidence: str = ""
     time_horizon: ViewHorizon = "unspecified"
@@ -100,6 +129,10 @@ class AuthorDayViewpoint(BaseModel):
     entity_key: str
     entity_name: str
     stance: ViewStance = "unknown"
+    direction: ViewDirection = "unknown"
+    judgment_type: ViewJudgmentType = "unknown"
+    conviction: ViewConviction = "unknown"
+    evidence_type: ViewEvidenceType = "unknown"
     logic: str = ""
     evidence: list[str] = Field(default_factory=list)
     note_ids: list[str] = Field(default_factory=list)
@@ -139,6 +172,10 @@ class EntityAuthorView(BaseModel):
     account_name: str
     author_nickname: str = ""
     stance: ViewStance = "unknown"
+    direction: ViewDirection = "unknown"
+    judgment_type: ViewJudgmentType = "unknown"
+    conviction: ViewConviction = "unknown"
+    evidence_type: ViewEvidenceType = "unknown"
     logic: str = ""
     note_ids: list[str] = Field(default_factory=list)
     note_urls: list[str] = Field(default_factory=list)
