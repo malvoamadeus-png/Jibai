@@ -21,7 +21,6 @@ const aiSettingsSchema = z
     reasoningEffort: z.string().trim().min(1).nullable(),
     baseUrl: z.string().trim().url("Base URL 必须是完整链接").nullable(),
     hasApiKey: z.boolean(),
-    apiKeyHint: z.string().trim().min(1).nullable(),
   })
   .superRefine(() => {});
 
@@ -33,7 +32,6 @@ export const aiSaveSchema = z
     reasoningEffort: z.string().trim().nullable(),
     baseUrl: z.string().trim().nullable(),
     apiKey: z.string().default(""),
-    clearApiKey: z.boolean().default(false),
   })
   .superRefine((value, ctx) => {
     const normalizedBaseUrl = normalizeOptionalText(value.baseUrl);
@@ -114,15 +112,6 @@ function pickFirst(...values: Array<unknown>) {
     }
   }
   return null;
-}
-
-function maskApiKey(value: string | null) {
-  if (!value) {
-    return null;
-  }
-  const prefix = value.startsWith("sk-") ? "sk-" : value.slice(0, Math.min(4, value.length));
-  const suffix = value.slice(-4);
-  return `${prefix}...${suffix}`;
 }
 
 function resolveProvider(localConfig: Record<string, unknown>): AiProvider {
@@ -221,7 +210,6 @@ export function readAiSettings(filePath: string): AiSettings {
         ? normalizeOptionalText(resolved.baseUrl)
         : null,
     hasApiKey: Boolean(resolved.apiKey),
-    apiKeyHint: maskApiKey(resolved.apiKey),
   });
 }
 
@@ -231,9 +219,7 @@ export function writeAiSettings(filePath: string, payload: AiSavePayload) {
   const currentSettings = readEffectiveSettings(localConfig);
   const currentKey = currentSettings.apiKey;
   const currentBaseUrl = normalizeOptionalText(currentSettings.baseUrl);
-  const nextKey = parsed.clearApiKey
-    ? null
-    : normalizeOptionalText(parsed.apiKey) ?? currentKey;
+  const nextKey = normalizeOptionalText(parsed.apiKey) ?? currentKey;
   const nextBaseUrl =
     parsed.provider === "openai-compatible"
       ? normalizeOptionalText(parsed.baseUrl) ?? currentBaseUrl

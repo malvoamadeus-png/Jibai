@@ -261,7 +261,6 @@ export type AiSettings = {
   reasoningEffort: string | null;
   baseUrl: string | null;
   hasApiKey: boolean;
-  apiKeyHint: string | null;
 };
 
 export type AiSavePayload = {
@@ -271,7 +270,6 @@ export type AiSavePayload = {
   reasoningEffort: string | null;
   baseUrl: string | null;
   apiKey: string;
-  clearApiKey: boolean;
 };
 
 export type ManualRunTarget = "enabled" | "xiaohongshu" | "x";

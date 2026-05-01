@@ -400,7 +400,6 @@ function parseModelListInput(value: string) {
 export function ControlPanel({ initialData }: { initialData: ControlPanelData }) {
   const [data, setData] = useState(initialData);
   const [apiKeyInput, setApiKeyInput] = useState("");
-  const [clearApiKey, setClearApiKey] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -414,7 +413,6 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
     }
     setData(payload as ControlPanelData);
     setApiKeyInput("");
-    setClearApiKey(false);
   }
 
   useEffect(() => {
@@ -490,7 +488,6 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
               reasoningEffort: data.ai.config.reasoningEffort,
               baseUrl: data.ai.config.baseUrl,
               apiKey: apiKeyInput,
-              clearApiKey,
             },
           };
           const response = await fetch("/api/local/control", {
@@ -510,7 +507,6 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
           }
           setData(body as ControlPanelData);
           setApiKeyInput("");
-          setClearApiKey(false);
           setFeedback("配置已保存");
         } catch (error) {
           setErrorText(error instanceof Error ? error.message : "保存配置失败");
@@ -768,25 +764,11 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <StatusPill
-                tone={
-                  clearApiKey
-                    ? "warm"
-                    : data.ai.config.hasApiKey
-                      ? "positive"
-                      : "danger"
-                }
-              >
-                {clearApiKey
-                  ? "将清除当前 Key"
-                  : data.ai.config.hasApiKey
-                    ? "已配置 Key"
-                    : "未配置 Key"}
+              <StatusPill tone={data.ai.config.hasApiKey ? "positive" : "danger"}>
+                {data.ai.config.hasApiKey ? "Key configured" : "Key missing"}
               </StatusPill>
               <span className="text-xs text-[color:var(--muted-ink)]">
-                {clearApiKey
-                  ? "保存后将删除当前 API key"
-                  : data.ai.config.apiKeyHint ?? "当前没有可用的 API key"}
+                Saved API keys are never echoed back to the page. Enter a new key and save to overwrite it, or leave the field blank to keep the current key.
               </span>
             </div>
           </div>
@@ -901,7 +883,7 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
 
           <SectionField
             label="API Key"
-            hint="留空表示保留当前 key。勾选“清除”后，保存时会删除当前 key。"
+            hint="Enter a new key and save to overwrite the current key. Leave the field blank to keep it. The page never echoes saved keys back."
           >
             <div className="space-y-3">
               <Input
@@ -909,29 +891,13 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
                 autoComplete="off"
                 value={apiKeyInput}
                 placeholder={
-                  data.ai.config.hasApiKey ? "留空则保留当前 key" : "输入新的 API key"
+                  data.ai.config.hasApiKey ? "Leave blank to keep current key" : "Enter a new API key"
                 }
-                onChange={(event) => {
-                  setApiKeyInput(event.target.value);
-                  if (event.target.value) {
-                    setClearApiKey(false);
-                  }
-                }}
+                onChange={(event) => setApiKeyInput(event.target.value)}
               />
-              <label className="flex items-center gap-3 text-sm text-[color:var(--muted-ink)]">
-                <input
-                  type="checkbox"
-                  checked={clearApiKey}
-                  onChange={(event) => {
-                    setClearApiKey(event.target.checked);
-                    if (event.target.checked) {
-                      setApiKeyInput("");
-                    }
-                  }}
-                  className="h-4 w-4 rounded border-[color:var(--border-strong)] accent-[color:var(--accent)]"
-                />
-                保存时清除当前 API key
-              </label>
+              <p className="text-sm text-[color:var(--muted-ink)]">
+                After saving, this input is cleared. The page only shows whether a key is configured.
+              </p>
             </div>
           </SectionField>
             </div>

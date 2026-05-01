@@ -1,39 +1,32 @@
 <p align="center">
-  <img src="Logo.png" alt="集百 Logo" width="180">
+  <img src="Logo.png" alt="Jibai Logo" width="180">
 </p>
 
 <h1 align="center">集百</h1>
 
 <p align="center">
-  <strong>集百家之长，一把抓住，顷刻炼化。</strong>
+  一个本地运行的股票内容抓取、AI 分析与观点时间线整理工具。
 </p>
 
-<p align="center">
-  一个本地运行的、<b>针对股票</b>的内容抓取、AI 分析与观点时间线整理工具。
-</p>
+## 简介
 
-集百是一个面向个人研究与归档场景的本地工具：抓取小红书和 X 的账号内容，完成去重、AI 提取与结构化分析，落库到本地 SQLite，再在前端按作者、股票和 Theme 回看观点变化。它强调本地、自托管、可控，配置、运行和数据都掌握在你自己的机器上。
+集百用于本地抓取小红书和 X 账号内容，完成去重、AI 提取、结构化分析，并把结果写入本地 SQLite，最后在前端按作者、股票和主题查看观点变化。
+
+核心链路是：
+
+`抓取 -> 去重 -> AI 分析 -> SQLite 落盘 -> 前端浏览`
 
 ## 核心能力
 
-- 抓取小红书账号内容，并保留本地登录态完成后续运行
-- 抓取 X 账号内容，支持按账号配置抓取条数
-- 对抓取内容做去重、AI 提取、观点结构化与时间线物化
+- 抓取小红书账号内容，并保留本地登录态
+- 抓取 X 账号内容，支持按账号设置抓取条数
+- 对抓取内容做去重、AI 提取、结构化分析和时间线整理
 - 将原始内容、分析结果和聚合视图写入本地 SQLite
-- 在前端按作者、股票、Theme 浏览观点时间线和日度变化
-- 通过 `/control` 页面统一管理抓取配置、调度时间、AI 设置与手动运行
+- 通过 `/control` 页面统一管理抓取配置、调度时间、AI 配置和手动运行
 
-## 工作流
+## 安装
 
-项目的实际链路是：
-
-**抓取 -> 去重 -> AI 分析 -> SQLite 落库 -> 前端浏览**
-
-使用时通常是先配置抓取账号和 AI，再运行抓取任务，最后在作者、股票或 Theme 页面查看结果。
-
-## 快速开始
-
-下面的复制命令以 Windows PowerShell 为例；如果你在 macOS 或 Linux 上运行，请将 `copy` 替换为 `cp`。
+以下示例以 Windows PowerShell 为例。
 
 ### 1. 安装依赖
 
@@ -47,8 +40,6 @@ npm install
 
 ### 2. 初始化本地配置
 
-复制示例配置文件：
-
 ```bash
 copy .env.example .env
 copy data\config\ai_settings.example.json data\config\ai_settings.local.json
@@ -57,8 +48,6 @@ copy data\config\x_watchlist.example.json data\config\x_watchlist.json
 copy data\config\runtime_settings.example.json data\config\runtime_settings.json
 copy data\config\security_aliases.example.json data\config\security_aliases.json
 ```
-
-如果你暂时不想直接改 JSON，也可以先只准备 `.env`，再到前端控制台里补充 AI 配置。
 
 ### 3. 启动前端
 
@@ -69,9 +58,9 @@ npm run dev
 
 默认访问地址：`http://localhost:3000`
 
-控制台页面：`/control`
+控制台页面：`http://localhost:3000/control`
 
-### 4. 常用后端命令
+## 常用命令
 
 ```bash
 python backend/src/main.py login --config data/config/watchlist.json
@@ -84,42 +73,102 @@ python backend/src/main.py run-scheduler --config data/config/watchlist.json
 
 项目的主要配置都放在 `data/config/` 下：
 
-- `ai_settings.local.json`：AI provider、model、Base URL、API key 等本地 AI 配置
+- `ai_settings.local.json`：AI provider、model、base URL、API key 等本地 AI 配置
 - `watchlist.json`：小红书账号配置
 - `x_watchlist.json`：X 账号配置
 - `runtime_settings.json`：调度时间配置
 - `security_aliases.json`：股票别名与归一化映射
 
-这些配置都提供了对应的示例文件，便于初始化和按需调整。
+### `.env` 和 `ai_settings.local.json` 的关系
 
-## 重要限制与注意事项
+这个项目里，根目录 `.env` 不是 AI 配置的主存储位置。
+
+- `.env` 里的 `AI_*`、`OPENAI_*`、`GPT_*` 变量只是后端读取配置时的兜底来源
+- `/control` 页面里保存的 AI 配置会写入 `data/config/ai_settings.local.json`
+- 运行时会优先读取 `data/config/ai_settings.local.json`，只有本地 JSON 没填时才会回退到 `.env`
+
+这意味着：
+
+- 你在 `/control` 页面里改了 AI key 或 base URL 后，根目录 `.env` 不一定会变化
+- 实际是否生效，应优先查看 `data/config/ai_settings.local.json`
+
+### API key 保存语义
+
+`/control` 页面中的 API key 输入框遵循以下规则：
+
+- 输入新的 key 并保存：覆盖当前 key
+- 留空直接保存：保留当前 key
+- 保存成功后，输入框会清空，页面不会回显已保存的 key 内容
+
+## 运行结果保存位置
+
+- 小红书登录态：`data/runtime/state/xhs_chrome_user_data/`
+- SQLite 数据库：`data/runtime/insight.db`
+- AI snapshot：`data/runtime/ai/snapshots/`
+- 运行状态文件：`data/runtime/state/`
+
+## 如何在新电脑上本地核验“这次运行是否真的成功”
+
+如果你在 `/control` 里点了手动运行，想确认这次是否真的完成了抓取和 AI 分析，建议至少看下面三项：
+
+### 1. 看控制台页面里的手动运行记录
+
+重点看：
+
+- 开始时间和结束时间
+- 每个命令的耗时
+- 是否有命令输出异常
+
+如果整次运行只有几秒，而且你配置了多个账号，通常需要进一步核验，不要只看“成功”字样。
+
+### 2. 看 snapshot 是否产生了新文件
+
+运行前后对比这个目录：
+
+`data/runtime/ai/snapshots/`
+
+如果这次真的跑到了 AI 分析阶段，通常会生成一个新的 snapshot 文件，文件名类似：
+
+`20260501T220850+0800.json`
+
+### 3. 看 SQLite 是否有新的落盘结果
+
+至少确认这些内容有新的更新时间：
+
+- `data/runtime/insight.db`
+- `data/runtime/insight.db-wal`
+
+如果你本机装了 SQLite，也可以直接查最近分析记录：
+
+```bash
+sqlite3 data/runtime/insight.db "SELECT run_id, run_at, processed_note_count, error_count FROM analysis_runs ORDER BY run_at DESC, id DESC LIMIT 5;"
+```
+
+以及最近抓取记录：
+
+```bash
+sqlite3 data/runtime/insight.db "SELECT platform, account_name, run_at, status, candidate_count, new_note_count FROM crawl_account_runs ORDER BY run_at DESC, id DESC LIMIT 10;"
+```
+
+如果没有新的 `analysis_runs` 记录，也没有新的 snapshot 文件，那么这次“手动运行成功”大概率只是进程正常退出，不代表真的完成了新的抓取和分析。
+
+## 注意事项
 
 > [!CAUTION]
-> **小红书必须使用账号登录。**
-> **极高概率在使用一段时间后收到警告、风控，甚至封号。**
-> **必须使用小号，不要使用主号。**
+> 小红书抓取强依赖登录态，并且存在较高风控风险。务必使用小号，不要使用主号。
 
-- 项目依赖本地运行环境，不是云服务，也不会替你托管数据或登录态
-- 小红书登录态、SQLite 数据库、运行态目录都不应上传到 GitHub
-- 平台抓取可能因为页面结构变化、平台限制或风控策略而失效
-- AI 配置属于本地敏感信息，建议仅保存在本机配置文件中
+- 项目完全本地运行，不托管你的数据和登录态
+- 小红书登录态、SQLite 数据库、运行态目录都不应提交到 Git
+- 平台抓取可能因为页面结构变化、平台限制或风控而失败
+- AI key 属于本地敏感信息，建议只保存在本机配置文件中
 
-## 目录结构与运行说明
+## 目录结构
 
-### 目录结构
-
-- `backend/`：Python 后端，负责抓取、AI 分析、SQLite 落库和调度
+- `backend/`：Python 后端，负责抓取、AI 分析、SQLite 落盘和调度
 - `frontend/`：Next.js 前端，负责本地浏览和控制台配置
 - `data/config/`：本地配置文件
-- `data/runtime/`：本地运行态数据，不进入 Git
+- `data/runtime/`：本地运行态数据
 
-### 运行说明
+## License
 
-- 小红书登录态默认存放在 `data/runtime/state/xhs_chrome_user_data/`
-- SQLite 数据库默认位于 `data/runtime/insight.db`
-- 调度时区固定为 `Asia/Shanghai`
-- `TWELVE_DATA_API_KEY`、`PYTHON_EXECUTABLE`、`INSIGHT_DB_PATH` 都是可选环境项
-
-## 许可证
-
-本项目使用仓库内的 [LICENSE](LICENSE) 作为许可证说明。上传到 GitHub 前，请确认已经移除真实密钥、本地运行数据和浏览器登录态。
+本项目使用仓库内的 [LICENSE](LICENSE)。
