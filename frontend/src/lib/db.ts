@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 let dbInstance: Database.Database | null | undefined;
+let dbInstancePath: string | null = null;
 
 export function getDbPath() {
   if (process.env.INSIGHT_DB_PATH) {
@@ -20,11 +21,10 @@ export function getDbPath() {
 }
 
 export function getDb() {
-  if (dbInstance !== undefined) return dbInstance;
   const dbPath = getDbPath();
+  if (dbInstance !== undefined && dbInstancePath === dbPath) return dbInstance;
   if (!existsSync(dbPath)) {
-    dbInstance = null;
-    return dbInstance;
+    return null;
   }
   const db = new Database(dbPath, {
     readonly: true,
@@ -32,6 +32,7 @@ export function getDb() {
   });
   db.pragma("journal_mode = WAL");
   dbInstance = db;
+  dbInstancePath = dbPath;
   return dbInstance;
 }
 

@@ -13,7 +13,10 @@ Python 后端负责：
 ```bash
 cd backend
 pip install -r requirements.txt
+python -m playwright install chromium
 ```
+
+`pip install -r requirements.txt` 只安装 Python 包，不会安装 Playwright Chromium。X 抓取强依赖 Playwright Chromium，不会回退使用本机 Chrome。
 
 ## AI
 

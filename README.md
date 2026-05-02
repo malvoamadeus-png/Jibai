@@ -30,13 +30,24 @@
 
 ### 1. 安装依赖
 
-```bash
-cd backend
-pip install -r requirements.txt
+推荐使用项目安装脚本：
 
-cd ../frontend
-npm install
+```powershell
+.\install.ps1
 ```
+
+脚本会依次安装后端 Python 依赖、Playwright Chromium 和前端 Node 依赖。X 抓取强依赖 Playwright Chromium，不会回退使用本机 Chrome。
+
+如需手动安装，必须执行完整三步：
+
+```powershell
+pip install -r backend/requirements.txt
+python -m playwright install chromium
+
+npm install --prefix frontend
+```
+
+注意：`pip install -r backend/requirements.txt` 只会安装 Python 包，不会安装 Playwright Chromium。
 
 ### 2. 初始化本地配置
 
@@ -158,6 +169,7 @@ sqlite3 data/runtime/insight.db "SELECT platform, account_name, run_at, status, 
 > 小红书抓取强依赖登录态，并且存在较高风控风险。务必使用小号，不要使用主号。
 
 - 项目完全本地运行，不托管你的数据和登录态
+- X 抓取强依赖 Playwright Chromium；如果只安装 Python requirements 而没有运行 `python -m playwright install chromium`，X 抓取会失败
 - 小红书登录态、SQLite 数据库、运行态目录都不应提交到 Git
 - 平台抓取可能因为页面结构变化、平台限制或风控而失败
 - AI key 属于本地敏感信息，建议只保存在本机配置文件中

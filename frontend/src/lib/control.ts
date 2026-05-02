@@ -181,6 +181,7 @@ let manualRunState: ManualRunState = {
   target: null,
   startedAt: null,
   finishedAt: null,
+  currentStage: null,
   summary: "尚未手动运行",
   commands: [],
 };
@@ -293,10 +294,25 @@ function humanizeCrawlError(errorText: string | null, platform: PlatformKey | st
   if (lowered.includes("note payload not found in detail page state")) {
     return "详情页返回异常或受限页面，暂时没能解析出正文。";
   }
+  if (lowered.includes("x_fetch_failed")) {
+    return "没抓到：所有公开 Nitter 镜像主页请求失败。";
+  }
+  if (lowered.includes("x_runtime_failed")) {
+    return "运行环境错误：Playwright Chromium 未安装。";
+  }
+  if (lowered.includes("x_parse_empty")) {
+    return "解析问题：公开 Nitter 页面已返回，但没有解析到可用 tweet。";
+  }
+  if (lowered.includes("x_other")) {
+    return "其他：X 抓取未解析到 tweet，但失败类型不明确。";
+  }
   if (
     lowered.includes("could not resolve any real note links from the first screen") ||
     lowered.includes("could not resolve any tweets from public nitter pages")
   ) {
+    if (platform === "x") {
+      return "解析问题：公开 Nitter 页面没有解析到可用 tweet。";
+    }
     return "主页首屏暂时没有解析到可用内容。";
   }
   if (platform === "x" && lowered.includes("nitter")) {
@@ -571,6 +587,22 @@ function truncateOutput(value: string) {
   return `${trimmed.slice(-24000)}\n[truncated]`;
 }
 
+function extractProgressText(command: ManualRunCommandState) {
+  const lines = `${command.stdout}\n${command.stderr}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines.slice().reverse()) {
+    const progressMatch = /^(stage|result):\s*(.+)$/i.exec(line);
+    if (progressMatch) {
+      return progressMatch[2];
+    }
+  }
+
+  return null;
+}
+
 function cloneManualRunState(): ManualRunState {
   return {
     ...manualRunState,
@@ -583,42 +615,56 @@ function runCommand({
   pythonExecutable,
   label,
   args,
+  onUpdate,
 }: {
   cwd: string;
   pythonExecutable: string;
   label: string;
   args: string[];
+  onUpdate?: (command: ManualRunCommandState) => void;
 }): Promise<ManualRunCommandState> {
   const startedAt = Date.now();
   return new Promise((resolve) => {
     const child = spawn(pythonExecutable, args, {
       cwd,
-      env: process.env,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: process.env.PYTHONIOENCODING || "utf-8",
+        PYTHONUNBUFFERED: process.env.PYTHONUNBUFFERED || "1",
+      },
       shell: false,
       windowsHide: true,
     });
 
     let stdout = "";
     let stderr = "";
+    const buildState = (exitCode: number | null): ManualRunCommandState => ({
+      label,
+      command: [pythonExecutable, ...args].join(" "),
+      exitCode,
+      durationMs: Date.now() - startedAt,
+      stdout: truncateOutput(stdout),
+      stderr: truncateOutput(stderr),
+    });
+
+    onUpdate?.(buildState(null));
 
     child.stdout?.on("data", (chunk) => {
       stdout += chunk.toString();
+      onUpdate?.(buildState(null));
     });
     child.stderr?.on("data", (chunk) => {
       stderr += chunk.toString();
+      onUpdate?.(buildState(null));
     });
     child.on("error", (error) => {
       stderr += `${error.message}\n`;
+      onUpdate?.(buildState(1));
     });
     child.on("close", (code) => {
-      resolve({
-        label,
-        command: [pythonExecutable, ...args].join(" "),
-        exitCode: typeof code === "number" ? code : 1,
-        durationMs: Date.now() - startedAt,
-        stdout: truncateOutput(stdout),
-        stderr: truncateOutput(stderr),
-      });
+      const finalState = buildState(typeof code === "number" ? code : 1);
+      onUpdate?.(finalState);
+      resolve(finalState);
     });
   });
 }
@@ -657,7 +703,8 @@ export function startManualRun(target: ManualRunTarget) {
     target,
     startedAt: new Date().toISOString(),
     finishedAt: null,
-    summary: "正在执行中",
+    currentStage: "Preparing",
+    summary: "Running",
     commands: [],
   };
 
@@ -665,15 +712,29 @@ export function startManualRun(target: ManualRunTarget) {
     const results: ManualRunCommandState[] = [];
 
     for (const item of commandPlan) {
+      const commandIndex = results.length;
       const result = await runCommand({
         cwd: paths.rootDir,
         pythonExecutable,
         label: item.label,
         args: item.args,
+        onUpdate: (command) => {
+          results[commandIndex] = command;
+          const progressText = extractProgressText(command);
+          manualRunState = {
+            ...manualRunState,
+            currentStage: progressText ?? `${item.label} running`,
+            summary: progressText ?? `${item.label} running`,
+            commands: results.filter(Boolean).map((entry) => ({ ...entry })),
+          };
+        },
       });
-      results.push(result);
+      results[commandIndex] = result;
+      const progressText = extractProgressText(result);
       manualRunState = {
         ...manualRunState,
+        currentStage: progressText ?? item.label,
+        summary: progressText ?? `${item.label} completed`,
         commands: results.map((entry) => ({ ...entry })),
       };
       if ((result.exitCode ?? 1) !== 0) {
@@ -687,7 +748,8 @@ export function startManualRun(target: ManualRunTarget) {
       target,
       startedAt: manualRunState.startedAt,
       finishedAt: new Date().toISOString(),
-      summary: failed ? "手动运行失败，请稍后重试。" : "手动运行完成。",
+      currentStage: failed ? "Failed" : "Completed",
+      summary: failed ? "Manual run failed" : "Manual run completed",
       commands: results,
     };
   })().finally(() => {
@@ -699,7 +761,6 @@ export function startManualRun(target: ManualRunTarget) {
     state: cloneManualRunState(),
   };
 }
-
 export function getControlPanelData(): ControlPanelData {
   const paths = getLocalProjectPaths();
   const db = getDb();

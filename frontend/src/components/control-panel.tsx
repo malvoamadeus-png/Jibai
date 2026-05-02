@@ -723,6 +723,11 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
               </span>
             </div>
             <p className="text-sm leading-6 text-[color:var(--muted-ink)]">{data.runtime.manualRun.summary}</p>
+            {data.runtime.manualRun.currentStage ? (
+              <div className="rounded-[20px] border border-[color:rgba(181,106,59,0.22)] bg-[color:rgba(181,106,59,0.08)] px-3 py-3 text-sm leading-6 text-[color:var(--ink)]">
+                Current stage: {data.runtime.manualRun.currentStage}
+              </div>
+            ) : null}
 
             <div className="space-y-3">
               {data.runtime.manualRun.commands.map((command, index) => (
@@ -737,10 +742,32 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
                         用时 {(command.durationMs / 1000).toFixed(1)} 秒
                       </p>
                     </div>
-                    <StatusPill tone={command.exitCode === 0 ? "positive" : "danger"}>
-                      {command.exitCode === 0 ? "执行完成" : "执行失败"}
+                    <StatusPill
+                      tone={
+                        command.exitCode === null
+                          ? "warm"
+                          : command.exitCode === 0
+                            ? "positive"
+                            : "danger"
+                      }
+                    >
+                      {command.exitCode === null
+                        ? "Running"
+                        : command.exitCode === 0
+                          ? "Completed"
+                          : "Failed"}
                     </StatusPill>
                   </div>
+                  {command.stdout || command.stderr ? (
+                    <details className="mt-4 rounded-[18px] border border-[color:var(--border)] bg-[color:var(--paper)]/70 p-3">
+                      <summary className="cursor-pointer text-xs font-medium text-[color:var(--muted-ink)]">
+                        Show output
+                      </summary>
+                      <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-[color:var(--muted-ink)]">
+                        {[command.stdout, command.stderr].filter(Boolean).join("\n")}
+                      </pre>
+                    </details>
+                  ) : null}
                 </div>
               ))}
 

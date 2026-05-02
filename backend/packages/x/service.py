@@ -12,7 +12,7 @@ from packages.common.models import CrawlAccountResult, RawNoteRecord
 from packages.common.paths import AppPaths
 from packages.common.time_utils import is_older_than_days, now_iso
 
-from .browser import fetch_timeline_page
+from .browser import TimelineFetchStatus, fetch_timeline_page
 from .config import AccountTarget, WatchlistConfig
 from .fxtwitter import fetch_tweet_detail, fetch_user_info, parse_created_at
 
@@ -38,6 +38,15 @@ class CrawlRunSummary:
     account_results: list[CrawlAccountResult]
     new_notes: list[RawNoteRecord]
     errors: list[str]
+
+
+@dataclass(slots=True)
+class TimelineAttempt:
+    instance: str
+    page: int
+    status: TimelineFetchStatus
+    url: str
+    error: str | None = None
 
 
 def _load_state(path: Path) -> dict[str, Any]:
@@ -106,10 +115,11 @@ def collect_tweet_candidates(
     cfg: WatchlistConfig,
     paths: AppPaths,
     account: AccountTarget,
-) -> list[TweetCandidate]:
+) -> tuple[list[TweetCandidate], list[TimelineAttempt]]:
     target_author = f"@{account.username.lower()}"
     seen_ids: set[str] = set()
     results: list[TweetCandidate] = []
+    attempts: list[TimelineAttempt] = []
 
     for instance_index, instance in enumerate(cfg.nitter_instances, start=1):
         cursor: str | None = None
@@ -118,7 +128,7 @@ def collect_tweet_candidates(
         while len(results) < account.limit and page <= max_pages:
             debug_dir = paths.x_debug_dir / account.safe_name
             debug_prefix = f"{account.safe_name}-{instance_index}-{page}-{int(time.time())}"
-            raw_items, cursor = fetch_timeline_page(
+            page_result = fetch_timeline_page(
                 username=account.username,
                 nitter_instance=instance,
                 cursor=cursor,
@@ -127,6 +137,17 @@ def collect_tweet_candidates(
                 debug_dir=debug_dir,
                 debug_prefix=debug_prefix,
             )
+            attempts.append(
+                TimelineAttempt(
+                    instance=instance,
+                    page=page,
+                    status=page_result.status,
+                    url=page_result.url,
+                    error=page_result.error,
+                )
+            )
+            raw_items = page_result.items
+            cursor = page_result.next_cursor
             if not raw_items:
                 break
 
@@ -149,9 +170,40 @@ def collect_tweet_candidates(
             time.sleep(0.8)
 
         if results:
-            return results[: account.limit]
+            return results[: account.limit], attempts
 
-    return results[: account.limit]
+    return results[: account.limit], attempts
+
+
+def _build_empty_timeline_error(attempts: list[TimelineAttempt]) -> str:
+    if not attempts:
+        return "X_OTHER: 其他：没有执行任何 Nitter 页面尝试。"
+
+    status_counts = {
+        status: sum(1 for attempt in attempts if attempt.status == status)
+        for status in ("runtime_failed", "fetch_failed", "parse_failed", "parse_empty")
+    }
+    summary = (
+        f"尝试 {len(attempts)} 次；"
+        f"运行环境错误={status_counts['runtime_failed']}，"
+        f"没抓到={status_counts['fetch_failed']}，"
+        f"解析失败={status_counts['parse_failed']}，"
+        f"解析为空={status_counts['parse_empty']}"
+    )
+
+    if status_counts["runtime_failed"] == len(attempts):
+        first_error = next((attempt.error for attempt in attempts if attempt.error), "")
+        if "executable doesn't exist" in first_error.lower():
+            return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：Playwright Chromium 未安装。{summary}。"
+        return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：浏览器启动失败。{summary}。"
+    if status_counts["fetch_failed"] == len(attempts):
+        return f"X_FETCH_FAILED: 没抓到：所有公开 Nitter 镜像主页请求失败。{summary}。"
+    if status_counts["parse_failed"] or status_counts["parse_empty"]:
+        return (
+            "X_PARSE_EMPTY: 解析问题：公开 Nitter 页面已返回，但没有解析到可用 tweet。"
+            f"{summary}。"
+        )
+    return f"X_OTHER: 其他：未解析到 tweet，但失败类型不明确。{summary}。"
 
 
 def _build_note_record(
@@ -243,13 +295,14 @@ def run_once(cfg: WatchlistConfig, paths: AppPaths) -> CrawlRunSummary:
 
         try:
             user_info = fetch_user_info(account.username)
-            candidates = collect_tweet_candidates(cfg=cfg, paths=paths, account=account)
+            candidates, timeline_attempts = collect_tweet_candidates(
+                cfg=cfg,
+                paths=paths,
+                account=account,
+            )
             candidate_count = len(candidates)
             if not candidates:
-                raise RuntimeError(
-                    "Could not resolve any tweets from public Nitter pages. "
-                    "Try again later or adjust nitter_instances."
-                )
+                raise RuntimeError(_build_empty_timeline_error(timeline_attempts))
 
             for candidate in candidates:
                 fetched_note_ids.append(candidate.tweet_id)

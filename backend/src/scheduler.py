@@ -41,10 +41,12 @@ def start_scheduler(config_path: str | None) -> int:
         with job_lock:
             if stopping.is_set():
                 return
+            print("[scheduler] xiaohongshu run started", file=sys.stderr, flush=True)
             exit_code = run_once_job(config_path)
         print(
             f"[scheduler] xiaohongshu run finished with exit code {exit_code}",
             file=sys.stderr,
+            flush=True,
         )
 
     def _run_x_job() -> None:
@@ -53,10 +55,12 @@ def start_scheduler(config_path: str | None) -> int:
         with job_lock:
             if stopping.is_set():
                 return
+            print("[scheduler] x run started", file=sys.stderr, flush=True)
             exit_code = run_once_x_job(None)
         print(
             f"[scheduler] x run finished with exit code {exit_code}",
             file=sys.stderr,
+            flush=True,
         )
 
     def _add_daily_jobs(
@@ -94,6 +98,7 @@ def start_scheduler(config_path: str | None) -> int:
         + ", ".join(settings.x_schedule_times)
         + " Asia/Shanghai.",
         file=sys.stderr,
+        flush=True,
     )
     for signum in (signal.SIGINT, signal.SIGTERM):
         try:

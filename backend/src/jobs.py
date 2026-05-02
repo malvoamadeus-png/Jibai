@@ -37,13 +37,20 @@ def run_once_job(config_path: str | None) -> int:
     if not paths.insight_db_path.exists():
         migrate_legacy_json_to_sqlite(paths)
 
+    print("stage: 获取账号内容（小红书）", flush=True)
     crawl_summary = run_once(cfg, paths)
+    print(
+        "stage:",
+        f"抓取完成：账号 {len(crawl_summary.account_results)} 个，新增内容 {len(crawl_summary.new_notes)} 条，错误 {len(crawl_summary.errors)} 个",
+        flush=True,
+    )
     with sqlite_connection(paths) as conn:
         init_db(conn)
         store = InsightStore(conn)
         for note in crawl_summary.new_notes:
             store.upsert_content_item(note)
         notes = store.list_all_content_items()
+    print(f"stage: AI分析中（待处理内容 {len(notes)} 条）", flush=True)
     analysis_summary = run_analysis(
         paths=paths,
         notes=notes,
@@ -64,6 +71,15 @@ def run_once_job(config_path: str | None) -> int:
         f"theme_days={len(analysis_summary.snapshot.theme_views)}",
         f"errors={len(analysis_summary.snapshot.errors)}",
     )
+    print(
+        "result:",
+        f"新增内容 {len(crawl_summary.new_notes)} 条，AI新增分析 {len(analysis_summary.snapshot.note_extracts)} 条，",
+        f"作者日 {len(analysis_summary.snapshot.author_summaries)} 个，",
+        f"股票日 {len(analysis_summary.snapshot.stock_views)} 个，",
+        f"Theme日 {len(analysis_summary.snapshot.theme_views)} 个，",
+        f"错误 {len(analysis_summary.snapshot.errors)} 个",
+        flush=True,
+    )
     return 1 if crawl_summary.exit_code or analysis_summary.exit_code else 0
 
 
@@ -81,13 +97,20 @@ def run_once_x_job(config_path: str | None) -> int:
     if not paths.insight_db_path.exists():
         migrate_legacy_json_to_sqlite(paths)
 
+    print("stage: 获取账号内容（X）", flush=True)
     crawl_summary = run_x_once(cfg, paths)
+    print(
+        "stage:",
+        f"抓取完成：账号 {len(crawl_summary.account_results)} 个，新增内容 {len(crawl_summary.new_notes)} 条，错误 {len(crawl_summary.errors)} 个",
+        flush=True,
+    )
     with sqlite_connection(paths) as conn:
         init_db(conn)
         store = InsightStore(conn)
         for note in crawl_summary.new_notes:
             store.upsert_content_item(note)
         notes = store.list_all_content_items()
+    print(f"stage: AI分析中（待处理内容 {len(notes)} 条）", flush=True)
     analysis_summary = run_analysis(
         paths=paths,
         notes=notes,
@@ -107,6 +130,15 @@ def run_once_x_job(config_path: str | None) -> int:
         f"stock_days={len(analysis_summary.snapshot.stock_views)}",
         f"theme_days={len(analysis_summary.snapshot.theme_views)}",
         f"errors={len(analysis_summary.snapshot.errors)}",
+    )
+    print(
+        "result:",
+        f"新增内容 {len(crawl_summary.new_notes)} 条，AI新增分析 {len(analysis_summary.snapshot.note_extracts)} 条，",
+        f"作者日 {len(analysis_summary.snapshot.author_summaries)} 个，",
+        f"股票日 {len(analysis_summary.snapshot.stock_views)} 个，",
+        f"Theme日 {len(analysis_summary.snapshot.theme_views)} 个，",
+        f"错误 {len(analysis_summary.snapshot.errors)} 个",
+        flush=True,
     )
     return 1 if crawl_summary.exit_code or analysis_summary.exit_code else 0
 

@@ -288,6 +288,7 @@ export type ManualRunState = {
   target: ManualRunTarget | null;
   startedAt: string | null;
   finishedAt: string | null;
+  currentStage: string | null;
   summary: string;
   commands: ManualRunCommandState[];
 };

@@ -3,8 +3,9 @@ from __future__ import annotations
 import sys
 import time
 import urllib.parse
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
@@ -77,6 +78,23 @@ CURSOR_JS = """() => {
   return match ? decodeURIComponent(match[1]) : null;
 }"""
 
+TimelineFetchStatus = Literal[
+    "success",
+    "runtime_failed",
+    "fetch_failed",
+    "parse_failed",
+    "parse_empty",
+]
+
+
+@dataclass(frozen=True)
+class TimelinePageResult:
+    items: list[dict[str, Any]]
+    next_cursor: str | None
+    status: TimelineFetchStatus
+    url: str
+    error: str | None = None
+
 
 def _launch_browser(playwright: Playwright, *, headless: bool) -> Browser:
     return playwright.chromium.launch(
@@ -103,11 +121,12 @@ def _new_context(browser: Browser) -> BrowserContext:
     )
 
 
-def _safe_goto(page: Page, url: str) -> None:
+def _safe_goto(page: Page, url: str) -> str | None:
     try:
         page.goto(url, timeout=30000, wait_until="domcontentloaded")
-    except Exception:
-        pass
+        return None
+    except Exception as exc:
+        return str(exc)
 
 
 def _write_debug_snapshot(page: Page, target_dir: Path, prefix: str) -> None:
@@ -125,7 +144,7 @@ def fetch_timeline_page(
     headless: bool,
     debug_dir: Path | None = None,
     debug_prefix: str | None = None,
-) -> tuple[list[dict[str, Any]], str | None]:
+) -> TimelinePageResult:
     if cursor:
         url = f"https://{nitter_instance}/{username}?cursor={urllib.parse.quote(cursor, safe='')}"
     else:
@@ -135,24 +154,70 @@ def fetch_timeline_page(
     browser = None
     context = None
     try:
-        browser = _launch_browser(playwright, headless=headless)
+        try:
+            browser = _launch_browser(playwright, headless=headless)
+        except Exception as exc:
+            return TimelinePageResult(
+                items=[],
+                next_cursor=None,
+                status="runtime_failed",
+                url=url,
+                error=str(exc),
+            )
         context = _new_context(browser)
         page = context.new_page()
-        _safe_goto(page, url)
+        navigation_error = _safe_goto(page, url)
         time.sleep(wait_sec)
-        tweets = page.evaluate(TIMELINE_JS) or []
-        next_cursor = page.evaluate(CURSOR_JS)
+        try:
+            tweets = page.evaluate(TIMELINE_JS) or []
+            next_cursor = page.evaluate(CURSOR_JS)
+        except Exception as exc:
+            if debug_dir and debug_prefix:
+                _write_debug_snapshot(page, debug_dir, debug_prefix)
+            return TimelinePageResult(
+                items=[],
+                next_cursor=None,
+                status="parse_failed",
+                url=url,
+                error=str(exc),
+            )
 
         if debug_dir and debug_prefix and not tweets:
             _write_debug_snapshot(page, debug_dir, debug_prefix)
 
-        return tweets, next_cursor
+        if tweets:
+            return TimelinePageResult(
+                items=tweets,
+                next_cursor=next_cursor,
+                status="success",
+                url=url,
+            )
+        if navigation_error:
+            return TimelinePageResult(
+                items=[],
+                next_cursor=None,
+                status="fetch_failed",
+                url=url,
+                error=navigation_error,
+            )
+        return TimelinePageResult(
+            items=[],
+            next_cursor=next_cursor,
+            status="parse_empty",
+            url=url,
+        )
     except Exception as exc:
         print(
             f"[x-browser] failed on {nitter_instance}/{username}: {exc}",
             file=sys.stderr,
         )
-        return [], None
+        return TimelinePageResult(
+            items=[],
+            next_cursor=None,
+            status="fetch_failed",
+            url=url,
+            error=str(exc),
+        )
     finally:
         try:
             if context is not None:
