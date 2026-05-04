@@ -85,6 +85,15 @@ CURSOR_JS = """() => {
   return match ? decodeURIComponent(match[1]) : null;
 }"""
 
+BOT_PROTECTION_MARKERS = (
+    ("anubis", "blocked by Anubis bot protection"),
+    ("access denied", "access denied"),
+    ("captcha", "captcha required"),
+    ("cloudflare", "blocked by Cloudflare"),
+    ("rate limit", "rate limited"),
+    ("too many requests", "rate limited"),
+)
+
 TimelineFetchStatus = Literal[
     "success",
     "runtime_failed",
@@ -140,6 +149,14 @@ def _write_debug_snapshot(page: Page, target_dir: Path, prefix: str) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(target_dir / f"{prefix}.png"), full_page=True)
     (target_dir / f"{prefix}.html").write_text(page.content(), encoding="utf-8")
+
+
+def _detect_blocked_page(page: Page) -> str | None:
+    content = page.content().lower()
+    for marker, reason in BOT_PROTECTION_MARKERS:
+        if marker in content:
+            return reason
+    return None
 
 
 def fetch_timeline_page(
@@ -198,6 +215,15 @@ def fetch_timeline_page(
                 next_cursor=next_cursor,
                 status="success",
                 url=url,
+            )
+        blocked_reason = _detect_blocked_page(page)
+        if blocked_reason:
+            return TimelinePageResult(
+                items=[],
+                next_cursor=None,
+                status="fetch_failed",
+                url=url,
+                error=blocked_reason,
             )
         if navigation_error:
             return TimelinePageResult(

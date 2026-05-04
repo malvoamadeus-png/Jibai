@@ -28,11 +28,14 @@ PUBLIC_WORKER_ACCOUNT_DELAY_SECONDS=5
 PUBLIC_WORKER_POLL_SECONDS=30
 PUBLIC_WORKER_HEADLESS=true
 PUBLIC_WORKER_PAGE_WAIT_SECONDS=6
+PUBLIC_WORKER_NITTER_INSTANCES=xcancel.com,nitter.tiekoetter.com,nitter.catsarch.com
 ```
 
 Use the Supabase Postgres connection string, not the anon key. The anon key is for browser/database API access; this worker needs a server-side SQL connection so it can claim jobs, run locks, and write analysis tables.
 
 AI settings continue to use the existing backend configuration files and environment variables.
+
+`PUBLIC_WORKER_NITTER_INSTANCES` is optional. Public Nitter mirrors often add bot protection or go offline, so keep this value configurable on the server instead of relying on the code defaults. Use comma-separated host names without `https://`.
 
 ## Commands
 

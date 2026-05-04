@@ -46,6 +46,14 @@ def _account_pause_seconds() -> float:
     return max(0.0, float(os.getenv("PUBLIC_WORKER_ACCOUNT_DELAY_SECONDS", "5")))
 
 
+def _nitter_instances() -> list[str] | None:
+    raw = os.getenv("PUBLIC_WORKER_NITTER_INSTANCES", "").strip()
+    if not raw:
+        return None
+    values = [item.strip().removeprefix("https://").removeprefix("http://").rstrip("/") for item in raw.split(",")]
+    return [item for item in values if item]
+
+
 def _try_acquire_worker_lock(conn: Any) -> bool:
     row = conn.execute("SELECT pg_try_advisory_lock(hashtext(%s)) AS locked", (WORKER_LOCK_KEY,)).fetchone()
     return bool(row and row["locked"])
@@ -56,6 +64,7 @@ def _release_worker_lock(conn: Any) -> None:
 
 
 def _base_x_config(accounts: list[AccountTarget]) -> WatchlistConfig:
+    nitter_instances = _nitter_instances()
     return WatchlistConfig(
         enabled=bool(accounts),
         headless=os.getenv("PUBLIC_WORKER_HEADLESS", "true").lower() != "false",
@@ -64,6 +73,7 @@ def _base_x_config(accounts: list[AccountTarget]) -> WatchlistConfig:
         inter_account_delay_jitter_sec=0,
         exclude_old_posts=True,
         max_post_age_days=5,
+        **({"nitter_instances": nitter_instances} if nitter_instances else {}),
         accounts=accounts,
     )
 

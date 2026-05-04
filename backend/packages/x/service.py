@@ -194,20 +194,26 @@ def _build_empty_timeline_error(attempts: list[TimelineAttempt]) -> str:
         f"解析失败={status_counts['parse_failed']}，"
         f"解析为空={status_counts['parse_empty']}"
     )
+    details = [
+        f"{attempt.instance}/p{attempt.page}: {attempt.status}"
+        + (f" ({attempt.error})" if attempt.error else "")
+        for attempt in attempts[:5]
+    ]
+    detail_text = "；明细：" + "；".join(details) if details else ""
 
     if status_counts["runtime_failed"] == len(attempts):
         first_error = next((attempt.error for attempt in attempts if attempt.error), "")
         if "executable doesn't exist" in first_error.lower():
-            return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：Playwright Chromium 未安装。{summary}。"
-        return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：浏览器启动失败。{summary}。"
+            return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：Playwright Chromium 未安装。{summary}{detail_text}。"
+        return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：浏览器启动失败。{summary}{detail_text}。"
     if status_counts["fetch_failed"] == len(attempts):
-        return f"X_FETCH_FAILED: 没抓到：所有公开 Nitter 镜像主页请求失败。{summary}。"
+        return f"X_FETCH_FAILED: 没抓到：所有公开 Nitter 镜像主页请求失败。{summary}{detail_text}。"
     if status_counts["parse_failed"] or status_counts["parse_empty"]:
         return (
             "X_PARSE_EMPTY: 解析问题：公开 Nitter 页面已返回，但没有解析到可用 tweet。"
-            f"{summary}。"
+            f"{summary}{detail_text}。"
         )
-    return f"X_OTHER: 其他：未解析到 tweet，但失败类型不明确。{summary}。"
+    return f"X_OTHER: 其他：未解析到 tweet，但失败类型不明确。{summary}{detail_text}。"
 
 
 def _build_note_record(
