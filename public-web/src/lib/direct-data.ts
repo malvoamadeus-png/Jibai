@@ -1,6 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { AccountListItem, AdminRequestItem, EntityListItem, FeedDay, RequestListItem, UserProfile } from "@/lib/types";
+import type {
+  AccountListItem,
+  AdminAccountItem,
+  AdminJobItem,
+  AdminRequestItem,
+  EntityListItem,
+  FeedDay,
+  RequestListItem,
+  UserProfile,
+} from "@/lib/types";
 import { normalizeXUsername } from "@/lib/x";
 
 function assertNoError(error: unknown) {
@@ -150,7 +159,7 @@ export async function listEntities(supabase: SupabaseClient, type: "stock" | "th
 }
 
 export async function listAdminDashboard(supabase: SupabaseClient) {
-  const [requests, accounts] = await Promise.all([
+  const [requests, accountCount, approvedAccounts, jobs] = await Promise.all([
     supabase
       .from("account_requests")
       .select("id, raw_input, normalized_username, created_at, requester_id, x_accounts(id, username, display_name, profile_url, status)")
@@ -158,9 +167,22 @@ export async function listAdminDashboard(supabase: SupabaseClient) {
       .order("created_at", { ascending: true })
       .limit(50),
     supabase.from("x_accounts").select("id", { count: "exact" }).eq("status", "approved"),
+    supabase
+      .from("x_accounts")
+      .select("id, username, display_name, profile_url, backfill_completed_at")
+      .eq("status", "approved")
+      .order("approved_at", { ascending: false, nullsFirst: false })
+      .limit(100),
+    supabase
+      .from("crawl_jobs")
+      .select("id, kind, status, summary, error_text, created_at, finished_at")
+      .order("created_at", { ascending: false })
+      .limit(20),
   ]);
   assertNoError(requests.error);
-  assertNoError(accounts.error);
+  assertNoError(accountCount.error);
+  assertNoError(approvedAccounts.error);
+  assertNoError(jobs.error);
 
   const requesterIds = Array.from(new Set((requests.data || []).map((item: any) => String(item.requester_id))));
   const { data: profiles, error: profileError } = requesterIds.length
@@ -170,7 +192,27 @@ export async function listAdminDashboard(supabase: SupabaseClient) {
   const profileMap = new Map((profiles || []).map((item: any) => [String(item.id), String(item.email)]));
 
   return {
-    approvedCount: accounts.count || 0,
+    approvedCount: accountCount.count || 0,
+    approvedAccounts: (approvedAccounts.data || []).map(
+      (item: any): AdminAccountItem => ({
+        id: String(item.id),
+        username: String(item.username),
+        displayName: String(item.display_name || item.username),
+        profileUrl: String(item.profile_url || ""),
+        backfillCompletedAt: item.backfill_completed_at ? String(item.backfill_completed_at) : null,
+      }),
+    ),
+    jobs: (jobs.data || []).map(
+      (item: any): AdminJobItem => ({
+        id: String(item.id),
+        kind: String(item.kind),
+        status: String(item.status),
+        summary: String(item.summary || ""),
+        errorText: item.error_text ? String(item.error_text) : null,
+        createdAt: String(item.created_at),
+        finishedAt: item.finished_at ? String(item.finished_at) : null,
+      }),
+    ),
     requests: (requests.data || []).map((item: any): AdminRequestItem => {
       const account = Array.isArray(item.x_accounts) ? item.x_accounts[0] : item.x_accounts;
       return {
@@ -198,5 +240,15 @@ export async function approveRequest(supabase: SupabaseClient, requestId: string
 
 export async function rejectRequest(supabase: SupabaseClient, requestId: string) {
   const { error } = await supabase.rpc("reject_account_request", { request_id_arg: requestId });
+  assertNoError(error);
+}
+
+export async function disableAccount(supabase: SupabaseClient, accountId: string) {
+  const { error } = await supabase.rpc("disable_x_account", { account_id_arg: accountId });
+  assertNoError(error);
+}
+
+export async function enqueueManualCrawl(supabase: SupabaseClient) {
+  const { error } = await supabase.rpc("enqueue_manual_crawl");
   assertNoError(error);
 }

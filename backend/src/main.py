@@ -64,6 +64,23 @@ def parse_args() -> argparse.Namespace:
         "reanalyze-existing",
         help="Regenerate AI viewpoint extraction for all stored content.",
     )
+    public_worker_parser = subparsers.add_parser(
+        "public-worker",
+        help="Run the public Supabase X worker for Alibaba Cloud.",
+    )
+    public_worker_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Process at most one pending public crawl job, then exit.",
+    )
+    subparsers.add_parser(
+        "public-enqueue-scheduled",
+        help="Enqueue one scheduled public X crawl job in Supabase.",
+    )
+    subparsers.add_parser(
+        "public-import-sqlite",
+        help="Import local SQLite X data into the public Supabase database.",
+    )
     return parser.parse_args()
 
 
@@ -83,6 +100,18 @@ def main() -> int:
         return run_normalize_securities_job()
     if args.command == "reanalyze-existing":
         return run_reanalyze_existing_job()
+    if args.command == "public-worker":
+        from packages.public_app.worker import run_worker  # noqa: PLC0415
+
+        return run_worker(once=args.once)
+    if args.command == "public-enqueue-scheduled":
+        from packages.public_app.worker import enqueue_scheduled_crawl  # noqa: PLC0415
+
+        return enqueue_scheduled_crawl()
+    if args.command == "public-import-sqlite":
+        from packages.public_app.import_sqlite import import_sqlite_x_to_supabase  # noqa: PLC0415
+
+        return import_sqlite_x_to_supabase()
     raise ValueError(f"Unknown command: {args.command}")
 
 

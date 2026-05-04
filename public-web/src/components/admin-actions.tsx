@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
-import { Check, X } from "lucide-react";
+import { Ban, Check, Play, X } from "lucide-react";
 
 import { useAuth } from "@/lib/auth-context";
-import { approveRequest, rejectRequest } from "@/lib/direct-data";
+import { approveRequest, disableAccount, enqueueManualCrawl, rejectRequest } from "@/lib/direct-data";
 
 function AdminButton({
   action,
@@ -71,6 +71,32 @@ export function RejectButton({ requestId, onChanged }: { requestId: string; onCh
       label="拒绝"
       kind="danger"
       icon={<X size={16} />}
+      onChanged={onChanged}
+    />
+  );
+}
+
+export function DisableButton({ accountId, onChanged }: { accountId: string; onChanged?: () => void }) {
+  const { supabase } = useAuth();
+  return (
+    <AdminButton
+      action={() => disableAccount(supabase, accountId)}
+      label="禁用"
+      kind="danger"
+      icon={<Ban size={16} />}
+      onChanged={onChanged}
+    />
+  );
+}
+
+export function ManualRunButton({ onChanged }: { onChanged?: () => void }) {
+  const { supabase } = useAuth();
+  return (
+    <AdminButton
+      action={() => enqueueManualCrawl(supabase)}
+      label="手动抓取"
+      kind="primary"
+      icon={<Play size={16} />}
       onChanged={onChanged}
     />
   );

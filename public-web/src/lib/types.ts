@@ -60,6 +60,14 @@ export type AdminRequestItem = {
   };
 };
 
+export type AdminAccountItem = {
+  id: string;
+  username: string;
+  displayName: string;
+  profileUrl: string;
+  backfillCompletedAt: string | null;
+};
+
 export type AdminJobItem = {
   id: string;
   kind: string;
