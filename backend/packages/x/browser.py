@@ -52,6 +52,12 @@ TIMELINE_JS = """() => {
     const retweetedBy = retweetBanner
       ? retweetBanner.textContent.trim().replace(/ retweeted$/, "").trim()
       : null;
+    const pinnedMarker = item.querySelector(".pinned, .pinned-tweet, .tweet-pinned, .icon-pin");
+    const headerText = item.querySelector(".timeline-item-header, .tweet-header, .pinned")?.textContent || "";
+    const itemText = item.textContent || "";
+    const isPinned = Boolean(pinnedMarker)
+      || /(^|\\s)pinned(\\s|$)/i.test(headerText)
+      || /^\\s*pinned\\s+/i.test(itemText);
 
     results.push({
       tweet_id: tweetId,
@@ -64,7 +70,8 @@ TIMELINE_JS = """() => {
       likes,
       views,
       media,
-      retweeted_by: retweetedBy
+      retweeted_by: retweetedBy,
+      is_pinned: isPinned
     });
   }
   return results;

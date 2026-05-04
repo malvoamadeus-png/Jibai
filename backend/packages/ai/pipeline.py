@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from typing import Any
 
 from packages.common.database import InsightStore, init_db, sqlite_connection
 from packages.common.io import safe_filename, write_json
@@ -1040,58 +1041,77 @@ def run_analysis(
     crawl_errors: list[str],
     force_reanalysis: bool = False,
 ) -> AnalysisRunSummary:
+    with sqlite_connection(paths) as conn:
+        init_db(conn)
+        store = InsightStore(conn)
+        return run_analysis_with_store(
+            store=store,
+            paths=paths,
+            notes=notes,
+            crawl_results=crawl_results,
+            crawl_errors=crawl_errors,
+            force_reanalysis=force_reanalysis,
+        )
+
+
+def run_analysis_with_store(
+    *,
+    store: Any,
+    paths: AppPaths,
+    notes: list[RawNoteRecord],
+    crawl_results: list[CrawlAccountResult],
+    crawl_errors: list[str],
+    force_reanalysis: bool = False,
+) -> AnalysisRunSummary:
     run_at = now_iso()
     run_id = run_at.replace(":", "").replace("+08:00", "").replace("-", "")
     aliases = load_security_aliases(paths)
 
-    with sqlite_connection(paths) as conn:
-        init_db(conn)
-        store = InsightStore(conn)
-        extracts, created_extracts, extract_errors = _analyze_missing_notes(
-            store=store,
-            notes=notes,
-            paths=paths,
-            force=force_reanalysis,
-        )
-        _refresh_security_entities(store=store, extracts=extracts, aliases=aliases)
-        author_records, author_errors = _materialize_author_timelines(
-            store=store,
-            notes=notes,
-            extracts=extracts,
-            crawl_results=crawl_results,
-        )
-        stock_records = _materialize_stock_timelines(
-            store=store,
-            extracts=extracts,
-        )
-        theme_records = _materialize_theme_timelines(
-            store=store,
-            extracts=extracts,
-        )
-        store.prune_orphan_securities()
+    extracts, created_extracts, extract_errors = _analyze_missing_notes(
+        store=store,
+        notes=notes,
+        paths=paths,
+        force=force_reanalysis,
+    )
+    _refresh_security_entities(store=store, extracts=extracts, aliases=aliases)
+    author_records, author_errors = _materialize_author_timelines(
+        store=store,
+        notes=notes,
+        extracts=extracts,
+        crawl_results=crawl_results,
+    )
+    stock_records = _materialize_stock_timelines(
+        store=store,
+        extracts=extracts,
+    )
+    theme_records = _materialize_theme_timelines(
+        store=store,
+        extracts=extracts,
+    )
+    store.prune_orphan_securities()
 
-        snapshot = AnalysisSnapshot(
-            run_id=run_id,
-            run_at=run_at,
-            processed_note_ids=[_note_key(note.platform, note.note_id) for note in notes],
-            crawl_results=crawl_results,
-            note_extracts=created_extracts,
-            author_summaries=author_records,
-            stock_views=stock_records,
-            theme_views=theme_records,
-            errors=[*crawl_errors, *extract_errors, *author_errors],
-        )
-        snapshot_path = paths.ai_snapshots_dir / f"{run_id}.json"
-        write_json(snapshot_path, snapshot.model_dump(mode="json"))
-        store.insert_analysis_run(
-            run_id=run_id,
-            run_at=run_at,
-            processed_note_count=len(notes),
-            error_count=len(snapshot.errors),
-            errors=snapshot.errors,
-            snapshot_path=str(snapshot_path),
-            crawl_results=crawl_results,
-        )
+    snapshot = AnalysisSnapshot(
+        run_id=run_id,
+        run_at=run_at,
+        processed_note_ids=[_note_key(note.platform, note.note_id) for note in notes],
+        crawl_results=crawl_results,
+        note_extracts=created_extracts,
+        author_summaries=author_records,
+        stock_views=stock_records,
+        theme_views=theme_records,
+        errors=[*crawl_errors, *extract_errors, *author_errors],
+    )
+    snapshot_path = paths.ai_snapshots_dir / f"{run_id}.json"
+    write_json(snapshot_path, snapshot.model_dump(mode="json"))
+    store.insert_analysis_run(
+        run_id=run_id,
+        run_at=run_at,
+        processed_note_count=len(notes),
+        error_count=len(snapshot.errors),
+        errors=snapshot.errors,
+        snapshot_path=str(snapshot_path),
+        crawl_results=crawl_results,
+    )
 
     exit_code = 0 if not snapshot.errors else 1
     return AnalysisRunSummary(exit_code=exit_code, snapshot=snapshot)

@@ -18,6 +18,8 @@ from src.jobs import (  # noqa: E402
     run_reanalyze_existing_job,
 )
 from src.scheduler import start_scheduler  # noqa: E402
+from packages.public_app.import_sqlite import import_sqlite_x_to_supabase  # noqa: E402
+from packages.public_app.worker import enqueue_scheduled_crawl, run_worker  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,6 +66,23 @@ def parse_args() -> argparse.Namespace:
         "reanalyze-existing",
         help="Regenerate AI viewpoint extraction for all stored content.",
     )
+    public_worker_parser = subparsers.add_parser(
+        "public-worker",
+        help="Run the Supabase-backed public X worker.",
+    )
+    public_worker_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Process at most one pending public crawl job and exit.",
+    )
+    subparsers.add_parser(
+        "public-enqueue-scheduled",
+        help="Enqueue one scheduled public X crawl job in Supabase.",
+    )
+    subparsers.add_parser(
+        "public-import-sqlite",
+        help="Import existing SQLite X content and analyses into Supabase.",
+    )
     return parser.parse_args()
 
 
@@ -83,6 +102,12 @@ def main() -> int:
         return run_normalize_securities_job()
     if args.command == "reanalyze-existing":
         return run_reanalyze_existing_job()
+    if args.command == "public-worker":
+        return run_worker(once=args.once)
+    if args.command == "public-enqueue-scheduled":
+        return enqueue_scheduled_crawl()
+    if args.command == "public-import-sqlite":
+        return import_sqlite_x_to_supabase()
     raise ValueError(f"Unknown command: {args.command}")
 
 

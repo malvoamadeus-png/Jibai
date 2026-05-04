@@ -30,6 +30,7 @@ class TweetCandidate:
     views: int
     media: list[str]
     retweeted_by: str | None = None
+    is_pinned: bool = False
 
 
 @dataclass(slots=True)
@@ -107,6 +108,7 @@ def _candidate_from_payload(payload: dict[str, Any]) -> TweetCandidate | None:
         retweeted_by=(
             str(payload.get("retweeted_by") or "").strip() or None
         ),
+        is_pinned=bool(payload.get("is_pinned")),
     )
 
 
@@ -115,8 +117,11 @@ def collect_tweet_candidates(
     cfg: WatchlistConfig,
     paths: AppPaths,
     account: AccountTarget,
+    limit: int | None = None,
+    max_pages: int = 3,
 ) -> tuple[list[TweetCandidate], list[TimelineAttempt]]:
     target_author = f"@{account.username.lower()}"
+    target_limit = limit or account.limit
     seen_ids: set[str] = set()
     results: list[TweetCandidate] = []
     attempts: list[TimelineAttempt] = []
@@ -124,8 +129,7 @@ def collect_tweet_candidates(
     for instance_index, instance in enumerate(cfg.nitter_instances, start=1):
         cursor: str | None = None
         page = 1
-        max_pages = 3
-        while len(results) < account.limit and page <= max_pages:
+        while len(results) < target_limit and page <= max_pages:
             debug_dir = paths.x_debug_dir / account.safe_name
             debug_prefix = f"{account.safe_name}-{instance_index}-{page}-{int(time.time())}"
             page_result = fetch_timeline_page(
@@ -161,18 +165,18 @@ def collect_tweet_candidates(
                     continue
                 seen_ids.add(candidate.tweet_id)
                 results.append(candidate)
-                if len(results) >= account.limit:
+                if len(results) >= target_limit:
                     break
 
-            if not cursor or len(results) >= account.limit:
+            if not cursor or len(results) >= target_limit:
                 break
             page += 1
             time.sleep(0.8)
 
         if results:
-            return results[: account.limit], attempts
+            return results[:target_limit], attempts
 
-    return results[: account.limit], attempts
+    return results[:target_limit], attempts
 
 
 def _build_empty_timeline_error(attempts: list[TimelineAttempt]) -> str:
@@ -275,7 +279,108 @@ def _build_note_record(
         comment_count=replies,
         share_count=retweets,
         fetched_at=fetched_at,
+        metadata={"is_pinned": candidate.is_pinned},
     )
+
+def crawl_account_once(
+    *,
+    cfg: WatchlistConfig,
+    paths: AppPaths,
+    account: AccountTarget,
+    seen_note_ids: set[str] | None = None,
+    target_limit: int | None = None,
+    max_pages: int = 3,
+    max_post_age_days: int | None = None,
+    exclude_old_posts: bool | None = None,
+    skip_old_pinned: bool = False,
+    run_at: str | None = None,
+) -> tuple[CrawlAccountResult, list[RawNoteRecord], set[str]]:
+    fetched_at = run_at or now_iso()
+    seen_ids = set(seen_note_ids or set())
+    accepted_notes: list[RawNoteRecord] = []
+    fetched_note_ids: list[str] = []
+    account_error: str | None = None
+    candidate_count = 0
+    new_count = 0
+    target_count = target_limit or account.limit
+    scan_limit = max(target_count, target_count * 3)
+
+    try:
+        user_info = fetch_user_info(account.username)
+        candidates, timeline_attempts = collect_tweet_candidates(
+            cfg=cfg,
+            paths=paths,
+            account=account,
+            limit=scan_limit,
+            max_pages=max_pages,
+        )
+        candidate_count = len(candidates)
+        if not candidates:
+            raise RuntimeError(_build_empty_timeline_error(timeline_attempts))
+
+        for candidate in candidates:
+            fetched_note_ids.append(candidate.tweet_id)
+            detail = fetch_tweet_detail(account.username, candidate.tweet_id)
+            detail_author = detail.get("author") if isinstance(detail.get("author"), dict) else {}
+            detail_screen_name = str(detail_author.get("screen_name") or account.username).strip()
+            if detail_screen_name.lower() != account.username.lower():
+                continue
+            if candidate.tweet_id in seen_ids:
+                continue
+
+            note = _build_note_record(
+                account=account,
+                candidate=candidate,
+                detail=detail,
+                user_info=user_info,
+                fetched_at=fetched_at,
+            )
+            age_days = max_post_age_days if max_post_age_days is not None else cfg.max_post_age_days
+            should_exclude_old = cfg.exclude_old_posts if exclude_old_posts is None else exclude_old_posts
+            is_old = is_older_than_days(
+                note.publish_time,
+                days=age_days,
+                reference_time=fetched_at,
+            )
+            if skip_old_pinned and candidate.is_pinned and is_old:
+                print(
+                    f"[x] account {account.name} skip old pinned post {note.note_id} "
+                    f"older than {age_days} days",
+                    file=sys.stderr,
+                )
+                continue
+            if should_exclude_old and is_old:
+                print(
+                    f"[x] account {account.name} skip old post {note.note_id} "
+                    f"older than {age_days} days",
+                    file=sys.stderr,
+                )
+                continue
+
+            accepted_notes.append(note)
+            seen_ids.add(candidate.tweet_id)
+            new_count += 1
+            if len(accepted_notes) >= target_count:
+                break
+
+        status = "success"
+    except Exception as exc:
+        account_error = str(exc)
+        status = "failed"
+        print(f"[x] account {account.name} failed: {account_error}", file=sys.stderr)
+
+    result = CrawlAccountResult(
+        platform="x",
+        account_name=account.name,
+        profile_url=account.profile_url,
+        run_at=fetched_at,
+        status=status,  # type: ignore[arg-type]
+        candidate_count=candidate_count,
+        new_note_count=new_count,
+        fetched_note_ids=fetched_note_ids,
+        error=account_error,
+    )
+    return result, accepted_notes, seen_ids
 
 
 def run_once(cfg: WatchlistConfig, paths: AppPaths) -> CrawlRunSummary:
@@ -284,79 +389,40 @@ def run_once(cfg: WatchlistConfig, paths: AppPaths) -> CrawlRunSummary:
     results: list[CrawlAccountResult] = []
     new_notes: list[RawNoteRecord] = []
     errors: list[str] = []
-
     for index, account in enumerate(cfg.accounts):
         bucket = _ensure_state_bucket(state, account.name)
         seen_note_ids = set(bucket.get("seen_note_ids") or [])
         fetched_note_ids: list[str] = []
         account_error: str | None = None
-        candidate_count = 0
-        new_count = 0
 
-        try:
-            user_info = fetch_user_info(account.username)
-            candidates, timeline_attempts = collect_tweet_candidates(
-                cfg=cfg,
-                paths=paths,
-                account=account,
-            )
-            candidate_count = len(candidates)
-            if not candidates:
-                raise RuntimeError(_build_empty_timeline_error(timeline_attempts))
-
-            for candidate in candidates:
-                fetched_note_ids.append(candidate.tweet_id)
-                detail = fetch_tweet_detail(account.username, candidate.tweet_id)
-                detail_author = detail.get("author") if isinstance(detail.get("author"), dict) else {}
-                detail_screen_name = str(detail_author.get("screen_name") or account.username).strip()
-                if detail_screen_name.lower() != account.username.lower():
-                    continue
-                if candidate.tweet_id in seen_note_ids:
-                    continue
-
-                note = _build_note_record(
-                    account=account,
-                    candidate=candidate,
-                    detail=detail,
-                    user_info=user_info,
-                    fetched_at=run_at,
-                )
-                if cfg.exclude_old_posts and is_older_than_days(
-                    note.publish_time,
-                    days=cfg.max_post_age_days,
-                    reference_time=run_at,
-                ):
-                    print(
-                        f"[x] account {account.name} skip old post {note.note_id} "
-                        f"older than {cfg.max_post_age_days} days",
-                        file=sys.stderr,
-                    )
-                    continue
-                new_notes.append(note)
-                seen_note_ids.add(candidate.tweet_id)
-                new_count += 1
-
-            bucket["seen_note_ids"] = sorted(seen_note_ids)
+        result, account_notes, updated_seen_note_ids = crawl_account_once(
+            cfg=cfg,
+            paths=paths,
+            account=account,
+            seen_note_ids=seen_note_ids,
+            run_at=run_at,
+        )
+        new_notes.extend(account_notes)
+        fetched_note_ids = result.fetched_note_ids
+        account_error = result.error
+        if result.status == "success":
+            bucket["seen_note_ids"] = sorted(updated_seen_note_ids)
             bucket["last_run_at"] = run_at
             bucket["last_error"] = None
-            status = "success"
-        except Exception as exc:
-            account_error = str(exc)
+        else:
             bucket["last_run_at"] = run_at
             bucket["last_error"] = account_error
-            status = "failed"
             errors.append(f"[x {account.name}] {account_error}")
-            print(f"[x] account {account.name} failed: {account_error}", file=sys.stderr)
 
         results.append(
             CrawlAccountResult(
-                platform="x",
-                account_name=account.name,
-                profile_url=account.profile_url,
+                platform=result.platform,
+                account_name=result.account_name,
+                profile_url=result.profile_url,
                 run_at=run_at,
-                status=status,  # type: ignore[arg-type]
-                candidate_count=candidate_count,
-                new_note_count=new_count,
+                status=result.status,
+                candidate_count=result.candidate_count,
+                new_note_count=result.new_note_count,
                 fetched_note_ids=fetched_note_ids,
                 error=account_error,
             )
