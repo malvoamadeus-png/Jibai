@@ -87,6 +87,9 @@ CURSOR_JS = """() => {
 
 BOT_PROTECTION_MARKERS = (
     ("anubis", "blocked by Anubis bot protection"),
+    ("x cancelled | verifying your request", "blocked by XCancel request verification"),
+    ("verifying your request", "request verification required"),
+    ("antibot", "anti-bot verification required"),
     ("access denied", "access denied"),
     ("captcha", "captcha required"),
     ("cloudflare", "blocked by Cloudflare"),

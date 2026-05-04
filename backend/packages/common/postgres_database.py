@@ -188,7 +188,7 @@ class PostgresInsightStore:
               c.collect_count,
               c.comment_count,
               c.share_count,
-              COALESCE(c.fetched_at, '') AS fetched_at,
+              COALESCE(c.fetched_at, c.publish_time, c.created_at) AS fetched_at,
               COALESCE(c.metadata_json, '{}'::jsonb) AS metadata_json
             FROM content_items c
             JOIN x_accounts a ON a.id = c.account_id
@@ -197,7 +197,7 @@ class PostgresInsightStore:
         if platform:
             sql += " WHERE c.platform = %s"
             params.append(platform)
-        sql += " ORDER BY COALESCE(c.publish_time, c.fetched_at) DESC, c.external_content_id DESC"
+        sql += " ORDER BY COALESCE(c.publish_time, c.fetched_at, c.created_at) DESC, c.external_content_id DESC"
         rows = self.conn.execute(sql, params).fetchall()
         result: list[RawNoteRecord] = []
         for row in rows:
