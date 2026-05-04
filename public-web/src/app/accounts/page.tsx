@@ -1,36 +1,56 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 
 import { AccountSubscriptionButton } from "@/components/account-actions";
+import { LoadingPanel, LoginRequired } from "@/components/page-states";
 import { SubmitAccountForm } from "@/components/submit-account-form";
-import { getCurrentProfile } from "@/lib/auth";
-import { listAccounts, listMyRequests } from "@/lib/data";
+import { useAuth } from "@/lib/auth-context";
+import { listAccounts, listMyRequests } from "@/lib/direct-data";
+import type { AccountListItem, RequestListItem } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
+export default function AccountsPage() {
+  const { loading, profile, signIn, supabase } = useAuth();
+  const [query, setQuery] = useState("");
+  const [accounts, setAccounts] = useState<AccountListItem[]>([]);
+  const [requests, setRequests] = useState<RequestListItem[]>([]);
 
-export default async function AccountsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>;
-}) {
-  const profile = await getCurrentProfile();
-  if (!profile) redirect("/");
-  const params = await searchParams;
-  const [accounts, requests] = await Promise.all([
-    listAccounts(profile, params.q || ""),
-    listMyRequests(profile),
-  ]);
+  const reload = useCallback(async () => {
+    if (!profile) return;
+    const [nextAccounts, nextRequests] = await Promise.all([
+      listAccounts(supabase, profile, query),
+      listMyRequests(supabase, profile),
+    ]);
+    setAccounts(nextAccounts);
+    setRequests(nextRequests);
+  }, [profile, query, supabase]);
+
+  useEffect(() => {
+    Promise.resolve().then(reload).catch(console.error);
+  }, [reload]);
+
+  if (loading) return <LoadingPanel />;
+  if (!profile) return <LoginRequired onLogin={signIn} />;
 
   return (
     <main className="page">
       <div className="section-head">
         <div>
           <h1>账号库</h1>
-          <p className="muted">已审批账号可直接订阅，新账号会进入管理员审批。</p>
+          <p className="muted">已审批账号可直接订阅，新账号会进入管理员审批。当前版本不再自动抓取新内容。</p>
         </div>
       </div>
 
       <section className="panel">
-        <SubmitAccountForm />
+        <div className="filter-row" style={{ marginBottom: 12 }}>
+          <input
+            aria-label="搜索账号"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索已审批账号"
+          />
+        </div>
+        <SubmitAccountForm onSubmitted={reload} />
       </section>
 
       <section className="table-panel" style={{ marginTop: 18 }}>
@@ -38,7 +58,7 @@ export default async function AccountsPage({
           <thead>
             <tr>
               <th>账号</th>
-              <th>回溯</th>
+              <th>历史</th>
               <th>订阅</th>
             </tr>
           </thead>
@@ -52,10 +72,10 @@ export default async function AccountsPage({
                   </a>
                 </td>
                 <td>
-                  <span className="status-pill">{account.backfillCompletedAt ? "已完成" : "排队中"}</span>
+                  <span className="status-pill">{account.backfillCompletedAt ? "已有导入" : "等待导入"}</span>
                 </td>
                 <td>
-                  <AccountSubscriptionButton accountId={account.id} subscribed={account.subscribed} />
+                  <AccountSubscriptionButton accountId={account.id} subscribed={account.subscribed} onChanged={reload} />
                 </td>
               </tr>
             ))}

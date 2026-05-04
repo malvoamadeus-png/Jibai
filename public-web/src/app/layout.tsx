@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
+import { AuthProvider } from "@/lib/auth-context";
 import { Nav } from "@/components/nav";
-import { getCurrentProfile } from "@/lib/auth";
 
 import "./globals.css";
 
@@ -15,14 +15,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const profile = await getCurrentProfile();
   return (
     <html lang="zh-CN">
       <body>
-        <div className="app-frame">
-          <Nav profile={profile} />
-          <div className="app-main">{children}</div>
-        </div>
+        <AuthProvider>
+          <div className="app-frame">
+            <Nav />
+            <div className="app-main">{children}</div>
+          </div>
+        </AuthProvider>
       </body>
     </html>
   );

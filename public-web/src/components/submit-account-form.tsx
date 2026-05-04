@@ -4,8 +4,12 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState, useTransition } from "react";
 import { Send } from "lucide-react";
 
-export function SubmitAccountForm() {
+import { useAuth } from "@/lib/auth-context";
+import { submitAccount } from "@/lib/direct-data";
+
+export function SubmitAccountForm({ onSubmitted }: { onSubmitted?: () => void }) {
   const router = useRouter();
+  const { supabase } = useAuth();
   const [account, setAccount] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -14,19 +18,15 @@ export function SubmitAccountForm() {
     event.preventDefault();
     setMessage(null);
     startTransition(async () => {
-      const response = await fetch("/api/accounts/request", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ account }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        setMessage(payload.message || "提交失败");
-        return;
+      try {
+        await submitAccount(supabase, account);
+        setAccount("");
+        setMessage("已提交");
+        onSubmitted?.();
+        router.refresh();
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "提交失败");
       }
-      setAccount("");
-      setMessage("已提交");
-      router.refresh();
     });
   }
 

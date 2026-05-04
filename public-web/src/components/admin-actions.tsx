@@ -3,18 +3,23 @@
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
-import { Check, Play, X } from "lucide-react";
+import { Check, X } from "lucide-react";
+
+import { useAuth } from "@/lib/auth-context";
+import { approveRequest, rejectRequest } from "@/lib/direct-data";
 
 function AdminButton({
   action,
   label,
   kind = "secondary",
   icon,
+  onChanged,
 }: {
-  action: string;
+  action: () => Promise<void>;
   label: string;
   kind?: "primary" | "secondary" | "danger";
   icon: ReactNode;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -23,13 +28,13 @@ function AdminButton({
   function submit() {
     setError(null);
     startTransition(async () => {
-      const response = await fetch(action, { method: "POST" });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        setError(payload.message || "操作失败");
-        return;
+      try {
+        await action();
+        onChanged?.();
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "操作失败");
       }
-      router.refresh();
     });
   }
 
@@ -45,21 +50,28 @@ function AdminButton({
   );
 }
 
-export function ApproveButton({ requestId }: { requestId: string }) {
+export function ApproveButton({ requestId, onChanged }: { requestId: string; onChanged?: () => void }) {
+  const { supabase } = useAuth();
   return (
     <AdminButton
-      action={`/api/admin/requests/${requestId}/approve`}
+      action={() => approveRequest(supabase, requestId)}
       label="通过"
       kind="primary"
       icon={<Check size={16} />}
+      onChanged={onChanged}
     />
   );
 }
 
-export function RejectButton({ requestId }: { requestId: string }) {
-  return <AdminButton action={`/api/admin/requests/${requestId}/reject`} label="拒绝" kind="danger" icon={<X size={16} />} />;
-}
-
-export function ManualRunButton() {
-  return <AdminButton action="/api/admin/jobs/manual" label="手动运行" kind="primary" icon={<Play size={16} />} />;
+export function RejectButton({ requestId, onChanged }: { requestId: string; onChanged?: () => void }) {
+  const { supabase } = useAuth();
+  return (
+    <AdminButton
+      action={() => rejectRequest(supabase, requestId)}
+      label="拒绝"
+      kind="danger"
+      icon={<X size={16} />}
+      onChanged={onChanged}
+    />
+  );
 }

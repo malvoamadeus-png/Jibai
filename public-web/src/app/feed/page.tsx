@@ -1,14 +1,34 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { getCurrentProfile } from "@/lib/auth";
-import { listFeed } from "@/lib/data";
+import { useEffect, useState } from "react";
 
-export const dynamic = "force-dynamic";
+import { LoadingPanel, LoginRequired } from "@/components/page-states";
+import { useAuth } from "@/lib/auth-context";
+import { listFeed } from "@/lib/direct-data";
+import type { FeedDay } from "@/lib/types";
 
-export default async function FeedPage() {
-  const profile = await getCurrentProfile();
-  if (!profile) redirect("/");
-  const feed = await listFeed(profile, 60);
+export default function FeedPage() {
+  const { loading, profile, signIn, supabase } = useAuth();
+  const [feed, setFeed] = useState<FeedDay[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!profile) {
+        setFeed([]);
+        return;
+      }
+      const nextFeed = await listFeed(supabase, profile, 60);
+      if (!cancelled) setFeed(nextFeed);
+    }
+    load().catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, supabase]);
+
+  if (loading) return <LoadingPanel />;
+  if (!profile) return <LoginRequired onLogin={signIn} />;
 
   return (
     <main className="page">

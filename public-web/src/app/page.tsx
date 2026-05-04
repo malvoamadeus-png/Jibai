@@ -1,15 +1,40 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowRight, Library, Radio, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
 
-import { getCurrentProfile } from "@/lib/auth";
-import { listAccounts, listFeed } from "@/lib/data";
+import { useAuth } from "@/lib/auth-context";
+import { listAccounts as listDirectAccounts, listFeed as listDirectFeed } from "@/lib/direct-data";
+import type { AccountListItem, FeedDay } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
+export default function HomePage() {
+  const { loading, profile, signIn, supabase } = useAuth();
+  const [accounts, setAccounts] = useState<AccountListItem[]>([]);
+  const [feed, setFeed] = useState<FeedDay[]>([]);
 
-export default async function HomePage() {
-  const profile = await getCurrentProfile();
-  const accounts = profile ? await listAccounts(profile) : [];
-  const feed = profile ? await listFeed(profile, 6) : [];
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!profile) {
+        setAccounts([]);
+        setFeed([]);
+        return;
+      }
+      const [nextAccounts, nextFeed] = await Promise.all([
+        listDirectAccounts(supabase, profile),
+        listDirectFeed(supabase, profile, 6),
+      ]);
+      if (!cancelled) {
+        setAccounts(nextAccounts);
+        setFeed(nextFeed);
+      }
+    }
+    load().catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, supabase]);
 
   return (
     <main className="page">
@@ -31,11 +56,9 @@ export default async function HomePage() {
               </Link>
             </div>
           ) : (
-            <form action="/api/auth/login" method="post">
-              <button className="primary-button" type="submit">
-                Google 登录
-              </button>
-            </form>
+            <button className="primary-button" type="button" disabled={loading} onClick={signIn}>
+              Google 登录
+            </button>
           )}
           <div className="metric-row">
             <div className="metric">

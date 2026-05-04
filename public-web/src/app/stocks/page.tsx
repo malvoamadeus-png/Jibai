@@ -1,14 +1,34 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { getCurrentProfile } from "@/lib/auth";
-import { listEntities } from "@/lib/data";
+import { useEffect, useState } from "react";
 
-export const dynamic = "force-dynamic";
+import { LoadingPanel, LoginRequired } from "@/components/page-states";
+import { useAuth } from "@/lib/auth-context";
+import { listEntities } from "@/lib/direct-data";
+import type { EntityListItem } from "@/lib/types";
 
-export default async function StocksPage() {
-  const profile = await getCurrentProfile();
-  if (!profile) redirect("/");
-  const stocks = await listEntities(profile, "stock");
+export default function StocksPage() {
+  const { loading, profile, signIn, supabase } = useAuth();
+  const [stocks, setStocks] = useState<EntityListItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!profile) {
+        setStocks([]);
+        return;
+      }
+      const nextStocks = await listEntities(supabase, "stock");
+      if (!cancelled) setStocks(nextStocks);
+    }
+    load().catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, supabase]);
+
+  if (loading) return <LoadingPanel />;
+  if (!profile) return <LoginRequired onLogin={signIn} />;
 
   return (
     <main className="page">

@@ -1,14 +1,34 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { getCurrentProfile } from "@/lib/auth";
-import { listEntities } from "@/lib/data";
+import { useEffect, useState } from "react";
 
-export const dynamic = "force-dynamic";
+import { LoadingPanel, LoginRequired } from "@/components/page-states";
+import { useAuth } from "@/lib/auth-context";
+import { listEntities } from "@/lib/direct-data";
+import type { EntityListItem } from "@/lib/types";
 
-export default async function ThemesPage() {
-  const profile = await getCurrentProfile();
-  if (!profile) redirect("/");
-  const themes = await listEntities(profile, "theme");
+export default function ThemesPage() {
+  const { loading, profile, signIn, supabase } = useAuth();
+  const [themes, setThemes] = useState<EntityListItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!profile) {
+        setThemes([]);
+        return;
+      }
+      const nextThemes = await listEntities(supabase, "theme");
+      if (!cancelled) setThemes(nextThemes);
+    }
+    load().catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, supabase]);
+
+  if (loading) return <LoadingPanel />;
+  if (!profile) return <LoginRequired onLogin={signIn} />;
 
   return (
     <main className="page">

@@ -1,9 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import { Bell, BookText, CircleDollarSign, Home, LogOut, Orbit, Radar, Shield, UserRound } from "lucide-react";
 
-import type { UserProfile } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
 
-export function Nav({ profile }: { profile: UserProfile | null }) {
+export function Nav() {
+  const { loading, profile, signIn, signOut } = useAuth();
   const links = profile
     ? [
         { href: "/", label: "总览", icon: Home },
@@ -47,25 +50,21 @@ export function Nav({ profile }: { profile: UserProfile | null }) {
         </nav>
 
         <div className="sidebar-footer">
-        {profile ? (
-          <>
-            <span className="user-chip">
-              <UserRound size={16} />
-              {profile.email}
-            </span>
-            <form action="/api/auth/logout" method="post">
-              <button className="icon-button" type="submit" aria-label="退出登录">
+          {profile ? (
+            <>
+              <span className="user-chip">
+                <UserRound size={16} />
+                {profile.email}
+              </span>
+              <button className="icon-button" type="button" aria-label="退出登录" onClick={signOut}>
                 <LogOut size={17} />
               </button>
-            </form>
-          </>
-        ) : (
-          <form action="/api/auth/login" method="post">
-            <button className="primary-button" type="submit">
+            </>
+          ) : (
+            <button className="primary-button" type="button" disabled={loading} onClick={signIn}>
               Google 登录
             </button>
-          </form>
-        )}
+          )}
         </div>
       </div>
     </aside>

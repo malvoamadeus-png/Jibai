@@ -1,39 +1,60 @@
-import { redirect } from "next/navigation";
+"use client";
 
-import { ApproveButton, ManualRunButton, RejectButton } from "@/components/admin-actions";
-import { getCurrentProfile } from "@/lib/auth";
-import { listAdminDashboard } from "@/lib/data";
+import { useCallback, useEffect, useState } from "react";
 
-export const dynamic = "force-dynamic";
+import { ApproveButton, RejectButton } from "@/components/admin-actions";
+import { LoadingPanel, LoginRequired } from "@/components/page-states";
+import { useAuth } from "@/lib/auth-context";
+import { listAdminDashboard } from "@/lib/direct-data";
+import type { AdminRequestItem } from "@/lib/types";
 
-export default async function AdminPage() {
-  const profile = await getCurrentProfile();
-  if (!profile) redirect("/");
-  if (!profile.isAdmin) redirect("/");
-  const dashboard = await listAdminDashboard();
+export default function AdminPage() {
+  const { loading, profile, signIn, supabase } = useAuth();
+  const [approvedCount, setApprovedCount] = useState(0);
+  const [requests, setRequests] = useState<AdminRequestItem[]>([]);
+
+  const reload = useCallback(async () => {
+    if (!profile?.isAdmin) return;
+    const dashboard = await listAdminDashboard(supabase);
+    setApprovedCount(dashboard.approvedCount);
+    setRequests(dashboard.requests);
+  }, [profile, supabase]);
+
+  useEffect(() => {
+    Promise.resolve().then(reload).catch(console.error);
+  }, [reload]);
+
+  if (loading) return <LoadingPanel />;
+  if (!profile) return <LoginRequired onLogin={signIn} />;
+  if (!profile.isAdmin) {
+    return (
+      <main className="page">
+        <div className="empty">你没有管理员权限。</div>
+      </main>
+    );
+  }
 
   return (
     <main className="page">
       <div className="section-head">
         <div>
           <h1>管理</h1>
-          <p className="muted">审批账号、查看抓取队列和运行状态。</p>
+          <p className="muted">审批账号请求。当前版本已经关闭 Linux worker，不再提供手动抓取按钮。</p>
         </div>
-        <ManualRunButton />
       </div>
 
       <section className="metric-row">
         <div className="metric">
-          <strong>{dashboard.approvedCount}/100</strong>
+          <strong>{approvedCount}/100</strong>
           <span className="muted">已批准账号</span>
         </div>
         <div className="metric">
-          <strong>{dashboard.requests.length}</strong>
+          <strong>{requests.length}</strong>
           <span className="muted">待审批</span>
         </div>
         <div className="metric">
-          <strong>{dashboard.jobs.filter((job) => job.status === "running").length}</strong>
-          <span className="muted">运行中</span>
+          <strong>关闭</strong>
+          <span className="muted">自动抓取</span>
         </div>
       </section>
 
@@ -48,7 +69,7 @@ export default async function AdminPage() {
             </tr>
           </thead>
           <tbody>
-            {dashboard.requests.map((request) => (
+            {requests.map((request) => (
               <tr key={request.id}>
                 <td>
                   <a className="account-cell" href={request.account.profileUrl} target="_blank" rel="noreferrer">
@@ -59,47 +80,15 @@ export default async function AdminPage() {
                 <td>{request.requesterEmail}</td>
                 <td className="muted">{new Date(request.createdAt).toLocaleString()}</td>
                 <td>
-                  <ApproveButton requestId={request.id} />
-                  <RejectButton requestId={request.id} />
+                  <ApproveButton requestId={request.id} onChanged={reload} />
+                  <RejectButton requestId={request.id} onChanged={reload} />
                 </td>
               </tr>
             ))}
-            {!dashboard.requests.length ? (
+            {!requests.length ? (
               <tr>
                 <td colSpan={4}>
                   <div className="empty">暂无待审批账号</div>
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="table-panel" style={{ marginTop: 18 }}>
-        <table>
-          <thead>
-            <tr>
-              <th>任务</th>
-              <th>状态</th>
-              <th>结果</th>
-              <th>时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dashboard.jobs.map((job) => (
-              <tr key={job.id}>
-                <td>{job.kind}</td>
-                <td>
-                  <span className="status-pill">{job.status}</span>
-                </td>
-                <td>{job.errorText || job.summary || "-"}</td>
-                <td className="muted">{new Date(job.createdAt).toLocaleString()}</td>
-              </tr>
-            ))}
-            {!dashboard.jobs.length ? (
-              <tr>
-                <td colSpan={4}>
-                  <div className="empty">暂无任务</div>
                 </td>
               </tr>
             ) : null}
