@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { AccountSubscriptionButton } from "@/components/account-actions";
-import { LoadingPanel, LoginRequired } from "@/components/page-states";
+import { LoadingPanel } from "@/components/page-states";
+import { SignInCta } from "@/components/signin-cta";
 import { SubmitAccountForm } from "@/components/submit-account-form";
 import { useAuth } from "@/lib/auth-context";
 import { listAccounts, listMyRequests } from "@/lib/direct-data";
@@ -14,30 +15,39 @@ export default function AccountsPage() {
   const [query, setQuery] = useState("");
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [requests, setRequests] = useState<RequestListItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!profile) return;
-    const [nextAccounts, nextRequests] = await Promise.all([
-      listAccounts(supabase, profile, query),
-      listMyRequests(supabase, profile),
-    ]);
-    setAccounts(nextAccounts);
-    setRequests(nextRequests);
-  }, [profile, query, supabase]);
+    if (loading) return;
+    try {
+      const [nextAccounts, nextRequests] = await Promise.all([
+        listAccounts(supabase, profile, query),
+        profile ? listMyRequests(supabase, profile) : Promise.resolve([]),
+      ]);
+      setAccounts(nextAccounts);
+      setRequests(nextRequests);
+      setError(null);
+    } catch (err) {
+      setAccounts([]);
+      setRequests([]);
+      setError(err instanceof Error ? err.message : "账号库加载失败");
+    }
+  }, [loading, profile, query, supabase]);
 
   useEffect(() => {
-    Promise.resolve().then(reload).catch(console.error);
+    Promise.resolve().then(reload);
   }, [reload]);
 
   if (loading) return <LoadingPanel />;
-  if (!profile) return <LoginRequired onLogin={signIn} />;
 
   return (
     <main className="page">
       <div className="section-head">
         <div>
           <h1>账号库</h1>
-          <p className="muted">已审批账号可直接订阅，新账号会进入管理员审批。当前版本不再自动抓取新内容。</p>
+          <p className="muted">
+            已审批账号未登录也可浏览。订阅、提交新账号和查看自己的提交记录需要 Google 登录。
+          </p>
         </div>
       </div>
 
@@ -49,8 +59,12 @@ export default function AccountsPage() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索已审批账号"
           />
+          <button className="secondary-button" type="button" onClick={reload}>
+            更新
+          </button>
         </div>
-        <SubmitAccountForm onSubmitted={reload} />
+        {error ? <div className="empty field-error">数据接口未就绪：{error}</div> : null}
+        {profile ? <SubmitAccountForm onSubmitted={reload} /> : <SignInCta onLogin={signIn} compact />}
       </section>
 
       <section className="table-panel" style={{ marginTop: 18 }}>
@@ -90,33 +104,35 @@ export default function AccountsPage() {
         </table>
       </section>
 
-      <section className="panel" style={{ marginTop: 18 }}>
-        <h2>我的提交</h2>
-        {requests.length ? (
-          <table>
-            <thead>
-              <tr>
-                <th>账号</th>
-                <th>状态</th>
-                <th>时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((request) => (
-                <tr key={request.id}>
-                  <td>@{request.normalizedUsername}</td>
-                  <td>
-                    <span className="status-pill">{request.status}</span>
-                  </td>
-                  <td className="muted">{new Date(request.createdAt).toLocaleString()}</td>
+      {profile ? (
+        <section className="panel" style={{ marginTop: 18 }}>
+          <h2>我的提交</h2>
+          {requests.length ? (
+            <table>
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>状态</th>
+                  <th>时间</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="empty">暂无提交</div>
-        )}
-      </section>
+              </thead>
+              <tbody>
+                {requests.map((request) => (
+                  <tr key={request.id}>
+                    <td>@{request.normalizedUsername}</td>
+                    <td>
+                      <span className="status-pill">{request.status}</span>
+                    </td>
+                    <td className="muted">{new Date(request.createdAt).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty">暂无提交</div>
+          )}
+        </section>
+      ) : null}
     </main>
   );
 }

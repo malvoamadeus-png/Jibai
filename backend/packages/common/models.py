@@ -199,6 +199,15 @@ class StockTimelineFile(BaseModel):
     records: list[StockDayRecord] = Field(default_factory=list)
 
 
+class StockPriceCandle(BaseModel):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+
+
 class ThemeDayRecord(BaseModel):
     date: str
     theme_key: str

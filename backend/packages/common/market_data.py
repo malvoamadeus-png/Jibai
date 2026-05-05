@@ -1,10 +1,30 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import requests
+
+
+A_SHARE_MARKETS = {"SSE", "SZSE", "BJSE"}
+US_MARKETS = {"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS", "IEX", "OTC", "US"}
+YAHOO_SUFFIX_BY_MARKET = {
+    "KRX": ".KS",
+    "KOSDAQ": ".KQ",
+    "LSE": ".L",
+    "TSX": ".TO",
+    "TSXV": ".V",
+    "XETRA": ".DE",
+    "EPA": ".PA",
+    "EURONEXT": ".AS",
+    "EBR": ".BR",
+    "XMIL": ".MI",
+    "SIX": ".SW",
+}
+_PLAIN_US_TICKER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9.]{0,4}$")
+_A_SHARE_KEY_RE = re.compile(r"^(\d{6})\.(sh|sz|bj)$", re.IGNORECASE)
 
 
 def _to_number(value: str | None) -> float | None:
@@ -18,17 +38,95 @@ def _to_number(value: str | None) -> float | None:
 
 def _to_yahoo_range(days: int) -> str:
     normalized_days = max(30, min(int(days), 5000))
-    if normalized_days <= 125:
+    if normalized_days <= 190:
         return "6mo"
-    if normalized_days <= 250:
+    if normalized_days <= 370:
         return "1y"
-    if normalized_days <= 500:
+    if normalized_days <= 800:
         return "2y"
-    if normalized_days <= 1250:
+    if normalized_days <= 1900:
         return "5y"
-    if normalized_days <= 2500:
+    if normalized_days <= 3700:
         return "10y"
     return "max"
+
+
+def _normalize_market(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().upper()
+    return normalized or None
+
+
+def _infer_ticker_from_key(security_key: str | None) -> str | None:
+    key = (security_key or "").strip()
+    if _PLAIN_US_TICKER_RE.fullmatch(key):
+        return key.upper()
+    return None
+
+
+def _infer_a_share_from_key(security_key: str | None) -> tuple[str, str] | None:
+    match = _A_SHARE_KEY_RE.fullmatch((security_key or "").strip())
+    if not match:
+        return None
+    ticker = match.group(1)
+    suffix = match.group(2).lower()
+    if suffix == "sh":
+        return ticker, "SSE"
+    if suffix == "sz":
+        return ticker, "SZSE"
+    return ticker, "BJSE"
+
+
+def _to_yahoo_us_symbol(ticker: str) -> str:
+    return ticker.replace(".", "-")
+
+
+def build_market_data_target(
+    *,
+    ticker: str | None,
+    market: str | None,
+    security_key: str | None = None,
+) -> dict[str, str] | None:
+    normalized_ticker = (ticker or "").strip().upper()
+    normalized_market = _normalize_market(market)
+
+    if not normalized_ticker:
+        a_share = _infer_a_share_from_key(security_key)
+        if a_share is not None:
+            normalized_ticker, normalized_market = a_share
+        else:
+            normalized_ticker = _infer_ticker_from_key(security_key) or ""
+
+    if not normalized_ticker:
+        return None
+
+    if normalized_market in A_SHARE_MARKETS:
+        return {
+            "provider": "eastmoney",
+            "symbol": normalized_ticker,
+            "ticker": normalized_ticker,
+            "market": normalized_market,
+        }
+
+    if normalized_market in US_MARKETS or normalized_market is None:
+        return {
+            "provider": "yahoo",
+            "symbol": _to_yahoo_us_symbol(normalized_ticker),
+            "ticker": normalized_ticker,
+            "market": normalized_market or "US",
+        }
+
+    suffix = YAHOO_SUFFIX_BY_MARKET.get(normalized_market)
+    if suffix:
+        return {
+            "provider": "yahoo",
+            "symbol": f"{normalized_ticker}{suffix}",
+            "ticker": normalized_ticker,
+            "market": normalized_market,
+        }
+
+    return None
 
 
 def _format_yahoo_date(timestamp: int | float | None, exchange_timezone: str | None) -> str | None:
@@ -173,4 +271,40 @@ def fetch_yahoo_daily(*, symbol: str, days: int = 180) -> dict[str, Any]:
         "sourceLabel": "Yahoo Finance",
         "message": None if candles else error.get("description") or "Yahoo Finance did not return daily candles for this symbol.",
         "candles": candles,
+    }
+
+
+def fetch_security_daily(
+    *,
+    ticker: str | None,
+    market: str | None,
+    security_key: str | None = None,
+    days: int = 730,
+) -> dict[str, Any]:
+    target = build_market_data_target(ticker=ticker, market=market, security_key=security_key)
+    if target is None:
+        return {
+            "sourceLabel": None,
+            "sourceSymbol": None,
+            "message": "No supported market-data symbol was found for this stock.",
+            "candles": [],
+        }
+
+    if target["provider"] == "eastmoney":
+        payload = fetch_eastmoney_daily(
+            ticker=target["ticker"],
+            market=target["market"],
+            days=days,
+        )
+        return {
+            **payload,
+            "sourceLabel": "EastMoney",
+            "sourceSymbol": f"{target['market']}:{target['ticker']}",
+        }
+
+    payload = fetch_yahoo_daily(symbol=target["symbol"], days=days)
+    return {
+        **payload,
+        "sourceLabel": "Yahoo Finance",
+        "sourceSymbol": target["symbol"],
     }

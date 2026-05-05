@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+import os
+import time
+from dataclasses import dataclass, field
+from datetime import date as date_class, timedelta
 from typing import Any
 
 from packages.common.database import InsightStore, init_db, sqlite_connection
 from packages.common.io import safe_filename, write_json
+from packages.common.market_data import fetch_security_daily
 from packages.common.models import (
     AnalysisSnapshot,
     AuthorDayRecord,
@@ -88,6 +92,8 @@ VALID_HORIZONS: set[ViewHorizon] = {"short_term", "medium_term", "long_term", "u
 class AnalysisRunSummary:
     exit_code: int
     snapshot: AnalysisSnapshot
+    market_prices: int = 0
+    market_errors: list[str] = field(default_factory=list)
 
 
 def _hash_payload(payload: object) -> str:
@@ -883,6 +889,79 @@ def _materialize_stock_timelines(
     return updated_records
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _refresh_stock_market_data(
+    *,
+    store: Any,
+    stock_records: list[StockDayRecord],
+) -> tuple[int, list[str]]:
+    if not stock_records:
+        return 0, []
+    if not hasattr(store, "get_security_identities") or not hasattr(store, "upsert_security_daily_prices"):
+        return 0, []
+
+    max_securities = max(0, _env_int("PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES", 30))
+    if max_securities <= 0:
+        return 0, []
+    days = max(30, _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", 730))
+    delay_seconds = max(0.0, _env_float("PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS", 0.25))
+
+    ordered_keys = list(dict.fromkeys(record.stock_code_or_name for record in stock_records if record.stock_code_or_name))
+    identities = store.get_security_identities(ordered_keys)
+    fetched_at = now_iso()
+    cutoff_date = (date_class.today() - timedelta(days=days + 14)).isoformat()
+    written_candles = 0
+    errors: list[str] = []
+
+    for index, security_key in enumerate(ordered_keys[:max_securities]):
+        identity = identities.get(
+            security_key,
+            SecurityIdentity(security_key=security_key, display_name=security_key),
+        )
+        try:
+            payload = fetch_security_daily(
+                ticker=identity.ticker,
+                market=identity.market,
+                security_key=identity.security_key,
+                days=days,
+            )
+            candles = payload.get("candles") or []
+            if not candles:
+                message = str(payload.get("message") or "Market data returned no daily candles.")
+                errors.append(f"[market {security_key}] {message}")
+                continue
+
+            written_candles += store.upsert_security_daily_prices(
+                security_key=security_key,
+                source=str(payload.get("sourceLabel") or "Unknown"),
+                source_symbol=str(payload.get("sourceSymbol") or identity.ticker or security_key),
+                candles=candles,
+                fetched_at=fetched_at,
+            )
+            if hasattr(store, "prune_security_daily_prices"):
+                store.prune_security_daily_prices(security_key=security_key, before_date=cutoff_date)
+        except Exception as exc:
+            errors.append(f"[market {security_key}] {exc}")
+
+        if delay_seconds > 0 and index < min(len(ordered_keys), max_securities) - 1:
+            time.sleep(delay_seconds)
+
+    return written_candles, errors
+
+
 def _materialize_theme_timelines(
     *,
     store: InsightStore,
@@ -1084,6 +1163,10 @@ def run_analysis_with_store(
         store=store,
         extracts=extracts,
     )
+    market_prices, market_errors = _refresh_stock_market_data(
+        store=store,
+        stock_records=stock_records,
+    )
     theme_records = _materialize_theme_timelines(
         store=store,
         extracts=extracts,
@@ -1114,4 +1197,9 @@ def run_analysis_with_store(
     )
 
     exit_code = 0 if not snapshot.errors else 1
-    return AnalysisRunSummary(exit_code=exit_code, snapshot=snapshot)
+    return AnalysisRunSummary(
+        exit_code=exit_code,
+        snapshot=snapshot,
+        market_prices=market_prices,
+        market_errors=market_errors,
+    )

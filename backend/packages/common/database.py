@@ -13,6 +13,7 @@ from .models import (
     NoteExtractRecord,
     RawNoteRecord,
     StockDayRecord,
+    StockPriceCandle,
     ThemeDayRecord,
     ViewpointRecord,
 )
@@ -224,6 +225,23 @@ def init_db(conn: sqlite3.Connection) -> None:
           UNIQUE(security_id, date_key)
         );
 
+        CREATE TABLE IF NOT EXISTS security_daily_prices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          security_id INTEGER NOT NULL REFERENCES security_entities(id) ON DELETE CASCADE,
+          date_key TEXT NOT NULL,
+          open_price REAL NOT NULL,
+          high_price REAL NOT NULL,
+          low_price REAL NOT NULL,
+          close_price REAL NOT NULL,
+          volume REAL,
+          source TEXT NOT NULL,
+          source_symbol TEXT NOT NULL DEFAULT '',
+          fetched_at TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(security_id, date_key)
+        );
+
         CREATE TABLE IF NOT EXISTS theme_daily_views (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           theme_id INTEGER NOT NULL REFERENCES theme_entities(id) ON DELETE CASCADE,
@@ -241,6 +259,8 @@ def init_db(conn: sqlite3.Connection) -> None:
           ON author_daily_summaries(account_id, date_key DESC);
         CREATE INDEX IF NOT EXISTS idx_security_daily_views_security_date
           ON security_daily_views(security_id, date_key DESC);
+        CREATE INDEX IF NOT EXISTS idx_security_daily_prices_security_date
+          ON security_daily_prices(security_id, date_key DESC);
         CREATE INDEX IF NOT EXISTS idx_theme_daily_views_theme_date
           ON theme_daily_views(theme_id, date_key DESC);
         CREATE INDEX IF NOT EXISTS idx_security_mentions_security_content
@@ -855,6 +875,103 @@ class InsightStore:
                 record.updated_at,
             ),
         )
+
+    def get_security_identities(self, security_keys: list[str]) -> dict[str, SecurityIdentity]:
+        cleaned_keys = [key for key in dict.fromkeys(security_keys) if key]
+        if not cleaned_keys:
+            return {}
+        placeholders = ",".join("?" for _ in cleaned_keys)
+        rows = self.conn.execute(
+            f"""
+            SELECT security_key, display_name, ticker, market
+            FROM security_entities
+            WHERE security_key IN ({placeholders})
+            """,
+            tuple(cleaned_keys),
+        ).fetchall()
+        return {
+            str(row["security_key"]): SecurityIdentity(
+                security_key=str(row["security_key"]),
+                display_name=str(row["display_name"] or row["security_key"]),
+                ticker=str(row["ticker"]).strip() if row["ticker"] else None,
+                market=str(row["market"]).strip() if row["market"] else None,
+            )
+            for row in rows
+        }
+
+    def upsert_security_daily_prices(
+        self,
+        *,
+        security_key: str,
+        source: str,
+        source_symbol: str,
+        candles: list[dict[str, Any] | StockPriceCandle],
+        fetched_at: str,
+    ) -> int:
+        row = self.conn.execute(
+            "SELECT id FROM security_entities WHERE security_key = ?",
+            (security_key,),
+        ).fetchone()
+        if row is None:
+            security_id = self.ensure_security(
+                SecurityIdentity(security_key=security_key, display_name=security_key)
+            )
+        else:
+            security_id = int(row["id"])
+
+        written = 0
+        for raw_candle in candles:
+            candle = (
+                raw_candle
+                if isinstance(raw_candle, StockPriceCandle)
+                else StockPriceCandle.model_validate(raw_candle)
+            )
+            self.conn.execute(
+                """
+                INSERT INTO security_daily_prices (
+                  security_id, date_key, open_price, high_price, low_price,
+                  close_price, volume, source, source_symbol, fetched_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(security_id, date_key) DO UPDATE SET
+                  open_price = excluded.open_price,
+                  high_price = excluded.high_price,
+                  low_price = excluded.low_price,
+                  close_price = excluded.close_price,
+                  volume = excluded.volume,
+                  source = excluded.source,
+                  source_symbol = excluded.source_symbol,
+                  fetched_at = excluded.fetched_at,
+                  updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    security_id,
+                    candle.date,
+                    candle.open,
+                    candle.high,
+                    candle.low,
+                    candle.close,
+                    candle.volume,
+                    source,
+                    source_symbol,
+                    fetched_at,
+                ),
+            )
+            written += 1
+        return written
+
+    def prune_security_daily_prices(self, *, security_key: str, before_date: str) -> int:
+        row = self.conn.execute(
+            "SELECT id FROM security_entities WHERE security_key = ?",
+            (security_key,),
+        ).fetchone()
+        if row is None:
+            return 0
+        cursor = self.conn.execute(
+            "DELETE FROM security_daily_prices WHERE security_id = ? AND date_key < ?",
+            (row["id"], before_date),
+        )
+        return int(cursor.rowcount or 0)
 
     def clear_theme_daily_views(self) -> None:
         self.conn.execute("DELETE FROM theme_daily_views")

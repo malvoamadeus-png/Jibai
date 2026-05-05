@@ -17,6 +17,7 @@ from .models import (
     NoteExtractRecord,
     RawNoteRecord,
     StockDayRecord,
+    StockPriceCandle,
     ThemeDayRecord,
     ViewpointRecord,
 )
@@ -631,6 +632,104 @@ class PostgresInsightStore:
                 record.updated_at,
             ),
         )
+
+    def get_security_identities(self, security_keys: list[str]) -> dict[str, SecurityIdentity]:
+        cleaned_keys = [key for key in dict.fromkeys(security_keys) if key]
+        if not cleaned_keys:
+            return {}
+        rows = self.conn.execute(
+            """
+            SELECT security_key, display_name, ticker, market
+            FROM security_entities
+            WHERE security_key = ANY(%s)
+            """,
+            (cleaned_keys,),
+        ).fetchall()
+        return {
+            str(row["security_key"]): SecurityIdentity(
+                security_key=str(row["security_key"]),
+                display_name=str(row["display_name"] or row["security_key"]),
+                ticker=str(row["ticker"]).strip() if row["ticker"] else None,
+                market=str(row["market"]).strip() if row["market"] else None,
+            )
+            for row in rows
+        }
+
+    def upsert_security_daily_prices(
+        self,
+        *,
+        security_key: str,
+        source: str,
+        source_symbol: str,
+        candles: list[dict[str, Any] | StockPriceCandle],
+        fetched_at: str,
+    ) -> int:
+        with self.conn.transaction():
+            row = self.conn.execute(
+                "SELECT id FROM security_entities WHERE security_key = %s",
+                (security_key,),
+            ).fetchone()
+            if row is None:
+                security_id = self.ensure_security(
+                    SecurityIdentity(security_key=security_key, display_name=security_key)
+                )
+            else:
+                security_id = str(row["id"])
+
+            written = 0
+            for raw_candle in candles:
+                candle = (
+                    raw_candle
+                    if isinstance(raw_candle, StockPriceCandle)
+                    else StockPriceCandle.model_validate(raw_candle)
+                )
+                self.conn.execute(
+                    """
+                    INSERT INTO security_daily_prices (
+                      security_id, date_key, open_price, high_price, low_price,
+                      close_price, volume, source, source_symbol, fetched_at, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                    ON CONFLICT(security_id, date_key) DO UPDATE SET
+                      open_price = EXCLUDED.open_price,
+                      high_price = EXCLUDED.high_price,
+                      low_price = EXCLUDED.low_price,
+                      close_price = EXCLUDED.close_price,
+                      volume = EXCLUDED.volume,
+                      source = EXCLUDED.source,
+                      source_symbol = EXCLUDED.source_symbol,
+                      fetched_at = EXCLUDED.fetched_at,
+                      updated_at = now()
+                    """,
+                    (
+                        security_id,
+                        candle.date,
+                        candle.open,
+                        candle.high,
+                        candle.low,
+                        candle.close,
+                        candle.volume,
+                        source,
+                        source_symbol,
+                        fetched_at,
+                    ),
+                )
+                written += 1
+            return written
+
+    def prune_security_daily_prices(self, *, security_key: str, before_date: str) -> int:
+        with self.conn.transaction():
+            row = self.conn.execute(
+                "SELECT id FROM security_entities WHERE security_key = %s",
+                (security_key,),
+            ).fetchone()
+            if row is None:
+                return 0
+            cursor = self.conn.execute(
+                "DELETE FROM security_daily_prices WHERE security_id = %s AND date_key < %s",
+                (row["id"], before_date),
+            )
+            return int(cursor.rowcount or 0)
 
     def clear_theme_daily_views(self) -> None:
         self.conn.execute("DELETE FROM theme_daily_views")

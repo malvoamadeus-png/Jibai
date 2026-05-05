@@ -17,15 +17,18 @@ export function AccountSubscriptionButton({
   onChanged?: () => void;
 }) {
   const router = useRouter();
-  const { profile, supabase } = useAuth();
+  const { loading, profile, signIn, supabase } = useAuth();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   function submit() {
     setError(null);
+    if (!profile) {
+      void signIn();
+      return;
+    }
     startTransition(async () => {
       try {
-        if (!profile) throw new Error("请先登录");
         await setSubscription(supabase, profile, accountId, !subscribed);
         onChanged?.();
         router.refresh();
@@ -37,9 +40,9 @@ export function AccountSubscriptionButton({
 
   return (
     <div className="inline-action">
-      <button className={subscribed ? "secondary-button" : "primary-button"} disabled={pending} onClick={submit}>
+      <button className={subscribed ? "secondary-button" : "primary-button"} disabled={pending || loading} onClick={submit}>
         {subscribed ? <BellOff size={16} /> : <Bell size={16} />}
-        {subscribed ? "取消订阅" : "订阅"}
+        {!profile ? "登录订阅" : subscribed ? "取消订阅" : "订阅"}
       </button>
       {error ? <span className="field-error">{error}</span> : null}
     </div>

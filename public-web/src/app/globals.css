@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   --bg: #f2eee7;
   --panel: #efe7dc;
@@ -9,6 +11,7 @@
   --accent: #b56a3b;
   --accent-strong: #8f4d25;
   --accent-foreground: #fff9f3;
+  --ring: rgba(181, 106, 59, 0.35);
   --border: rgba(82, 60, 42, 0.12);
   --border-strong: rgba(82, 60, 42, 0.2);
   --danger: #b2433b;
@@ -158,7 +161,8 @@ input {
 }
 
 .nav-item:hover,
-.admin-link {
+.admin-link,
+.nav-item-active {
   background: var(--paper);
   color: var(--accent-strong);
 }
@@ -418,6 +422,29 @@ tr:last-child td {
   padding: 22px;
 }
 
+.brand-title {
+  font-family: KaiTi, STKaiti, "Songti SC", SimSun, "Noto Serif SC", serif;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.login-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255, 250, 242, 0.95);
+  border-radius: 24px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+
+.login-note-large {
+  align-items: flex-start;
+  padding: 22px;
+}
+
 @media (max-width: 900px) {
   .app-frame {
     flex-direction: column;
@@ -449,5 +476,10 @@ tr:last-child td {
   table {
     display: block;
     overflow-x: auto;
+  }
+
+  .login-note {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

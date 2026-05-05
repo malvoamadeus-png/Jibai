@@ -1,44 +1,79 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 
-import { AuthorDayCard } from "@/components/author-day-card";
-import { EmptyState } from "@/components/empty-state";
 import { InsightListCard } from "@/components/insight-list-card";
 import { LoadingPanel } from "@/components/page-states";
 import { SignInCta } from "@/components/signin-cta";
+import { StockDayCard } from "@/components/stock-day-card";
+import { StockKlineCard } from "@/components/stock-kline-card";
+import { ThemeDayCard } from "@/components/theme-day-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
-import { getVisibleAuthorTimeline, listVisibleAuthors } from "@/lib/direct-data";
-import type { AuthorDetailData, AuthorListItem } from "@/lib/types";
+import { getVisibleEntityTimeline, listEntities } from "@/lib/direct-data";
+import type { EntityDetailData, EntityListItem, StockKlineData } from "@/lib/types";
 
 function parsePage(value: string | null) {
   const parsed = Number.parseInt(value || "1", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
-function FeedPageContent() {
+function buildChart(detail: EntityDetailData): StockKlineData {
+  const fallbackMarkers = detail.timeline.rows
+    .map((day) => ({
+      date: day.date,
+      mentionCount: day.mentionCount,
+      authorViews: day.authorViews,
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  if (detail.chart) {
+    return {
+      ...detail.chart,
+      markers: detail.chart.markers.length ? detail.chart.markers : fallbackMarkers,
+    };
+  }
+
+  return {
+    sourceLabel: null,
+    message: "Market data is temporarily unavailable; the viewpoint timeline is still shown.",
+    candles: [],
+    markers: fallbackMarkers,
+  };
+}
+
+export function EntityBrowser({
+  type,
+}: {
+  type: "stock" | "theme";
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { loading, profile, signIn, supabase } = useAuth();
   const [query, setQuery] = useState(searchParams.get("q") || "");
-  const [authors, setAuthors] = useState<AuthorListItem[]>([]);
-  const [detail, setDetail] = useState<AuthorDetailData | null>(null);
+  const [items, setItems] = useState<EntityListItem[]>([]);
+  const [detail, setDetail] = useState<EntityDetailData | null>(null);
   const [listLoading, setListLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const page = parsePage(searchParams.get("page"));
-  const requestedId = searchParams.get("account");
-  const activeId = useMemo(() => {
-    if (requestedId && authors.some((item) => item.accountId === requestedId)) return requestedId;
-    return authors[0]?.accountId || "";
-  }, [authors, requestedId]);
+  const paramName = type === "stock" ? "stock" : "theme";
+  const requestedKey = searchParams.get(paramName);
+  const activeKey = useMemo(() => {
+    if (requestedKey && items.some((item) => item.key === requestedKey)) return requestedKey;
+    return items[0]?.key || "";
+  }, [items, requestedKey]);
+  const title = type === "stock" ? "按股票看观点时间线" : "按 Theme 看观点时间线";
+  const description =
+    type === "stock"
+      ? "左侧快速切换股票，右侧查看日线标记和按日作者观点。"
+      : "左侧快速切换 Theme，右侧查看同一主题下的按日作者观点。";
 
   useEffect(() => {
     if (loading) return;
@@ -46,16 +81,16 @@ function FeedPageContent() {
     Promise.resolve().then(() => {
       if (!cancelled) setListLoading(true);
     });
-    listVisibleAuthors(supabase, profile, searchParams.get("q") || "")
+    listEntities(supabase, type, profile, searchParams.get("q") || "")
       .then((rows) => {
         if (cancelled) return;
-        setAuthors(rows);
+        setItems(rows);
         setError(null);
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "作者列表加载失败");
-        setAuthors([]);
+        setError(err instanceof Error ? err.message : "列表加载失败");
+        setItems([]);
       })
       .finally(() => {
         if (!cancelled) setListLoading(false);
@@ -63,10 +98,10 @@ function FeedPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile, searchParams, supabase]);
+  }, [loading, profile, searchParams, supabase, type]);
 
   useEffect(() => {
-    if (loading || !activeId) {
+    if (loading || !activeKey) {
       let cancelled = false;
       Promise.resolve().then(() => {
         if (!cancelled) setDetail(null);
@@ -79,7 +114,7 @@ function FeedPageContent() {
     Promise.resolve().then(() => {
       if (!cancelled) setDetailLoading(true);
     });
-    getVisibleAuthorTimeline(supabase, profile, activeId, page)
+    getVisibleEntityTimeline(supabase, profile, type, activeKey, page)
       .then((nextDetail) => {
         if (cancelled) return;
         setDetail(nextDetail);
@@ -87,7 +122,7 @@ function FeedPageContent() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "作者时间线加载失败");
+        setError(err instanceof Error ? err.message : "时间线加载失败");
         setDetail(null);
       })
       .finally(() => {
@@ -96,13 +131,13 @@ function FeedPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [activeId, loading, page, profile, supabase]);
+  }, [activeKey, loading, page, profile, supabase, type]);
 
-  function selectAuthor(accountId: string) {
+  function selectItem(key: string) {
     const next = new URLSearchParams(searchParams);
-    next.set("account", accountId);
+    next.set(paramName, key);
     next.delete("page");
-    router.push(`/feed?${next.toString()}`);
+    router.push(`/${type === "stock" ? "stocks" : "themes"}?${next.toString()}`);
     setPanelOpen(false);
   }
 
@@ -111,9 +146,10 @@ function FeedPageContent() {
     const next = new URLSearchParams(searchParams);
     if (query.trim()) next.set("q", query.trim());
     else next.delete("q");
-    next.delete("account");
+    next.delete(paramName);
     next.delete("page");
-    router.push(next.toString() ? `/feed?${next.toString()}` : "/feed");
+    const path = type === "stock" ? "/stocks" : "/themes";
+    router.push(next.toString() ? `${path}?${next.toString()}` : path);
   }
 
   if (loading) return <LoadingPanel />;
@@ -123,13 +159,11 @@ function FeedPageContent() {
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="warm">{profile ? "我的订阅" : "公开预览"}</Badge>
-            {!profile ? <Badge variant="neutral">仅 1 条</Badge> : null}
+            <Badge variant="warm">{type === "stock" ? "按股票" : "按 Theme"}</Badge>
+            {!profile ? <Badge variant="neutral">公开预览 · 仅 1 条</Badge> : null}
           </div>
-          <CardTitle className="text-3xl">按人看观点时间线</CardTitle>
-          <CardDescription>
-            左侧快速切换订阅账号，右侧查看该账号按日沉淀的观点、逻辑、证据和来源。
-          </CardDescription>
+          <CardTitle className="text-3xl">{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
         </CardHeader>
       </Card>
 
@@ -148,10 +182,10 @@ function FeedPageContent() {
             <CardHeader className="space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
               <div>
                 <CardTitle className="text-xl">快速切换</CardTitle>
-                <CardDescription>{profile ? "你的订阅账号" : "公开轻量预览"}</CardDescription>
+                <CardDescription>{profile ? "按你的订阅过滤" : "公开轻量预览"}</CardDescription>
               </div>
               <form className="space-y-3" onSubmit={search}>
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索账号" />
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={type === "stock" ? "搜索股票" : "搜索 Theme"} />
                 <Button type="submit" className="w-full">
                   <Search className="h-4 w-4" />
                   更新列表
@@ -160,17 +194,17 @@ function FeedPageContent() {
             </CardHeader>
             <CardContent className="space-y-3 p-4">
               {listLoading ? <div className="empty">列表加载中</div> : null}
-              {!listLoading && authors.map((author) => (
+              {!listLoading && items.map((item) => (
                 <InsightListCard
-                  key={author.accountId}
-                  type="author"
-                  item={author}
-                  active={author.accountId === activeId}
-                  onSelect={() => selectAuthor(author.accountId)}
+                  key={item.key}
+                  type="entity"
+                  item={item}
+                  active={item.key === activeKey}
+                  onSelect={() => selectItem(item.key)}
                 />
               ))}
-              {!listLoading && authors.length === 0 ? (
-                <div className="empty">{profile ? "暂无订阅数据" : "暂无公开预览数据"}</div>
+              {!listLoading && items.length === 0 ? (
+                <div className="empty">{profile ? "暂无订阅范围内的数据" : "暂无公开预览数据"}</div>
               ) : null}
             </CardContent>
           </Card>
@@ -182,19 +216,40 @@ function FeedPageContent() {
           {!detailLoading && detail ? (
             <>
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-3xl">{detail.accountName || detail.authorNickname}</CardTitle>
-                  <CardDescription>{detail.profileUrl}</CardDescription>
+                <CardHeader className="gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {detail.ticker ? <Badge variant="warm">{detail.ticker}</Badge> : null}
+                    {detail.market ? <Badge variant="neutral">{detail.market}</Badge> : null}
+                    <Badge variant="neutral">{detail.key}</Badge>
+                  </div>
+                  <CardTitle className="text-3xl">{detail.displayName}</CardTitle>
                 </CardHeader>
               </Card>
+
+              {type === "stock" && profile ? (
+                <StockKlineCard
+                  displayName={detail.displayName}
+                  chart={buildChart(detail)}
+                  identity={{
+                    securityKey: detail.key,
+                    ticker: detail.ticker,
+                    market: detail.market,
+                  }}
+                />
+              ) : null}
+
               {detail.timeline.rows.length ? (
                 <div className="space-y-4">
-                  {detail.timeline.rows.map((day) => (
-                    <AuthorDayCard key={`${detail.accountId}-${day.date}`} day={day} />
-                  ))}
+                  {detail.timeline.rows.map((day) =>
+                    type === "stock" ? (
+                      <StockDayCard key={`${detail.key}-${day.date}`} day={day} />
+                    ) : (
+                      <ThemeDayCard key={`${detail.key}-${day.date}`} day={day} />
+                    ),
+                  )}
                 </div>
               ) : (
-                <EmptyState title="这个账号还没有有效观点记录" description="完成抓取和分析后，这里会出现观点时间线。" />
+                <div className="empty">暂无时间线记录</div>
               )}
             </>
           ) : null}
@@ -202,13 +257,5 @@ function FeedPageContent() {
         </section>
       </div>
     </main>
-  );
-}
-
-export default function FeedPage() {
-  return (
-    <Suspense fallback={<LoadingPanel />}>
-      <FeedPageContent />
-    </Suspense>
   );
 }

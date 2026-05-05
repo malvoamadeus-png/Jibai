@@ -165,6 +165,8 @@ def _process_job(job: CrawlJob) -> None:
             (
                 f"accounts={len(accounts)} new_notes={total_new_notes} "
                 f"crawl_errors={len(crawl_errors)} "
+                f"market_prices={summary.market_prices} "
+                f"market_errors={len(summary.market_errors)} "
                 f"total_errors={len(summary.snapshot.errors)}"
             ),
         )
