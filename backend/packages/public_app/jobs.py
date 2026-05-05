@@ -62,6 +62,25 @@ def claim_next_job(conn: Connection[dict[str, Any]]) -> CrawlJob | None:
     return CrawlJob(id=str(row["id"]), kind=str(row["kind"]), account_id=None if row["account_id"] is None else str(row["account_id"]))
 
 
+def requeue_stale_running_jobs(conn: Connection[dict[str, Any]], stale_after_minutes: int) -> int:
+    safe_minutes = max(5, int(stale_after_minutes))
+    cursor = conn.execute(
+        """
+        UPDATE crawl_jobs
+        SET status = 'pending',
+            locked_at = NULL,
+            started_at = NULL,
+            error_text = '上次执行中断，已重新排队。',
+            updated_at = now()
+        WHERE status = 'running'
+          AND coalesce(locked_at, started_at, updated_at, created_at)
+              < now() - (%s::text || ' minutes')::interval
+        """,
+        (safe_minutes,),
+    )
+    return int(cursor.rowcount or 0)
+
+
 def mark_job_succeeded(conn: Connection[dict[str, Any]], job_id: str, summary: str) -> None:
     conn.execute(
         """

@@ -27,6 +27,7 @@ from .jobs import (
     mark_backfill_completed,
     mark_job_failed,
     mark_job_succeeded,
+    requeue_stale_running_jobs,
 )
 
 
@@ -78,6 +79,10 @@ def _env_float(name: str, default: float) -> float:
         return float(os.getenv(name, str(default)))
     except ValueError:
         return default
+
+
+def _stale_running_job_minutes() -> int:
+    return max(5, _env_int("PUBLIC_WORKER_STALE_JOB_MINUTES", 180))
 
 
 def _clean_error_text(value: str) -> str:
@@ -256,6 +261,9 @@ def process_pending_jobs(*, max_jobs: int | None = None) -> int:
             lock_conn.commit()
             try:
                 with postgres_connection() as conn:
+                    requeued_count = requeue_stale_running_jobs(conn, _stale_running_job_minutes())
+                    if requeued_count:
+                        print(f"[public-worker] requeued stale running jobs: {requeued_count}")
                     job = claim_next_job(conn)
                 if job is None:
                     break
