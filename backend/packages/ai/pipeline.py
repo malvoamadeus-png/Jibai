@@ -903,30 +903,74 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def _refresh_stock_market_data(
+def _ordered_stock_keys_for_market_data(stock_records: list[StockDayRecord]) -> list[str]:
+    stats: dict[str, dict[str, int | str]] = {}
+    for record in stock_records:
+        security_key = record.stock_code_or_name.strip()
+        if not security_key:
+            continue
+        item = stats.setdefault(security_key, {"latest_date": "", "mention_count": 0})
+        item["latest_date"] = max(str(item["latest_date"]), record.date)
+        item["mention_count"] = int(item["mention_count"]) + max(0, int(record.mention_count))
+
+    return [
+        security_key
+        for security_key, _item in sorted(
+            stats.items(),
+            key=lambda item: (
+                str(item[1]["latest_date"]),
+                int(item[1]["mention_count"]),
+                item[0],
+            ),
+            reverse=True,
+        )
+    ]
+
+
+def refresh_security_market_data(
     *,
     store: Any,
-    stock_records: list[StockDayRecord],
+    security_keys: list[str],
+    max_securities: int | None = None,
+    days: int | None = None,
+    delay_seconds: float | None = None,
 ) -> tuple[int, list[str]]:
-    if not stock_records:
+    ordered_keys = list(dict.fromkeys(key.strip() for key in security_keys if key and key.strip()))
+    if not ordered_keys:
         return 0, []
     if not hasattr(store, "get_security_identities") or not hasattr(store, "upsert_security_daily_prices"):
         return 0, []
 
-    max_securities = max(0, _env_int("PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES", 30))
-    if max_securities <= 0:
+    effective_max = max(
+        0,
+        int(
+            max_securities
+            if max_securities is not None
+            else _env_int("PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES", 30)
+        ),
+    )
+    if effective_max <= 0:
         return 0, []
-    days = max(30, _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", 730))
-    delay_seconds = max(0.0, _env_float("PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS", 0.25))
+    effective_days = max(
+        30,
+        int(days if days is not None else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", 730)),
+    )
+    effective_delay = max(
+        0.0,
+        float(
+            delay_seconds
+            if delay_seconds is not None
+            else _env_float("PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS", 0.25)
+        ),
+    )
 
-    ordered_keys = list(dict.fromkeys(record.stock_code_or_name for record in stock_records if record.stock_code_or_name))
     identities = store.get_security_identities(ordered_keys)
     fetched_at = now_iso()
-    cutoff_date = (date_class.today() - timedelta(days=days + 14)).isoformat()
+    cutoff_date = (date_class.today() - timedelta(days=effective_days + 14)).isoformat()
     written_candles = 0
     errors: list[str] = []
 
-    for index, security_key in enumerate(ordered_keys[:max_securities]):
+    for index, security_key in enumerate(ordered_keys[:effective_max]):
         identity = identities.get(
             security_key,
             SecurityIdentity(security_key=security_key, display_name=security_key),
@@ -936,7 +980,7 @@ def _refresh_stock_market_data(
                 ticker=identity.ticker,
                 market=identity.market,
                 security_key=identity.security_key,
-                days=days,
+                days=effective_days,
             )
             candles = payload.get("candles") or []
             if not candles:
@@ -956,10 +1000,21 @@ def _refresh_stock_market_data(
         except Exception as exc:
             errors.append(f"[market {security_key}] {exc}")
 
-        if delay_seconds > 0 and index < min(len(ordered_keys), max_securities) - 1:
-            time.sleep(delay_seconds)
+        if effective_delay > 0 and index < min(len(ordered_keys), effective_max) - 1:
+            time.sleep(effective_delay)
 
     return written_candles, errors
+
+
+def _refresh_stock_market_data(
+    *,
+    store: Any,
+    stock_records: list[StockDayRecord],
+) -> tuple[int, list[str]]:
+    return refresh_security_market_data(
+        store=store,
+        security_keys=_ordered_stock_keys_for_market_data(stock_records),
+    )
 
 
 def _materialize_theme_timelines(

@@ -81,6 +81,35 @@ def parse_args() -> argparse.Namespace:
         "public-import-sqlite",
         help="Import local SQLite X data into the public Supabase database.",
     )
+    public_refresh_market_parser = subparsers.add_parser(
+        "public-refresh-market-data",
+        help="Refresh public Supabase stock daily-price cache without running a crawl.",
+    )
+    public_refresh_market_parser.add_argument(
+        "--key",
+        action="append",
+        default=[],
+        help="Security key to refresh. Can be passed multiple times, for example --key amd.",
+    )
+    public_refresh_market_parser.add_argument(
+        "--query",
+        help="Search security key, display name, ticker, market, or aliases before refreshing.",
+    )
+    public_refresh_market_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum securities to refresh. Defaults to PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES.",
+    )
+    public_refresh_market_parser.add_argument(
+        "--days",
+        type=int,
+        help="Daily candle history window. Defaults to PUBLIC_WORKER_MARKET_DATA_DAYS.",
+    )
+    public_refresh_market_parser.add_argument(
+        "--delay-seconds",
+        type=float,
+        help="Delay between symbols. Defaults to PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS.",
+    )
     return parser.parse_args()
 
 
@@ -112,6 +141,16 @@ def main() -> int:
         from packages.public_app.import_sqlite import import_sqlite_x_to_supabase  # noqa: PLC0415
 
         return import_sqlite_x_to_supabase()
+    if args.command == "public-refresh-market-data":
+        from packages.public_app.worker import refresh_market_data_once  # noqa: PLC0415
+
+        return refresh_market_data_once(
+            security_keys=args.key,
+            query=args.query,
+            limit=args.limit,
+            days=args.days,
+            delay_seconds=args.delay_seconds,
+        )
     raise ValueError(f"Unknown command: {args.command}")
 
 

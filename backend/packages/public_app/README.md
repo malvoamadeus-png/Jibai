@@ -60,6 +60,7 @@ set +a
 python backend/src/main.py public-worker --once
 python backend/src/main.py public-worker
 python backend/src/main.py public-enqueue-scheduled
+python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-import-sqlite
 ```
 
@@ -68,6 +69,20 @@ manual tests after migrations or deploys. `public-worker` starts the long-runnin
 poller and in-process scheduler. `public-enqueue-scheduled` inserts one scheduled
 crawl job immediately, which is useful when you want the worker to process a run
 without waiting for the next configured wall-clock time.
+
+`public-refresh-market-data` refreshes the K-line cache without crawling X or
+running AI. Use it to backfill one ticker immediately after deploys or when a
+stock page says market data is unavailable:
+
+```bash
+python backend/src/main.py public-refresh-market-data --query AMD --limit 1
+python backend/src/main.py public-refresh-market-data --key amd --limit 1
+```
+
+The command prints the matched `security_key` values before fetching. If
+`--query AMD` does not match `amd`, inspect `security_entities` because the
+AI/entity normalization probably stored the object under a company-name key
+without a ticker.
 
 Before the market-data path can return K-line data to `public-web`, apply the
 Supabase migrations through `supabase/migrations/004_public_read_rpc.sql` and

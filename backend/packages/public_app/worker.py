@@ -8,7 +8,7 @@ from typing import Any
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from packages.ai.pipeline import run_analysis_with_store
+from packages.ai.pipeline import refresh_security_market_data, run_analysis_with_store
 from packages.common.paths import ensure_runtime_dirs, get_paths
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
 from packages.common.time_utils import SHANGHAI_TZ, now_iso
@@ -61,6 +61,20 @@ def _try_acquire_worker_lock(conn: Any) -> bool:
 
 def _release_worker_lock(conn: Any) -> None:
     conn.execute("SELECT pg_advisory_unlock(hashtext(%s))", (WORKER_LOCK_KEY,))
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
 
 
 def _base_x_config(accounts: list[AccountTarget]) -> WatchlistConfig:
@@ -159,6 +173,8 @@ def _process_job(job: CrawlJob) -> None:
             crawl_results=crawl_results,
             crawl_errors=crawl_errors,
         )
+        market_error_sample = "; ".join(summary.market_errors[:2])
+        market_error_suffix = f" market_error_sample={market_error_sample}" if market_error_sample else ""
         mark_job_succeeded(
             conn,
             job.id,
@@ -168,6 +184,7 @@ def _process_job(job: CrawlJob) -> None:
                 f"market_prices={summary.market_prices} "
                 f"market_errors={len(summary.market_errors)} "
                 f"total_errors={len(summary.snapshot.errors)}"
+                f"{market_error_suffix}"
             ),
         )
 
@@ -206,6 +223,62 @@ def enqueue_scheduled_crawl() -> int:
     job_id = enqueue_scheduled_crawl_job()
     print(f"[public-worker] enqueued scheduled crawl job {job_id}")
     return 0
+
+
+def refresh_market_data_once(
+    *,
+    security_keys: list[str] | None = None,
+    query: str | None = None,
+    limit: int | None = None,
+    days: int | None = None,
+    delay_seconds: float | None = None,
+) -> int:
+    safe_limit = max(
+        1,
+        min(
+            int(
+                limit
+                if limit is not None
+                else _env_int("PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES", 30)
+            ),
+            500,
+        ),
+    )
+    safe_days = max(30, int(days if days is not None else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", 730)))
+    safe_delay = max(
+        0.0,
+        float(
+            delay_seconds
+            if delay_seconds is not None
+            else _env_float("PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS", 0.25)
+        ),
+    )
+
+    with postgres_connection() as conn:
+        store = PostgresInsightStore(conn)
+        selected_keys = list(dict.fromkeys(security_keys or []))
+        if not selected_keys:
+            selected_keys = store.list_recent_security_keys(limit=safe_limit, query=query)
+        print(
+            "[public-worker] market_refresh "
+            f"keys={','.join(selected_keys) if selected_keys else '-'} "
+            f"limit={safe_limit} days={safe_days}"
+        )
+        if not selected_keys:
+            print("[public-worker] no matching securities found")
+            return 1
+        written, errors = refresh_security_market_data(
+            store=store,
+            security_keys=selected_keys,
+            max_securities=safe_limit,
+            days=safe_days,
+            delay_seconds=safe_delay,
+        )
+
+    print(f"[public-worker] market_prices={written} market_errors={len(errors)}")
+    for error in errors[:10]:
+        print(error)
+    return 0 if written > 0 or not errors else 1
 
 
 def run_worker(*, once: bool = False) -> int:
