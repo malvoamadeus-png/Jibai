@@ -89,10 +89,17 @@ BOT_PROTECTION_MARKERS = (
     ("anubis", "blocked by Anubis bot protection"),
     ("x cancelled | verifying your request", "blocked by XCancel request verification"),
     ("verifying your request", "request verification required"),
+    ("performing security verification", "security verification required"),
+    ("uses a security service to protect against malicious bots", "security verification required"),
+    ("website verifies you are not a bot", "security verification required"),
+    ("verifies you are not a bot", "security verification required"),
+    ("verify you are human", "human verification required"),
+    ("checking if the site connection is secure", "security verification required"),
     ("antibot", "anti-bot verification required"),
     ("access denied", "access denied"),
     ("captcha", "captcha required"),
     ("cloudflare", "blocked by Cloudflare"),
+    ("ddos-guard", "blocked by DDoS-Guard"),
     ("rate limit", "rate limited"),
     ("too many requests", "rate limited"),
 )
@@ -149,17 +156,43 @@ def _safe_goto(page: Page, url: str) -> str | None:
 
 
 def _write_debug_snapshot(page: Page, target_dir: Path, prefix: str) -> None:
-    target_dir.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(target_dir / f"{prefix}.png"), full_page=True)
-    (target_dir / f"{prefix}.html").write_text(page.content(), encoding="utf-8")
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(target_dir / f"{prefix}.png"), full_page=True)
+        (target_dir / f"{prefix}.html").write_text(page.content(), encoding="utf-8")
+    except Exception as exc:
+        print(f"[x-browser] failed to write debug snapshot {prefix}: {exc}", file=sys.stderr)
 
 
 def _detect_blocked_page(page: Page) -> str | None:
-    content = page.content().lower()
+    try:
+        content = page.content().lower()
+    except Exception:
+        return None
     for marker, reason in BOT_PROTECTION_MARKERS:
         if marker in content:
             return reason
     return None
+
+
+def _evaluate_timeline(page: Page) -> tuple[list[dict[str, Any]], str | None]:
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            tweets = page.evaluate(TIMELINE_JS) or []
+            next_cursor = page.evaluate(CURSOR_JS)
+            return tweets, next_cursor
+        except Exception as exc:
+            last_error = exc
+            if "execution context was destroyed" not in str(exc).lower() or attempt == 1:
+                break
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=5000)
+            except Exception:
+                pass
+            time.sleep(0.5)
+    assert last_error is not None
+    raise last_error
 
 
 def fetch_timeline_page(
@@ -196,9 +229,19 @@ def fetch_timeline_page(
         navigation_error = _safe_goto(page, url)
         time.sleep(wait_sec)
         try:
-            tweets = page.evaluate(TIMELINE_JS) or []
-            next_cursor = page.evaluate(CURSOR_JS)
+            tweets, next_cursor = _evaluate_timeline(page)
         except Exception as exc:
+            blocked_reason = _detect_blocked_page(page)
+            if blocked_reason:
+                if debug_dir and debug_prefix:
+                    _write_debug_snapshot(page, debug_dir, debug_prefix)
+                return TimelinePageResult(
+                    items=[],
+                    next_cursor=None,
+                    status="fetch_failed",
+                    url=url,
+                    error=blocked_reason,
+                )
             if debug_dir and debug_prefix:
                 _write_debug_snapshot(page, debug_dir, debug_prefix)
             return TimelinePageResult(

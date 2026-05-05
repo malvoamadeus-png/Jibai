@@ -8,8 +8,8 @@
   "max_post_age_days": 5,
   "nitter_instances": [
     "nitter.tiekoetter.com",
-    "xcancel.com",
-    "nitter.catsarch.com"
+    "nitter.catsarch.com",
+    "xcancel.com"
   ],
   "accounts": [
     {

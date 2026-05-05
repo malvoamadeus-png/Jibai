@@ -200,12 +200,30 @@ def _build_empty_timeline_error(attempts: list[TimelineAttempt]) -> str:
         for attempt in attempts[:5]
     ]
     detail_text = "；明细：" + "；".join(details) if details else ""
+    blocked_attempts = [
+        attempt
+        for attempt in attempts
+        if attempt.error
+        and any(
+            marker in attempt.error.lower()
+            for marker in (
+                "verification",
+                "anti-bot",
+                "captcha",
+                "cloudflare",
+                "ddos-guard",
+                "access denied",
+            )
+        )
+    ]
 
     if status_counts["runtime_failed"] == len(attempts):
         first_error = next((attempt.error for attempt in attempts if attempt.error), "")
         if "executable doesn't exist" in first_error.lower():
             return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：Playwright Chromium 未安装。{summary}{detail_text}。"
         return f"X_RUNTIME_FAILED: 本地抓取运行环境错误：浏览器启动失败。{summary}{detail_text}。"
+    if blocked_attempts and len(blocked_attempts) == len(attempts):
+        return f"X_FETCH_FAILED: 所有公开 Nitter 镜像都被安全验证或反机器人保护拦截。{summary}{detail_text}。"
     if status_counts["fetch_failed"] == len(attempts):
         return f"X_FETCH_FAILED: 没抓到：所有公开 Nitter 镜像主页请求失败。{summary}{detail_text}。"
     if status_counts["parse_failed"] or status_counts["parse_empty"]:

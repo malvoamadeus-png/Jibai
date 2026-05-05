@@ -25,8 +25,8 @@ RESERVED_PATHS = {
 }
 DEFAULT_NITTER_INSTANCES = [
     "nitter.tiekoetter.com",
-    "xcancel.com",
     "nitter.catsarch.com",
+    "xcancel.com",
 ]
 
 
