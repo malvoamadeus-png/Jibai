@@ -288,6 +288,21 @@ def _build_note_record(
         metadata={"is_pinned": candidate.is_pinned},
     )
 
+
+def _short_exception_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    if " for url:" in message:
+        message = message.split(" for url:", 1)[0].strip()
+    return message or exc.__class__.__name__
+
+
+def _detail_error_summary(errors: list[str]) -> str:
+    if not errors:
+        return ""
+    sample = "；".join(errors[:3])
+    return f"部分内容详情抓取失败 {len(errors)} 条，已跳过；示例：{sample}"
+
+
 def crawl_account_once(
     *,
     cfg: WatchlistConfig,
@@ -310,6 +325,7 @@ def crawl_account_once(
     new_count = 0
     target_count = target_limit or account.limit
     scan_limit = max(target_count, target_count * 3)
+    detail_errors: list[str] = []
 
     try:
         user_info = fetch_user_info(account.username)
@@ -326,12 +342,23 @@ def crawl_account_once(
 
         for candidate in candidates:
             fetched_note_ids.append(candidate.tweet_id)
-            detail = fetch_tweet_detail(account.username, candidate.tweet_id)
+            if candidate.tweet_id in seen_ids:
+                continue
+
+            try:
+                detail = fetch_tweet_detail(account.username, candidate.tweet_id)
+            except Exception as exc:
+                short_message = _short_exception_message(exc)
+                detail_errors.append(f"{candidate.tweet_id}: {short_message}")
+                print(
+                    f"[x] account {account.name} skip tweet {candidate.tweet_id}: {short_message}",
+                    file=sys.stderr,
+                )
+                continue
+
             detail_author = detail.get("author") if isinstance(detail.get("author"), dict) else {}
             detail_screen_name = str(detail_author.get("screen_name") or account.username).strip()
             if detail_screen_name.lower() != account.username.lower():
-                continue
-            if candidate.tweet_id in seen_ids:
                 continue
 
             note = _build_note_record(
@@ -369,6 +396,10 @@ def crawl_account_once(
             if len(accepted_notes) >= target_count:
                 break
 
+        if detail_errors and not accepted_notes:
+            raise RuntimeError(_detail_error_summary(detail_errors))
+        if detail_errors:
+            account_error = _detail_error_summary(detail_errors)
         status = "success"
     except Exception as exc:
         account_error = str(exc)

@@ -25,6 +25,54 @@ function formatTime(value: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
+function parseLegacySummary(summary: string) {
+  const result: Record<string, string> = {};
+  const pattern =
+    /(\w+)=([\s\S]*?)(?=\s+\w+=|$)/g;
+  for (const match of summary.matchAll(pattern)) {
+    result[match[1]] = match[2].trim();
+  }
+  return result;
+}
+
+function formatLegacyMarketSample(value?: string) {
+  if (!value) return "";
+  const names = Array.from(value.matchAll(/\[market ([^\]]+)\]/g))
+    .map((match) => match[1])
+    .filter(Boolean);
+  const uniqueNames = Array.from(new Set(names)).slice(0, 3);
+  return uniqueNames.length ? `（${uniqueNames.join("、")}）` : "";
+}
+
+function formatJobResult(job: AdminJobItem) {
+  if (job.errorText) return job.errorText;
+  if (!job.summary) return "-";
+  if (!job.summary.includes("=")) return job.summary;
+
+  const values = parseLegacySummary(job.summary);
+  if (!values.accounts && !values.new_notes && !values.market_errors) return job.summary;
+
+  const parts: string[] = [];
+  const accounts = Number(values.accounts || 0);
+  const newNotes = Number(values.new_notes || 0);
+  const crawlErrors = Number(values.crawl_errors || 0);
+  const marketPrices = Number(values.market_prices || 0);
+  const marketErrors = Number(values.market_errors || 0);
+  const totalErrors = Number(values.total_errors || 0);
+
+  if (accounts) parts.push(`抓取 ${accounts} 个账号`);
+  parts.push(`新增 ${newNotes} 条内容`);
+  if (crawlErrors) parts.push(`${crawlErrors} 个账号抓取失败`);
+  if (marketPrices) parts.push(`写入 ${marketPrices} 条行情`);
+  if (marketErrors) {
+    parts.push(`${marketErrors} 个股票行情暂不可用${formatLegacyMarketSample(values.market_error_sample)}`);
+  }
+  const nonCrawlErrors = Math.max(0, totalErrors - crawlErrors);
+  if (nonCrawlErrors) parts.push(`${nonCrawlErrors} 项分析或入库异常`);
+  if (!crawlErrors && !marketErrors && !totalErrors) parts.push("全部完成");
+  return `${parts.join("；")}。`;
+}
+
 export default function AdminPage() {
   const { loading, profile, signIn, supabase } = useAuth();
   const [approvedCount, setApprovedCount] = useState(0);
@@ -175,7 +223,7 @@ export default function AdminPage() {
                 </td>
                 <td className="muted">{formatTime(job.createdAt)}</td>
                 <td className="muted">{formatTime(job.finishedAt)}</td>
-                <td className={job.errorText ? "field-error" : "muted"}>{job.errorText || job.summary || "-"}</td>
+                <td className={job.errorText ? "field-error" : "muted"}>{formatJobResult(job)}</td>
               </tr>
             ))}
             {!jobs.length ? (

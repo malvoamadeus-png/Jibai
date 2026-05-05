@@ -81,6 +81,10 @@ def parse_args() -> argparse.Namespace:
         "public-import-sqlite",
         help="Import local SQLite X data into the public Supabase database.",
     )
+    subparsers.add_parser(
+        "public-rebuild-timelines",
+        help="Normalize public Supabase stock identities, rebuild timelines, and refresh market data.",
+    )
     public_refresh_market_parser = subparsers.add_parser(
         "public-refresh-market-data",
         help="Refresh public Supabase stock daily-price cache without running a crawl.",
@@ -141,6 +145,10 @@ def main() -> int:
         from packages.public_app.import_sqlite import import_sqlite_x_to_supabase  # noqa: PLC0415
 
         return import_sqlite_x_to_supabase()
+    if args.command == "public-rebuild-timelines":
+        from packages.public_app.worker import rebuild_public_timelines_once  # noqa: PLC0415
+
+        return rebuild_public_timelines_once()
     if args.command == "public-refresh-market-data":
         from packages.public_app.worker import refresh_market_data_once  # noqa: PLC0415
 

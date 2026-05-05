@@ -55,6 +55,143 @@ _MARKET_SUFFIX_MAP = {
     "TO": "TSX",
     "V": "TSXV",
     "DE": "XETRA",
+    "ST": "STO",
+    "TW": "TWSE",
+    "TWO": "TPEX",
+}
+_BUILT_IN_SECURITY_ALIASES: dict[str, dict[str, str | None]] = {
+    "AMD": {
+        "security_key": "amd",
+        "display_name": "AMD",
+        "ticker": "AMD",
+        "market": "NASDAQ",
+    },
+    "Advanced Micro Devices": {
+        "security_key": "amd",
+        "display_name": "AMD",
+        "ticker": "AMD",
+        "market": "NASDAQ",
+    },
+    "Intel": {
+        "security_key": "intel",
+        "display_name": "Intel",
+        "ticker": "INTC",
+        "market": "NASDAQ",
+    },
+    "英特尔": {
+        "security_key": "intel",
+        "display_name": "Intel",
+        "ticker": "INTC",
+        "market": "NASDAQ",
+    },
+    "INTC": {
+        "security_key": "intel",
+        "display_name": "Intel",
+        "ticker": "INTC",
+        "market": "NASDAQ",
+    },
+    "Intel Foundry": {
+        "security_key": "intel",
+        "display_name": "Intel",
+        "ticker": "INTC",
+        "market": "NASDAQ",
+    },
+    "Intel Foundry Services": {
+        "security_key": "intel",
+        "display_name": "Intel",
+        "ticker": "INTC",
+        "market": "NASDAQ",
+    },
+    "IFS": {
+        "security_key": "intel",
+        "display_name": "Intel",
+        "ticker": "INTC",
+        "market": "NASDAQ",
+    },
+    "Nebius": {
+        "security_key": "nebius",
+        "display_name": "Nebius",
+        "ticker": "NBIS",
+        "market": "NASDAQ",
+    },
+    "NBIS": {
+        "security_key": "nebius",
+        "display_name": "Nebius",
+        "ticker": "NBIS",
+        "market": "NASDAQ",
+    },
+    "GlobalFoundries": {
+        "security_key": "globalfoundries",
+        "display_name": "GlobalFoundries",
+        "ticker": "GFS",
+        "market": "NASDAQ",
+    },
+    "Global Foundries": {
+        "security_key": "globalfoundries",
+        "display_name": "GlobalFoundries",
+        "ticker": "GFS",
+        "market": "NASDAQ",
+    },
+    "GFS": {
+        "security_key": "globalfoundries",
+        "display_name": "GlobalFoundries",
+        "ticker": "GFS",
+        "market": "NASDAQ",
+    },
+    "Shunsin": {
+        "security_key": "6451.tw",
+        "display_name": "Shunsin",
+        "ticker": "6451",
+        "market": "TWSE",
+    },
+    "Shunsin Technology": {
+        "security_key": "6451.tw",
+        "display_name": "Shunsin",
+        "ticker": "6451",
+        "market": "TWSE",
+    },
+    "訊芯": {
+        "security_key": "6451.tw",
+        "display_name": "Shunsin",
+        "ticker": "6451",
+        "market": "TWSE",
+    },
+    "訊芯-KY": {
+        "security_key": "6451.tw",
+        "display_name": "Shunsin",
+        "ticker": "6451",
+        "market": "TWSE",
+    },
+    "6451": {
+        "security_key": "6451.tw",
+        "display_name": "Shunsin",
+        "ticker": "6451",
+        "market": "TWSE",
+    },
+    "6451.TW": {
+        "security_key": "6451.tw",
+        "display_name": "Shunsin",
+        "ticker": "6451",
+        "market": "TWSE",
+    },
+    "Sivers": {
+        "security_key": "sivers",
+        "display_name": "Sivers",
+        "ticker": "SIVE",
+        "market": "STO",
+    },
+    "Sivers Semiconductors": {
+        "security_key": "sivers",
+        "display_name": "Sivers",
+        "ticker": "SIVE",
+        "market": "STO",
+    },
+    "SIVE": {
+        "security_key": "sivers",
+        "display_name": "Sivers",
+        "ticker": "SIVE",
+        "market": "STO",
+    },
 }
 
 
@@ -143,6 +280,14 @@ def _normalize_market(market: str | None) -> str | None:
         "SIX": "SIX",
         "TSX": "TSX",
         "TSXV": "TSXV",
+        "STO": "STO",
+        "OMXSTO": "STO",
+        "ST": "STO",
+        "TWSE": "TWSE",
+        "TW": "TWSE",
+        "TSE": "TWSE",
+        "TPEX": "TPEX",
+        "TWO": "TPEX",
     }
     return aliases.get(raw, raw)
 
@@ -254,17 +399,22 @@ def _build_security_key(
             return f"{ticker}.bj"
         if normalized_market in {"KRX", "KOSDAQ"}:
             return f"{ticker}.{normalized_market.casefold()}"
+        if normalized_market == "TWSE":
+            return f"{ticker}.tw"
+        if normalized_market == "TPEX":
+            return f"{ticker}.tpex"
+        if normalized_market == "STO":
+            return ticker.casefold()
         if raw_is_plain_ticker or not _has_chinese(display_name):
             return ticker.casefold()
 
     return safe_filename(display_name.casefold(), default="security")
 
 
-def load_security_aliases(paths: AppPaths) -> dict[str, SecurityIdentity]:
-    payload = read_json(paths.security_aliases_path, default={}) or {}
-    aliases: dict[str, SecurityIdentity] = {}
-    if not isinstance(payload, dict):
-        return aliases
+def _merge_security_alias_payload(
+    aliases: dict[str, SecurityIdentity],
+    payload: dict[str, object],
+) -> None:
     for alias, raw in payload.items():
         if not isinstance(alias, str) or not alias.strip() or not isinstance(raw, dict):
             continue
@@ -278,6 +428,14 @@ def load_security_aliases(paths: AppPaths) -> dict[str, SecurityIdentity]:
             ticker=str(raw.get("ticker") or "").strip() or None,
             market=_normalize_market(str(raw.get("market") or "").strip() or None),
         )
+
+
+def load_security_aliases(paths: AppPaths) -> dict[str, SecurityIdentity]:
+    payload = read_json(paths.security_aliases_path, default={}) or {}
+    aliases: dict[str, SecurityIdentity] = {}
+    if isinstance(payload, dict):
+        _merge_security_alias_payload(aliases, payload)
+    _merge_security_alias_payload(aliases, _BUILT_IN_SECURITY_ALIASES)
     return aliases
 
 

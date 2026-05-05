@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -9,6 +10,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from packages.ai.pipeline import refresh_security_market_data, run_analysis_with_store
+from packages.common.models import CrawlAccountResult, RawNoteRecord
 from packages.common.paths import ensure_runtime_dirs, get_paths
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
 from packages.common.time_utils import SHANGHAI_TZ, now_iso
@@ -30,6 +32,7 @@ from .jobs import (
 
 DEFAULT_CRAWL_TIMES = ("04:00", "10:00", "16:00", "22:00")
 WORKER_LOCK_KEY = "jibai_public_x_worker"
+_MARKET_ERROR_RE = re.compile(r"^\[market ([^\]]+)\]\s*(.*)$")
 
 
 def _crawl_times() -> list[str]:
@@ -75,6 +78,59 @@ def _env_float(name: str, default: float) -> float:
         return float(os.getenv(name, str(default)))
     except ValueError:
         return default
+
+
+def _clean_error_text(value: str) -> str:
+    cleaned = " ".join(value.strip().split())
+    if " for url:" in cleaned:
+        cleaned = cleaned.split(" for url:", 1)[0].strip()
+    return cleaned
+
+
+def _market_error_sample(errors: list[str], *, limit: int = 3) -> str:
+    labels: list[str] = []
+    for error in errors:
+        match = _MARKET_ERROR_RE.match(error)
+        label = match.group(1) if match else error
+        label = _clean_error_text(label)
+        if label and label not in labels:
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return "、".join(labels)
+
+
+def _build_job_summary(
+    *,
+    account_count: int,
+    new_note_count: int,
+    crawl_errors: list[str],
+    crawl_warnings: list[str],
+    market_prices: int,
+    market_errors: list[str],
+    total_errors: int,
+) -> str:
+    parts = [
+        f"抓取 {account_count} 个账号",
+        f"新增 {new_note_count} 条内容",
+    ]
+    if crawl_errors:
+        parts.append(f"{len(crawl_errors)} 个账号抓取失败")
+    if crawl_warnings:
+        parts.append(f"{len(crawl_warnings)} 个账号有部分内容详情异常，已跳过")
+    if market_prices:
+        parts.append(f"写入 {market_prices} 条行情")
+    if market_errors:
+        sample = _market_error_sample(market_errors)
+        suffix = f"（{sample}）" if sample else ""
+        parts.append(f"{len(market_errors)} 个股票行情暂不可用{suffix}")
+
+    non_crawl_errors = max(0, total_errors - len(crawl_errors))
+    if non_crawl_errors:
+        parts.append(f"{non_crawl_errors} 项分析或入库异常")
+    if not crawl_errors and not crawl_warnings and not market_errors and total_errors == 0:
+        parts.append("全部完成")
+    return "；".join(parts) + "。"
 
 
 def _base_x_config(accounts: list[AccountTarget]) -> WatchlistConfig:
@@ -147,6 +203,7 @@ def _process_job(job: CrawlJob) -> None:
 
         crawl_results = []
         crawl_errors: list[str] = []
+        crawl_warnings: list[str] = []
         total_new_notes = 0
         for index, account in enumerate(accounts):
             result, new_count = _run_account(
@@ -158,8 +215,10 @@ def _process_job(job: CrawlJob) -> None:
             )
             crawl_results.append(result)
             total_new_notes += new_count
-            if result.error:
+            if result.status == "failed" and result.error:
                 crawl_errors.append(f"[x {account.username}] {result.error}")
+            elif result.error:
+                crawl_warnings.append(f"[x {account.username}] {result.error}")
             if job.kind == "initial_backfill" and result.status == "success":
                 mark_backfill_completed(conn, account.id)
             if index < len(accounts) - 1:
@@ -173,18 +232,17 @@ def _process_job(job: CrawlJob) -> None:
             crawl_results=crawl_results,
             crawl_errors=crawl_errors,
         )
-        market_error_sample = "; ".join(summary.market_errors[:2])
-        market_error_suffix = f" market_error_sample={market_error_sample}" if market_error_sample else ""
         mark_job_succeeded(
             conn,
             job.id,
-            (
-                f"accounts={len(accounts)} new_notes={total_new_notes} "
-                f"crawl_errors={len(crawl_errors)} "
-                f"market_prices={summary.market_prices} "
-                f"market_errors={len(summary.market_errors)} "
-                f"total_errors={len(summary.snapshot.errors)}"
-                f"{market_error_suffix}"
+            _build_job_summary(
+                account_count=len(accounts),
+                new_note_count=total_new_notes,
+                crawl_errors=crawl_errors,
+                crawl_warnings=crawl_warnings,
+                market_prices=summary.market_prices,
+                market_errors=summary.market_errors,
+                total_errors=len(summary.snapshot.errors),
             ),
         )
 
@@ -279,6 +337,58 @@ def refresh_market_data_once(
     for error in errors[:10]:
         print(error)
     return 0 if written > 0 or not errors else 1
+
+
+def _synthetic_crawl_results(notes: list[RawNoteRecord]) -> list[CrawlAccountResult]:
+    account_map: dict[tuple[str, str], CrawlAccountResult] = {}
+    run_at = now_iso()
+    for note in notes:
+        key = (note.platform, note.account_name)
+        if key in account_map:
+            continue
+        account_map[key] = CrawlAccountResult(
+            platform=note.platform,
+            account_name=note.account_name,
+            profile_url=note.profile_url,
+            run_at=run_at,
+            status="success",
+            candidate_count=0,
+            new_note_count=0,
+            fetched_note_ids=[],
+            error=None,
+        )
+    return sorted(account_map.values(), key=lambda item: (item.platform, item.account_name))
+
+
+def rebuild_public_timelines_once() -> int:
+    paths = get_paths()
+    ensure_runtime_dirs(paths)
+    with postgres_connection() as conn:
+        store = PostgresInsightStore(conn)
+        notes = store.list_all_content_items(platform="x")
+        if not notes:
+            print("[public-worker] no public X content found")
+            return 1
+        summary = run_analysis_with_store(
+            store=store,
+            paths=paths,
+            notes=notes,
+            crawl_results=_synthetic_crawl_results(notes),
+            crawl_errors=[],
+        )
+
+    print(
+        "[public-worker] rebuilt_timelines "
+        f"notes={len(notes)} "
+        f"author_days={len(summary.snapshot.author_summaries)} "
+        f"stock_days={len(summary.snapshot.stock_views)} "
+        f"theme_days={len(summary.snapshot.theme_views)} "
+        f"market_prices={summary.market_prices} "
+        f"market_errors={len(summary.market_errors)}"
+    )
+    for error in summary.market_errors[:10]:
+        print(error)
+    return 1 if summary.exit_code else 0
 
 
 def run_worker(*, once: bool = False) -> int:

@@ -599,6 +599,23 @@ def _analyze_missing_notes(
     return refreshed, created, errors
 
 
+def _normalize_analysis_map_with_aliases(
+    *,
+    store: Any,
+    extracts: dict[str, NoteExtractRecord],
+    aliases: dict[str, SecurityIdentity],
+) -> tuple[dict[str, NoteExtractRecord], int]:
+    normalized_extracts: dict[str, NoteExtractRecord] = {}
+    normalized_count = 0
+    for key, extract in extracts.items():
+        normalized, changed = _normalize_extract(extract, aliases)
+        if changed:
+            store.replace_content_analysis(normalized, aliases=aliases)
+            normalized_count += 1
+        normalized_extracts[key] = normalized
+    return normalized_extracts, normalized_count
+
+
 def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[AuthorDayViewpoint]:
     aggregated: dict[tuple[str, str], AuthorDayViewpoint] = {}
     for extract in extracts:
@@ -927,6 +944,15 @@ def _ordered_stock_keys_for_market_data(stock_records: list[StockDayRecord]) -> 
     ]
 
 
+def _market_error_label(security_key: str, identity: SecurityIdentity) -> str:
+    display_name = identity.display_name.strip()
+    if display_name and display_name.casefold() != security_key.casefold():
+        return display_name
+    if identity.ticker:
+        return identity.ticker
+    return security_key
+
+
 def refresh_security_market_data(
     *,
     store: Any,
@@ -985,7 +1011,7 @@ def refresh_security_market_data(
             candles = payload.get("candles") or []
             if not candles:
                 message = str(payload.get("message") or "Market data returned no daily candles.")
-                errors.append(f"[market {security_key}] {message}")
+                errors.append(f"[market {_market_error_label(security_key, identity)}] {message}")
                 continue
 
             written_candles += store.upsert_security_daily_prices(
@@ -998,7 +1024,7 @@ def refresh_security_market_data(
             if hasattr(store, "prune_security_daily_prices"):
                 store.prune_security_daily_prices(security_key=security_key, before_date=cutoff_date)
         except Exception as exc:
-            errors.append(f"[market {security_key}] {exc}")
+            errors.append(f"[market {_market_error_label(security_key, identity)}] {exc}")
 
         if effective_delay > 0 and index < min(len(ordered_keys), effective_max) - 1:
             time.sleep(effective_delay)
@@ -1206,6 +1232,11 @@ def run_analysis_with_store(
         notes=notes,
         paths=paths,
         force=force_reanalysis,
+    )
+    extracts, _normalized_extract_count = _normalize_analysis_map_with_aliases(
+        store=store,
+        extracts=extracts,
+        aliases=aliases,
     )
     _refresh_security_entities(store=store, extracts=extracts, aliases=aliases)
     author_records, author_errors = _materialize_author_timelines(

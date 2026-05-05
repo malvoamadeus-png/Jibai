@@ -34,5 +34,23 @@
     "display_name": "Tencent",
     "ticker": "0700",
     "market": "HKEX"
+  },
+  "Intel Foundry": {
+    "security_key": "intel",
+    "display_name": "Intel",
+    "ticker": "INTC",
+    "market": "NASDAQ"
+  },
+  "Shunsin": {
+    "security_key": "6451.tw",
+    "display_name": "Shunsin",
+    "ticker": "6451",
+    "market": "TWSE"
+  },
+  "Sivers": {
+    "security_key": "sivers",
+    "display_name": "Sivers",
+    "ticker": "SIVE",
+    "market": "STO"
   }
 }
