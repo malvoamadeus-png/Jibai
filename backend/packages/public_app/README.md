@@ -35,11 +35,23 @@ PUBLIC_WORKER_NITTER_INSTANCES=nitter.tiekoetter.com,nitter.catsarch.com,xcancel
 PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES=30
 PUBLIC_WORKER_MARKET_DATA_DAYS=180
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
+
+AI_PROVIDER=openai-compatible
+AI_API_KEY='your-openai-compatible-api-key'
+AI_BASE_URL='https://your-openai-compatible-endpoint/v1'
+AI_MODEL='your-analysis-model'
+AI_FALLBACK_MODELS='optional-fallback-model-1,optional-fallback-model-2'
 ```
 
 Use the Supabase Postgres connection string, not the anon key. The anon key is for browser/database API access; this worker needs a server-side SQL connection so it can claim jobs, run locks, and write analysis tables.
 
-AI settings continue to use the existing backend configuration files and environment variables.
+AI settings use the same OpenAI-compatible configuration as the local backend.
+If local development uses an OpenAI relay endpoint, copy the same endpoint into
+`AI_BASE_URL` and the same relay key into `AI_API_KEY`. Without an AI key, the
+worker can still crawl X content and write daily fallback summaries, but it
+cannot generate structured viewpoints, stock pages, or theme pages from new
+content. `public-worker-doctor` prints `api_key_configured=yes/no` so this is
+visible during diagnosis.
 
 The X crawler discovers user timelines through FxTwitter's statuses endpoint
 first. Nitter is now only a fallback for cases where that API is unavailable.

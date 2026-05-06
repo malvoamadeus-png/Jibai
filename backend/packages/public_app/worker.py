@@ -17,6 +17,7 @@ from packages.ai.pipeline import (
 from packages.common.models import CrawlAccountResult, RawNoteRecord
 from packages.common.paths import ensure_runtime_dirs, get_paths
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
+from packages.common.settings import load_settings
 from packages.common.time_utils import SHANGHAI_TZ, now_iso
 from packages.x.config import AccountTarget, WatchlistConfig
 from packages.x.service import crawl_account_once
@@ -109,6 +110,18 @@ def _market_error_sample(errors: list[str], *, limit: int = 3) -> str:
     return "、".join(labels)
 
 
+def _analysis_error_sample(errors: list[str]) -> str:
+    for error in errors:
+        if error.startswith("[x "):
+            continue
+        if "Missing AI API key" in error:
+            return "缺少 AI API key，未生成结构化观点"
+        cleaned = _clean_error_text(error)
+        if cleaned:
+            return cleaned[:80]
+    return ""
+
+
 def _build_job_summary(
     *,
     account_count: int,
@@ -118,6 +131,7 @@ def _build_job_summary(
     market_prices: int,
     market_errors: list[str],
     total_errors: int,
+    analysis_errors: list[str] | None = None,
 ) -> str:
     parts = [
         f"抓取 {account_count} 个账号",
@@ -136,7 +150,9 @@ def _build_job_summary(
 
     non_crawl_errors = max(0, total_errors - len(crawl_errors))
     if non_crawl_errors:
-        parts.append(f"{non_crawl_errors} 项分析或入库异常")
+        sample = _analysis_error_sample(analysis_errors or [])
+        suffix = f"（{sample}）" if sample else ""
+        parts.append(f"{non_crawl_errors} 项分析或入库异常{suffix}")
     if not crawl_errors and not crawl_warnings and not market_errors and total_errors == 0:
         parts.append("全部完成")
     return "；".join(parts) + "。"
@@ -252,6 +268,7 @@ def _process_job(job: CrawlJob) -> None:
                 market_prices=summary.market_prices,
                 market_errors=summary.market_errors,
                 total_errors=len(summary.snapshot.errors),
+                analysis_errors=summary.snapshot.errors,
             ),
         )
 
@@ -310,12 +327,19 @@ def _verify_worker_database_connection() -> None:
 
 
 def diagnose_worker_once() -> int:
+    settings = load_settings()
     print(
         "[public-worker] doctor "
         f"crawl_times={','.join(_crawl_times())} "
         f"poll={_poll_seconds()}s "
         f"stale_job_minutes={_stale_running_job_minutes()} "
         f"market_data_days={MARKET_DATA_WINDOW_DAYS}"
+    )
+    print(
+        "[public-worker] ai "
+        f"provider={settings.provider} "
+        f"model={settings.model} "
+        f"api_key_configured={'yes' if settings.api_key else 'no'}"
     )
 
     try:
