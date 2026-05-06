@@ -14,7 +14,7 @@ from packages.common.time_utils import is_older_than_days, now_iso
 
 from .browser import TimelineFetchStatus, fetch_timeline_page
 from .config import AccountTarget, WatchlistConfig
-from .fxtwitter import fetch_tweet_detail, fetch_user_info, parse_created_at
+from .fxtwitter import fetch_tweet_detail, fetch_user_info, fetch_user_statuses, parse_created_at
 
 
 @dataclass(slots=True)
@@ -112,7 +112,144 @@ def _candidate_from_payload(payload: dict[str, Any]) -> TweetCandidate | None:
     )
 
 
-def collect_tweet_candidates(
+def _coerce_count(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _status_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return str(value.get("text") or "").strip()
+    return ""
+
+
+def _status_media_urls(payload: dict[str, Any]) -> list[str]:
+    media_urls: list[str] = []
+    media_payload = payload.get("media")
+    media_items: list[Any] = []
+    if isinstance(media_payload, dict):
+        raw_items = media_payload.get("all")
+        if isinstance(raw_items, list):
+            media_items = raw_items
+    elif isinstance(media_payload, list):
+        media_items = media_payload
+
+    for item in media_items:
+        if not isinstance(item, dict):
+            continue
+        media_url = str(item.get("url") or item.get("thumbnail_url") or "").strip()
+        if media_url and media_url not in media_urls:
+            media_urls.append(media_url)
+    return media_urls
+
+
+def _candidate_from_fxtwitter_status(payload: dict[str, Any]) -> TweetCandidate | None:
+    tweet_id = str(payload.get("id") or "").strip()
+    author_payload = payload.get("author") if isinstance(payload.get("author"), dict) else {}
+    screen_name = str(author_payload.get("screen_name") or "").strip().lstrip("@")
+    if not tweet_id or not screen_name:
+        return None
+
+    return TweetCandidate(
+        tweet_id=tweet_id,
+        author=f"@{screen_name}",
+        author_name=str(author_payload.get("name") or screen_name).strip(),
+        text=_status_text(payload.get("text") or payload.get("raw_text")),
+        time_ago=str(payload.get("created_at") or "").strip(),
+        replies=_coerce_count(payload.get("replies")),
+        retweets=_coerce_count(payload.get("reposts") or payload.get("retweets")),
+        likes=_coerce_count(payload.get("likes")),
+        views=_coerce_count(payload.get("views")),
+        media=_status_media_urls(payload),
+        retweeted_by=None,
+        is_pinned=False,
+    )
+
+
+def _collect_tweet_candidates_from_fxtwitter(
+    *,
+    account: AccountTarget,
+    limit: int | None = None,
+    max_pages: int = 3,
+) -> tuple[list[TweetCandidate], list[TimelineAttempt]]:
+    target_author = f"@{account.username.lower()}"
+    target_limit = limit or account.limit
+    seen_ids: set[str] = set()
+    results: list[TweetCandidate] = []
+    attempts: list[TimelineAttempt] = []
+    cursor: str | None = None
+
+    for page in range(1, max_pages + 1):
+        try:
+            raw_statuses, cursor_payload = fetch_user_statuses(
+                account.username,
+                count=max(20, min(100, target_limit - len(results))),
+                cursor=cursor,
+            )
+        except Exception as exc:
+            attempts.append(
+                TimelineAttempt(
+                    instance="api.fxtwitter.com",
+                    page=page,
+                    status="fetch_failed",
+                    url=f"https://api.fxtwitter.com/2/profile/{account.username}/statuses",
+                    error=_short_exception_message(exc),
+                )
+            )
+            break
+
+        if not raw_statuses:
+            attempts.append(
+                TimelineAttempt(
+                    instance="api.fxtwitter.com",
+                    page=page,
+                    status="parse_empty",
+                    url=f"https://api.fxtwitter.com/2/profile/{account.username}/statuses",
+                    error="empty statuses response",
+                )
+            )
+            break
+
+        for raw_status in raw_statuses:
+            candidate = _candidate_from_fxtwitter_status(raw_status)
+            if candidate is None:
+                continue
+            if candidate.author.lower() != target_author:
+                continue
+            if candidate.tweet_id in seen_ids:
+                continue
+            seen_ids.add(candidate.tweet_id)
+            results.append(candidate)
+            if len(results) >= target_limit:
+                break
+
+        if len(results) >= target_limit:
+            break
+
+        next_cursor = cursor_payload.get("bottom") if cursor_payload else None
+        if not next_cursor:
+            if not results:
+                attempts.append(
+                    TimelineAttempt(
+                        instance="api.fxtwitter.com",
+                        page=page,
+                        status="parse_empty",
+                        url=f"https://api.fxtwitter.com/2/profile/{account.username}/statuses",
+                        error="no usable statuses for target account",
+                    )
+                )
+            break
+        cursor = str(next_cursor)
+        time.sleep(0.2)
+
+    return results[:target_limit], attempts
+
+
+def _collect_tweet_candidates_from_nitter(
     *,
     cfg: WatchlistConfig,
     paths: AppPaths,
@@ -177,6 +314,32 @@ def collect_tweet_candidates(
             return results[:target_limit], attempts
 
     return results[:target_limit], attempts
+
+
+def collect_tweet_candidates(
+    *,
+    cfg: WatchlistConfig,
+    paths: AppPaths,
+    account: AccountTarget,
+    limit: int | None = None,
+    max_pages: int = 3,
+) -> tuple[list[TweetCandidate], list[TimelineAttempt]]:
+    api_results, api_attempts = _collect_tweet_candidates_from_fxtwitter(
+        account=account,
+        limit=limit,
+        max_pages=max_pages,
+    )
+    if api_results:
+        return api_results, api_attempts
+
+    nitter_results, nitter_attempts = _collect_tweet_candidates_from_nitter(
+        cfg=cfg,
+        paths=paths,
+        account=account,
+        limit=limit,
+        max_pages=max_pages,
+    )
+    return nitter_results, api_attempts + nitter_attempts
 
 
 def _build_empty_timeline_error(attempts: list[TimelineAttempt]) -> str:

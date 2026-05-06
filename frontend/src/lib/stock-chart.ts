@@ -31,6 +31,7 @@ type ChartProviderResult = {
 
 const execFileAsync = promisify(execFile);
 const markerSchema = z.array(entityAuthorViewSchema);
+const STOCK_KLINE_WINDOW_DAYS = 180;
 const A_SHARE_MARKETS = new Set(["SSE", "SZSE", "BJSE"]);
 const TWELVE_DATA_EXCHANGE_MAP: Record<string, string> = {
   NASDAQ: "NASDAQ",
@@ -75,6 +76,15 @@ function parseJson<T>(raw: string, schema: z.ZodType<T>, fallback: T) {
 function toNumber(value: string | number | null | undefined) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function dateKeyDaysAgo(days: number) {
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+  const year = cutoff.getFullYear();
+  const month = String(cutoff.getMonth() + 1).padStart(2, "0");
+  const day = String(cutoff.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function inferAshareMarket(identity: StockIdentity) {
@@ -514,19 +524,21 @@ async function fetchGlobalCandles(identity: StockIdentity, days: number): Promis
 
 export async function getStockKlineData(
   identity: StockIdentity,
-  days = 180,
+  days = STOCK_KLINE_WINDOW_DAYS,
 ): Promise<StockKlineData> {
+  const requestedDays = Math.min(STOCK_KLINE_WINDOW_DAYS, Math.max(30, Math.trunc(days)));
   const providerResult = isAshare(identity)
-    ? await fetchAshareCandles(identity, days)
-    : await fetchGlobalCandles(identity, days);
+    ? await fetchAshareCandles(identity, requestedDays)
+    : await fetchGlobalCandles(identity, requestedDays);
+  const cutoffDate = dateKeyDaysAgo(STOCK_KLINE_WINDOW_DAYS);
+  const candles = providerResult.candles.filter((item) => item.date >= cutoffDate);
 
-  const dateFrom = providerResult.candles[0]?.date ?? null;
-  const markers = getMarkerRows(identity.securityKey, dateFrom);
+  const markers = getMarkerRows(identity.securityKey, cutoffDate);
 
   return {
     sourceLabel: providerResult.sourceLabel,
     message: providerResult.message,
-    candles: providerResult.candles,
+    candles,
     markers,
   };
 }

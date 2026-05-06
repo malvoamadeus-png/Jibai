@@ -31,6 +31,7 @@ import { makeAccountKey } from "@/lib/utils";
 import { normalizeXUsername } from "@/lib/x";
 
 type JsonRecord = Record<string, unknown>;
+const STOCK_KLINE_WINDOW_DAYS = 180;
 
 function assertNoError(error: unknown) {
   if (error && typeof error === "object" && "message" in error) {
@@ -63,6 +64,15 @@ function asNullableNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function dateKeyDaysAgo(days: number) {
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+  const year = cutoff.getFullYear();
+  const month = String(cutoff.getMonth() + 1).padStart(2, "0");
+  const day = String(cutoff.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function normalizeStringArray(value: unknown) {
@@ -193,13 +203,14 @@ function normalizeStockMarker(rawValue: unknown): StockKlineMarker | null {
 function normalizeStockChart(rawValue: unknown): StockKlineData | null {
   const raw = asRecord(rawValue);
   if (Object.keys(raw).length === 0) return null;
+  const cutoffDate = dateKeyDaysAgo(STOCK_KLINE_WINDOW_DAYS);
   const candles = asArray(raw.candles)
     .map(normalizeStockCandle)
-    .filter((item): item is StockKlineCandle => item !== null)
+    .filter((item): item is StockKlineCandle => item !== null && item.date >= cutoffDate)
     .sort((left, right) => left.date.localeCompare(right.date));
   const markers = asArray(raw.markers)
     .map(normalizeStockMarker)
-    .filter((item): item is StockKlineMarker => item !== null)
+    .filter((item): item is StockKlineMarker => item !== null && item.date >= cutoffDate)
     .sort((left, right) => left.date.localeCompare(right.date));
   return {
     sourceLabel: asNullableString(raw.sourceLabel ?? raw.source_label),

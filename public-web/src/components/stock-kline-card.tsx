@@ -21,7 +21,8 @@ const PAD_RIGHT = 20;
 const PAD_BOTTOM = 36;
 const PAD_LEFT = 56;
 const MIN_VISIBLE_CANDLES = 20;
-const DEFAULT_VISIBLE_CANDLES = 180;
+const STOCK_KLINE_WINDOW_DAYS = 180;
+const DEFAULT_VISIBLE_CANDLES = STOCK_KLINE_WINDOW_DAYS;
 
 type StockIdentity = {
   securityKey: string;
@@ -332,6 +333,7 @@ export function StockKlineCard({
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="warm">日线 K 线</Badge>
             {resolvedChart.sourceLabel ? <Badge variant="neutral">{resolvedChart.sourceLabel}</Badge> : null}
+            <Badge variant="neutral">近 180 天</Badge>
           </div>
           <CardTitle className="text-2xl">{displayName} 暂时还没有行情图</CardTitle>
           <CardDescription>
@@ -476,8 +478,7 @@ export function StockKlineCard({
     { label: "1M", value: 22 },
     { label: "3M", value: 66 },
     { label: "6M", value: 132 },
-    { label: "1Y", value: 252 },
-    { label: "全部", value: totalCandles },
+    { label: "180D", value: totalCandles },
   ];
 
   return (
@@ -487,10 +488,11 @@ export function StockKlineCard({
           <Badge variant="warm">日线 K 线</Badge>
           {resolvedChart.sourceLabel ? <Badge variant="neutral">{resolvedChart.sourceLabel}</Badge> : null}
           <Badge variant="positive">观点标记</Badge>
+          <Badge variant="neutral">近 180 天</Badge>
         </div>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
-            <CardTitle className="text-2xl">日线与观点标记</CardTitle>
+            <CardTitle className="text-2xl">近 180 天日线与观点标记</CardTitle>
           </div>
           {latest ? (
             <div className="rounded-[22px] border border-[color:var(--border)] bg-[color:rgba(255,250,242,0.72)] px-4 py-3">

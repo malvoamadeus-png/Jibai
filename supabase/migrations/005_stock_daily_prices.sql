@@ -220,7 +220,8 @@ begin
       )
       into candles_payload
       from public.security_daily_prices
-      where security_id = security_id_value;
+      where security_id = security_id_value
+        and date_key >= (current_date - interval '180 days')::date::text;
 
       select source
       into latest_source

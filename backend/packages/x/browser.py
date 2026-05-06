@@ -103,6 +103,7 @@ BOT_PROTECTION_MARKERS = (
     ("rate limit", "rate limited"),
     ("too many requests", "rate limited"),
 )
+BLOCKED_RESOURCE_TYPES = {"font", "image", "media"}
 
 TimelineFetchStatus = Literal[
     "success",
@@ -153,6 +154,18 @@ def _safe_goto(page: Page, url: str) -> str | None:
         return None
     except Exception as exc:
         return str(exc)
+
+
+def _block_heavy_resources(page: Page) -> None:
+    try:
+        page.route(
+            "**/*",
+            lambda route: route.abort()
+            if route.request.resource_type in BLOCKED_RESOURCE_TYPES
+            else route.continue_(),
+        )
+    except Exception:
+        pass
 
 
 def _write_debug_snapshot(page: Page, target_dir: Path, prefix: str) -> None:
@@ -226,6 +239,7 @@ def fetch_timeline_page(
             )
         context = _new_context(browser)
         page = context.new_page()
+        _block_heavy_resources(page)
         navigation_error = _safe_goto(page, url)
         time.sleep(wait_sec)
         try:

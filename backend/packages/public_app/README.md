@@ -41,7 +41,12 @@ Use the Supabase Postgres connection string, not the anon key. The anon key is f
 
 AI settings continue to use the existing backend configuration files and environment variables.
 
-`PUBLIC_WORKER_NITTER_INSTANCES` is optional. Public Nitter mirrors often add bot protection or go offline, so keep this value configurable on the server instead of relying on the code defaults. Use comma-separated host names without `https://`.
+The X crawler discovers user timelines through FxTwitter's statuses endpoint
+first. Nitter is now only a fallback for cases where that API is unavailable.
+`PUBLIC_WORKER_NITTER_INSTANCES` is optional. Public Nitter mirrors often add
+bot protection or go offline, so keep this value configurable on the server
+instead of relying on the code defaults. Use comma-separated host names without
+`https://`.
 
 Market-data settings are optional. The defaults refresh at most 30 stocks per
 analysis run, cache 180 days of daily candles, and wait 0.25 seconds
@@ -75,6 +80,11 @@ without waiting for the next configured wall-clock time.
 environment file as the worker to print queue counts, due pending jobs, running
 job age, latest scheduled job, account/subscription counts, and whether a job is
 holding the Postgres worker lock at that instant.
+
+The long-running `public-worker` validates the database connection before it
+starts APScheduler. If the service exits immediately, inspect the service
+environment first; for example, a missing newline in the env file can append the
+next variable name to the Postgres database name.
 
 `public-refresh-market-data` refreshes the K-line cache without crawling X or
 running AI. Use it to backfill one ticker immediately after deploys or when a

@@ -303,6 +303,12 @@ def _format_db_value(value: Any) -> str:
     return str(value)
 
 
+def _verify_worker_database_connection() -> None:
+    with postgres_connection() as conn:
+        row = conn.execute("SELECT now() AS value").fetchone()
+    print(f"[public-worker] database_ok db_now={_format_db_value(row['value'] if row else None)}")
+
+
 def diagnose_worker_once() -> int:
     print(
         "[public-worker] doctor "
@@ -615,6 +621,8 @@ def run_worker(*, once: bool = False) -> int:
         processed = process_pending_jobs(max_jobs=1)
         print(f"[public-worker] processed_jobs={processed}")
         return 0
+
+    _verify_worker_database_connection()
 
     scheduler = BlockingScheduler(timezone=SHANGHAI_TZ)
     for value in _crawl_times():
