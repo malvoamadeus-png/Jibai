@@ -49,6 +49,7 @@ from .prompts import (
 
 
 ANALYSIS_VERSION = "viewpoints_v3"
+MARKET_DATA_WINDOW_DAYS = 180
 STANCE_PRIORITY: dict[ViewStance, int] = {
     "strong_bullish": 5,
     "bullish": 4,
@@ -977,10 +978,10 @@ def refresh_security_market_data(
     )
     if effective_max <= 0:
         return 0, []
-    effective_days = max(
-        30,
-        int(days if days is not None else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", 730)),
+    requested_days = int(
+        days if days is not None else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", MARKET_DATA_WINDOW_DAYS)
     )
+    effective_days = min(MARKET_DATA_WINDOW_DAYS, max(30, requested_days))
     effective_delay = max(
         0.0,
         float(
@@ -992,7 +993,7 @@ def refresh_security_market_data(
 
     identities = store.get_security_identities(ordered_keys)
     fetched_at = now_iso()
-    cutoff_date = (date_class.today() - timedelta(days=effective_days + 14)).isoformat()
+    cutoff_date = (date_class.today() - timedelta(days=effective_days)).isoformat()
     written_candles = 0
     errors: list[str] = []
 
@@ -1008,7 +1009,11 @@ def refresh_security_market_data(
                 security_key=identity.security_key,
                 days=effective_days,
             )
-            candles = payload.get("candles") or []
+            candles = [
+                candle
+                for candle in payload.get("candles") or []
+                if str(candle.get("date") or "") >= cutoff_date
+            ]
             if not candles:
                 message = str(payload.get("message") or "Market data returned no daily candles.")
                 errors.append(f"[market {_market_error_label(security_key, identity)}] {message}")

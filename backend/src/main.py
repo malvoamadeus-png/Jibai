@@ -78,6 +78,10 @@ def parse_args() -> argparse.Namespace:
         help="Enqueue one scheduled public X crawl job in Supabase.",
     )
     subparsers.add_parser(
+        "public-worker-doctor",
+        help="Print public worker queue, account, lock, and recent-job diagnostics.",
+    )
+    subparsers.add_parser(
         "public-import-sqlite",
         help="Import local SQLite X data into the public Supabase database.",
     )
@@ -107,7 +111,7 @@ def parse_args() -> argparse.Namespace:
     public_refresh_market_parser.add_argument(
         "--days",
         type=int,
-        help="Daily candle history window. Defaults to PUBLIC_WORKER_MARKET_DATA_DAYS.",
+        help="Daily candle history window. Defaults to PUBLIC_WORKER_MARKET_DATA_DAYS, capped at 180.",
     )
     public_refresh_market_parser.add_argument(
         "--delay-seconds",
@@ -141,6 +145,10 @@ def main() -> int:
         from packages.public_app.worker import enqueue_scheduled_crawl  # noqa: PLC0415
 
         return enqueue_scheduled_crawl()
+    if args.command == "public-worker-doctor":
+        from packages.public_app.worker import diagnose_worker_once  # noqa: PLC0415
+
+        return diagnose_worker_once()
     if args.command == "public-import-sqlite":
         from packages.public_app.import_sqlite import import_sqlite_x_to_supabase  # noqa: PLC0415
 

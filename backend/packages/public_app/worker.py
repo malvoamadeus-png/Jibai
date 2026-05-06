@@ -9,7 +9,11 @@ from typing import Any
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from packages.ai.pipeline import refresh_security_market_data, run_analysis_with_store
+from packages.ai.pipeline import (
+    MARKET_DATA_WINDOW_DAYS,
+    refresh_security_market_data,
+    run_analysis_with_store,
+)
 from packages.common.models import CrawlAccountResult, RawNoteRecord
 from packages.common.paths import ensure_runtime_dirs, get_paths
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
@@ -291,6 +295,208 @@ def enqueue_scheduled_crawl() -> int:
     return 0
 
 
+def _format_db_value(value: Any) -> str:
+    if value is None:
+        return "-"
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def diagnose_worker_once() -> int:
+    print(
+        "[public-worker] doctor "
+        f"crawl_times={','.join(_crawl_times())} "
+        f"poll={_poll_seconds()}s "
+        f"stale_job_minutes={_stale_running_job_minutes()} "
+        f"market_data_days={MARKET_DATA_WINDOW_DAYS}"
+    )
+
+    try:
+        with postgres_connection() as conn:
+            db_now = conn.execute("SELECT now() AS value").fetchone()
+            print(f"[public-worker] db_now={_format_db_value(db_now['value'] if db_now else None)}")
+
+            account_row = conn.execute(
+                """
+                SELECT
+                  count(*) FILTER (WHERE status = 'approved')::int AS approved_accounts,
+                  count(*) FILTER (
+                    WHERE status = 'approved' AND backfill_completed_at IS NULL
+                  )::int AS approved_without_backfill
+                FROM x_accounts
+                """
+            ).fetchone()
+            subscription_row = conn.execute(
+                """
+                SELECT
+                  count(DISTINCT s.account_id)::int AS subscribed_accounts,
+                  count(DISTINCT a.id)::int AS approved_subscribed_accounts
+                FROM user_subscriptions s
+                LEFT JOIN x_accounts a ON a.id = s.account_id AND a.status = 'approved'
+                """
+            ).fetchone()
+            print(
+                "[public-worker] accounts "
+                f"approved={account_row['approved_accounts'] if account_row else 0} "
+                f"approved_without_backfill={account_row['approved_without_backfill'] if account_row else 0} "
+                f"subscribed={subscription_row['subscribed_accounts'] if subscription_row else 0} "
+                f"approved_subscribed={subscription_row['approved_subscribed_accounts'] if subscription_row else 0}"
+            )
+
+            count_rows = conn.execute(
+                """
+                SELECT kind, status, count(*)::int AS count
+                FROM crawl_jobs
+                GROUP BY kind, status
+                ORDER BY kind, status
+                """
+            ).fetchall()
+            if count_rows:
+                for row in count_rows:
+                    print(f"[public-worker] job_count kind={row['kind']} status={row['status']} count={row['count']}")
+            else:
+                print("[public-worker] job_count none")
+
+            due_row = conn.execute(
+                """
+                SELECT
+                  count(*)::int AS count,
+                  min(run_after) AS oldest_run_after,
+                  coalesce(
+                    round((extract(epoch from (now() - min(run_after))) / 60)::numeric, 1),
+                    0
+                  ) AS oldest_due_minutes
+                FROM crawl_jobs
+                WHERE status = 'pending'
+                  AND run_after <= now()
+                """
+            ).fetchone()
+            running_row = conn.execute(
+                """
+                SELECT
+                  count(*)::int AS count,
+                  min(coalesce(locked_at, started_at, updated_at, created_at)) AS oldest_activity_at,
+                  coalesce(
+                    round(
+                      (
+                        extract(
+                          epoch from (
+                            now() - min(coalesce(locked_at, started_at, updated_at, created_at))
+                          )
+                        ) / 60
+                      )::numeric,
+                      1
+                    ),
+                    0
+                  ) AS oldest_activity_minutes
+                FROM crawl_jobs
+                WHERE status = 'running'
+                """
+            ).fetchone()
+            latest_scheduled = conn.execute(
+                """
+                SELECT status, created_at, run_after, finished_at
+                FROM crawl_jobs
+                WHERE kind = 'scheduled_crawl'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            ).fetchone()
+
+            lock_row = conn.execute(
+                "SELECT pg_try_advisory_lock(hashtext(%s)) AS locked",
+                (WORKER_LOCK_KEY,),
+            ).fetchone()
+            lock_available = bool(lock_row and lock_row["locked"])
+            if lock_available:
+                _release_worker_lock(conn)
+            print(
+                "[public-worker] worker_lock "
+                + ("available_now" if lock_available else "held_by_another_session")
+            )
+            print(
+                "[public-worker] due_pending "
+                f"count={due_row['count'] if due_row else 0} "
+                f"oldest_run_after={_format_db_value(due_row['oldest_run_after'] if due_row else None)} "
+                f"oldest_due_minutes={due_row['oldest_due_minutes'] if due_row else 0}"
+            )
+            print(
+                "[public-worker] running "
+                f"count={running_row['count'] if running_row else 0} "
+                f"oldest_activity_at={_format_db_value(running_row['oldest_activity_at'] if running_row else None)} "
+                f"oldest_activity_minutes={running_row['oldest_activity_minutes'] if running_row else 0}"
+            )
+            print(
+                "[public-worker] latest_scheduled "
+                f"status={latest_scheduled['status'] if latest_scheduled else '-'} "
+                f"created_at={_format_db_value(latest_scheduled['created_at'] if latest_scheduled else None)} "
+                f"run_after={_format_db_value(latest_scheduled['run_after'] if latest_scheduled else None)} "
+                f"finished_at={_format_db_value(latest_scheduled['finished_at'] if latest_scheduled else None)}"
+            )
+
+            latest_jobs = conn.execute(
+                """
+                SELECT
+                  id::text AS id,
+                  kind,
+                  status,
+                  coalesce(account_id::text, '-') AS account_id,
+                  created_at,
+                  run_after,
+                  started_at,
+                  finished_at,
+                  left(coalesce(nullif(error_text, ''), nullif(summary, ''), ''), 180) AS note
+                FROM crawl_jobs
+                ORDER BY created_at DESC
+                LIMIT 10
+                """
+            ).fetchall()
+            for row in latest_jobs:
+                print(
+                    "[public-worker] latest_job "
+                    f"id={row['id']} "
+                    f"kind={row['kind']} "
+                    f"status={row['status']} "
+                    f"account_id={row['account_id']} "
+                    f"created_at={_format_db_value(row['created_at'])} "
+                    f"run_after={_format_db_value(row['run_after'])} "
+                    f"started_at={_format_db_value(row['started_at'])} "
+                    f"finished_at={_format_db_value(row['finished_at'])} "
+                    f"note={row['note'] or '-'}"
+                )
+
+            due_count = int(due_row["count"] if due_row else 0)
+            running_count = int(running_row["count"] if running_row else 0)
+            approved_subscribed = int(
+                subscription_row["approved_subscribed_accounts"] if subscription_row else 0
+            )
+            running_minutes = float(running_row["oldest_activity_minutes"] if running_row else 0)
+            stale_minutes = _stale_running_job_minutes()
+
+            if approved_subscribed == 0:
+                print("[public-worker] diagnosis no approved subscribed accounts for global crawls.")
+            if running_count and running_minutes >= stale_minutes:
+                print("[public-worker] diagnosis running job is stale and should be requeued on next poll.")
+            if due_count:
+                if lock_available:
+                    print(
+                        "[public-worker] diagnosis due jobs exist and no job holds the worker lock now; "
+                        "if this repeats, the worker is likely not running or not polling."
+                    )
+                else:
+                    print("[public-worker] diagnosis due jobs exist but another session holds the worker lock.")
+            elif not running_count:
+                print(
+                    "[public-worker] diagnosis no due pending job right now; "
+                    "if scheduled jobs are missing after a configured time, the long-running scheduler is not active."
+                )
+    except Exception as exc:
+        print(f"[public-worker] doctor_error={exc}")
+        return 1
+    return 0
+
+
 def refresh_market_data_once(
     *,
     security_keys: list[str] | None = None,
@@ -310,7 +516,12 @@ def refresh_market_data_once(
             500,
         ),
     )
-    safe_days = max(30, int(days if days is not None else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", 730)))
+    requested_days = int(
+        days
+        if days is not None
+        else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", MARKET_DATA_WINDOW_DAYS)
+    )
+    safe_days = min(MARKET_DATA_WINDOW_DAYS, max(30, requested_days))
     safe_delay = max(
         0.0,
         float(

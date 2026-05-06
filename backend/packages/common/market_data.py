@@ -411,7 +411,7 @@ def fetch_security_daily(
     ticker: str | None,
     market: str | None,
     security_key: str | None = None,
-    days: int = 730,
+    days: int = 180,
 ) -> dict[str, Any]:
     target = build_market_data_target(ticker=ticker, market=market, security_key=security_key)
     if target is None:

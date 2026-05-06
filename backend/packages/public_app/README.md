@@ -33,7 +33,7 @@ PUBLIC_WORKER_HEADLESS=true
 PUBLIC_WORKER_PAGE_WAIT_SECONDS=6
 PUBLIC_WORKER_NITTER_INSTANCES=nitter.tiekoetter.com,nitter.catsarch.com,xcancel.com
 PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES=30
-PUBLIC_WORKER_MARKET_DATA_DAYS=730
+PUBLIC_WORKER_MARKET_DATA_DAYS=180
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
 ```
 
@@ -44,7 +44,7 @@ AI settings continue to use the existing backend configuration files and environ
 `PUBLIC_WORKER_NITTER_INSTANCES` is optional. Public Nitter mirrors often add bot protection or go offline, so keep this value configurable on the server instead of relying on the code defaults. Use comma-separated host names without `https://`.
 
 Market-data settings are optional. The defaults refresh at most 30 stocks per
-analysis run, cache roughly two years of daily candles, and wait 0.25 seconds
+analysis run, cache 180 days of daily candles, and wait 0.25 seconds
 between symbols. Market-data failures are isolated from the crawl and AI
 pipeline; the job result records `market_errors=N`.
 
@@ -59,6 +59,7 @@ set +a
 
 python backend/src/main.py public-worker --once
 python backend/src/main.py public-worker
+python backend/src/main.py public-worker-doctor
 python backend/src/main.py public-enqueue-scheduled
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-import-sqlite
@@ -69,6 +70,11 @@ manual tests after migrations or deploys. `public-worker` starts the long-runnin
 poller and in-process scheduler. `public-enqueue-scheduled` inserts one scheduled
 crawl job immediately, which is useful when you want the worker to process a run
 without waiting for the next configured wall-clock time.
+
+`public-worker-doctor` is read-only. Run it on the server with the same
+environment file as the worker to print queue counts, due pending jobs, running
+job age, latest scheduled job, account/subscription counts, and whether a job is
+holding the Postgres worker lock at that instant.
 
 `public-refresh-market-data` refreshes the K-line cache without crawling X or
 running AI. Use it to backfill one ticker immediately after deploys or when a
