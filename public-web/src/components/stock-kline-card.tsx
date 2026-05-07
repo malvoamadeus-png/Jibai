@@ -477,7 +477,6 @@ export function StockKlineCard({
   const rangePresets = [
     { label: "1M", value: 22 },
     { label: "3M", value: 66 },
-    { label: "6M", value: 132 },
     { label: "180D", value: totalCandles },
   ];
 

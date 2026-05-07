@@ -1,12 +1,35 @@
 import Link from "next/link";
 
-import type { AuthorTimelineDay } from "@/lib/types";
+import type { AuthorDayViewpoint, AuthorTimelineDay } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { entityTypeLabel, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 
-export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
+type AuthorDayCardProps = {
+  day: AuthorTimelineDay;
+  showStocks?: boolean;
+  showThemes?: boolean;
+};
+
+function isVisibleViewpoint(viewpoint: AuthorDayViewpoint, showStocks: boolean, showThemes: boolean) {
+  if (viewpoint.entityType === "stock") return showStocks;
+  if (viewpoint.entityType === "theme") return showThemes;
+  return true;
+}
+
+export function AuthorDayCard({
+  day,
+  showStocks = true,
+  showThemes = true,
+}: AuthorDayCardProps) {
+  const visibleViewpoints = day.viewpoints.filter((viewpoint) =>
+    isVisibleViewpoint(viewpoint, showStocks, showThemes),
+  );
+  const visibleMentionedStocks = showStocks ? day.mentionedStocks : [];
+  const visibleMentionedThemes = showThemes ? day.mentionedThemes : [];
+  const hasHiddenViewpoints = visibleViewpoints.length === 0 && day.viewpoints.length > 0;
+
   return (
     <Card>
       <CardHeader className="gap-4">
@@ -24,9 +47,9 @@ export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
           </div>
         </div>
 
-        {(day.mentionedStocks.length > 0 || day.mentionedThemes.length > 0) && (
+        {(visibleMentionedStocks.length > 0 || visibleMentionedThemes.length > 0) && (
           <div className="flex flex-wrap gap-2">
-            {day.mentionedStocks.map((stock) => (
+            {visibleMentionedStocks.map((stock) => (
               <span
                 key={`stock-${stock}`}
                 className="rounded-full border border-[color:var(--border-strong)] px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)]"
@@ -34,7 +57,7 @@ export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
                 股票 · {stock}
               </span>
             ))}
-            {day.mentionedThemes.map((theme) => (
+            {visibleMentionedThemes.map((theme) => (
               <span
                 key={`theme-${theme}`}
                 className="rounded-full border border-[color:var(--border-strong)] px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)]"
@@ -47,7 +70,7 @@ export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {day.viewpoints.length > 0 ? (
+        {visibleViewpoints.length > 0 ? (
           <div className="overflow-hidden rounded-[24px] border border-[color:var(--border)]">
             <div className="hidden grid-cols-[140px_128px_minmax(0,1fr)_112px] gap-4 bg-[color:var(--paper-strong)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--soft-ink)] md:grid">
               <span>对象</span>
@@ -55,7 +78,7 @@ export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
               <span>逻辑</span>
               <span>来源</span>
             </div>
-            {day.viewpoints.map((viewpoint) => (
+            {visibleViewpoints.map((viewpoint) => (
               <div
                 key={`${day.date}-${viewpoint.entityType}-${viewpoint.entityKey}`}
                 className="grid gap-3 border-t border-[color:var(--border)] bg-[color:var(--panel)] px-4 py-4 first:border-t-0 md:grid-cols-[140px_128px_minmax(0,1fr)_112px] md:gap-4"
@@ -109,6 +132,13 @@ export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
                 </div>
               </div>
             ))}
+          </div>
+        ) : hasHiddenViewpoints ? (
+          <div className="rounded-[24px] border border-dashed border-[color:var(--border-strong)] bg-[color:var(--paper-strong)]/60 px-4 py-4">
+            <p className="text-sm font-semibold text-[color:var(--ink)]">当前筛选下暂无可展示观点</p>
+            <p className="mt-1 text-sm leading-6 text-[color:var(--muted-ink)]">
+              可在页面上方重新勾选股票或 Theme 查看对应分类内容。
+            </p>
           </div>
         ) : (
           <div className="space-y-3 rounded-[24px] border border-dashed border-[color:var(--border-strong)] bg-[color:var(--paper-strong)]/60 px-4 py-4">

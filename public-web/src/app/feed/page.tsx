@@ -33,6 +33,8 @@ function FeedPageContent() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [showStocks, setShowStocks] = useState(true);
+  const [showThemes, setShowThemes] = useState(true);
   const page = parsePage(searchParams.get("page"));
   const requestedId = searchParams.get("account");
   const activeId = useMemo(() => {
@@ -187,10 +189,43 @@ function FeedPageContent() {
                   <CardDescription>{detail.profileUrl}</CardDescription>
                 </CardHeader>
               </Card>
+              <Card>
+                <CardHeader className="gap-4">
+                  <div>
+                    <CardTitle className="text-xl">展示分类</CardTitle>
+                    <CardDescription>取消勾选后，下方每个日期会隐藏对应分类的提及标签和观点内容。</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[color:var(--border-strong)] bg-[color:var(--paper-strong)] px-4 text-sm font-medium text-[color:var(--ink)]">
+                      <input
+                        type="checkbox"
+                        checked={showStocks}
+                        onChange={(event) => setShowStocks(event.target.checked)}
+                        className="h-4 w-4 min-h-0 min-w-0 accent-[color:var(--accent)]"
+                      />
+                      股票
+                    </label>
+                    <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[color:var(--border-strong)] bg-[color:var(--paper-strong)] px-4 text-sm font-medium text-[color:var(--ink)]">
+                      <input
+                        type="checkbox"
+                        checked={showThemes}
+                        onChange={(event) => setShowThemes(event.target.checked)}
+                        className="h-4 w-4 min-h-0 min-w-0 accent-[color:var(--accent)]"
+                      />
+                      Theme
+                    </label>
+                  </div>
+                </CardHeader>
+              </Card>
               {detail.timeline.rows.length ? (
                 <div className="space-y-4">
                   {detail.timeline.rows.map((day) => (
-                    <AuthorDayCard key={`${detail.accountId}-${day.date}`} day={day} />
+                    <AuthorDayCard
+                      key={`${detail.accountId}-${day.date}`}
+                      day={day}
+                      showStocks={showStocks}
+                      showThemes={showThemes}
+                    />
                   ))}
                 </div>
               ) : (
