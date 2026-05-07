@@ -340,6 +340,16 @@ input {
   padding: 0 14px;
 }
 
+.feed-filter-checkbox {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  border-radius: 4px;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
 .field-note {
   color: var(--accent-strong);
   font-size: 13px;

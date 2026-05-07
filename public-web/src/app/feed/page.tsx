@@ -184,33 +184,27 @@ function FeedPageContent() {
           {!detailLoading && detail ? (
             <>
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-3xl">{detail.accountName || detail.authorNickname}</CardTitle>
-                  <CardDescription>{detail.profileUrl}</CardDescription>
-                </CardHeader>
-              </Card>
-              <Card>
-                <CardHeader className="gap-4">
-                  <div>
-                    <CardTitle className="text-xl">展示分类</CardTitle>
-                    <CardDescription>取消勾选后，下方每个日期会隐藏对应分类的提及标签和观点内容。</CardDescription>
+                <CardHeader className="gap-4 sm:flex sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <CardTitle className="text-3xl">{detail.accountName || detail.authorNickname}</CardTitle>
+                    <CardDescription className="break-all">{detail.profileUrl}</CardDescription>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[color:var(--border-strong)] bg-[color:var(--paper-strong)] px-4 text-sm font-medium text-[color:var(--ink)]">
+                  <div className="flex shrink-0 flex-wrap gap-3 sm:justify-end">
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
                       <input
                         type="checkbox"
                         checked={showStocks}
                         onChange={(event) => setShowStocks(event.target.checked)}
-                        className="h-4 w-4 min-h-0 min-w-0 accent-[color:var(--accent)]"
+                        className="feed-filter-checkbox"
                       />
                       股票
                     </label>
-                    <label className="inline-flex min-h-10 items-center gap-2 rounded-full border border-[color:var(--border-strong)] bg-[color:var(--paper-strong)] px-4 text-sm font-medium text-[color:var(--ink)]">
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
                       <input
                         type="checkbox"
                         checked={showThemes}
                         onChange={(event) => setShowThemes(event.target.checked)}
-                        className="h-4 w-4 min-h-0 min-w-0 accent-[color:var(--accent)]"
+                        className="feed-filter-checkbox"
                       />
                       Theme
                     </label>
