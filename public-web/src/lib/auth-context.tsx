@@ -32,6 +32,20 @@ function mapProfile(row: any): UserProfile {
   };
 }
 
+function profileFromUser(user: User): UserProfile | null {
+  if (!user.email) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: metadataString(user, "full_name") || user.email.split("@")[0],
+    avatarUrl: metadataString(user, "avatar_url"),
+    isAdmin: false,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -56,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       console.error(error);
-      setProfile(null);
+      setProfile(profileFromUser(user));
       setLoading(false);
       return;
     }
