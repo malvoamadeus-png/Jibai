@@ -7,7 +7,11 @@ let browserClient: SupabaseClient | null = null;
 
 export function getSupabaseBrowserClient() {
   if (!browserClient) {
-    browserClient = createBrowserClient(getSupabaseUrl(), getSupabaseAnonKey());
+    browserClient = createBrowserClient(getSupabaseUrl(), getSupabaseAnonKey(), {
+      auth: {
+        detectSessionInUrl: false,
+      },
+    });
   }
   return browserClient;
 }
