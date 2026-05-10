@@ -378,8 +378,8 @@ export function BrowseShell({ resource, children }: BrowseShellProps) {
 
       <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[336px_minmax(0,1fr)]">
         <aside className={cn("min-w-0", panelOpen ? "block" : "hidden lg:block")}>
-          <Card className="overflow-hidden lg:sticky lg:top-4">
-            <CardHeader className="space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
+          <Card className="overflow-hidden lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100vh-2rem)] lg:flex-col">
+            <CardHeader className="shrink-0 space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
               <div className="space-y-2">
                 <CardTitle className="text-xl">快速切换</CardTitle>
                 <CardDescription>筛选后直接切换，不需要回退到一级列表。</CardDescription>
@@ -411,7 +411,7 @@ export function BrowseShell({ resource, children }: BrowseShellProps) {
               </form>
             </CardHeader>
 
-            <CardContent className="space-y-4 p-4">
+            <CardContent className="min-h-0 space-y-4 overflow-y-auto overscroll-contain p-4 lg:flex-1">
               {loading ? <LoadingList /> : null}
 
               {!loading && error ? (
