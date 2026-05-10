@@ -34,7 +34,9 @@ function FeedPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [showStocks, setShowStocks] = useState(true);
-  const [showThemes, setShowThemes] = useState(true);
+  const [showThemes, setShowThemes] = useState(false);
+  const [showMacro, setShowMacro] = useState(false);
+  const [showOther, setShowOther] = useState(false);
   const page = parsePage(searchParams.get("page"));
   const requestedId = searchParams.get("account");
   const activeId = useMemo(() => {
@@ -121,9 +123,9 @@ function FeedPageContent() {
   if (loading) return <LoadingPanel />;
 
   return (
-    <main className="page space-y-6">
-      <Card>
-        <CardHeader>
+    <main className="page space-y-6 lg:flex lg:h-[calc(100vh-40px)] lg:flex-col lg:overflow-hidden lg:pb-0">
+      <Card className="lg:shrink-0">
+        <CardHeader className="lg:py-5">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="warm">{profile ? "我的订阅" : "公开预览"}</Badge>
             {!profile ? <Badge variant="neutral">仅 1 条</Badge> : null}
@@ -144,10 +146,10 @@ function FeedPageContent() {
         </Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[336px_minmax(0,1fr)]">
-        <aside className={panelOpen ? "block" : "hidden lg:block"}>
-          <Card className="overflow-hidden lg:sticky lg:top-4">
-            <CardHeader className="space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
+      <div className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[336px_minmax(0,1fr)]">
+        <aside className={panelOpen ? "block lg:min-h-0" : "hidden lg:block lg:min-h-0"}>
+          <Card className="h-full overflow-hidden lg:flex lg:flex-col">
+            <CardHeader className="shrink-0 space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
               <div>
                 <CardTitle className="text-xl">快速切换</CardTitle>
                 <CardDescription>{profile ? "你的订阅账号" : "公开轻量预览"}</CardDescription>
@@ -160,7 +162,7 @@ function FeedPageContent() {
                 </Button>
               </form>
             </CardHeader>
-            <CardContent className="space-y-3 p-4">
+            <CardContent className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4 lg:flex-1">
               {listLoading ? <div className="empty">列表加载中</div> : null}
               {!listLoading && authors.map((author) => (
                 <InsightListCard
@@ -178,7 +180,7 @@ function FeedPageContent() {
           </Card>
         </aside>
 
-        <section className="min-w-0 space-y-4">
+        <section className="min-w-0 space-y-4 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
           {error ? <div className="empty field-error">{error}</div> : null}
           {detailLoading ? <div className="empty">时间线加载中</div> : null}
           {!detailLoading && detail ? (
@@ -208,6 +210,24 @@ function FeedPageContent() {
                       />
                       Theme
                     </label>
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
+                      <input
+                        type="checkbox"
+                        checked={showMacro}
+                        onChange={(event) => setShowMacro(event.target.checked)}
+                        className="feed-filter-checkbox"
+                      />
+                      宏观
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
+                      <input
+                        type="checkbox"
+                        checked={showOther}
+                        onChange={(event) => setShowOther(event.target.checked)}
+                        className="feed-filter-checkbox"
+                      />
+                      其他
+                    </label>
                   </div>
                 </CardHeader>
               </Card>
@@ -219,6 +239,8 @@ function FeedPageContent() {
                       day={day}
                       showStocks={showStocks}
                       showThemes={showThemes}
+                      showMacro={showMacro}
+                      showOther={showOther}
                     />
                   ))}
                 </div>

@@ -10,21 +10,33 @@ type AuthorDayCardProps = {
   day: AuthorTimelineDay;
   showStocks?: boolean;
   showThemes?: boolean;
+  showMacro?: boolean;
+  showOther?: boolean;
 };
 
-function isVisibleViewpoint(viewpoint: AuthorDayViewpoint, showStocks: boolean, showThemes: boolean) {
+function isVisibleViewpoint(
+  viewpoint: AuthorDayViewpoint,
+  showStocks: boolean,
+  showThemes: boolean,
+  showMacro: boolean,
+  showOther: boolean,
+) {
   if (viewpoint.entityType === "stock") return showStocks;
   if (viewpoint.entityType === "theme") return showThemes;
-  return true;
+  if (viewpoint.entityType === "macro") return showMacro;
+  if (viewpoint.entityType === "other") return showOther;
+  return false;
 }
 
 export function AuthorDayCard({
   day,
   showStocks = true,
-  showThemes = true,
+  showThemes = false,
+  showMacro = false,
+  showOther = false,
 }: AuthorDayCardProps) {
   const visibleViewpoints = day.viewpoints.filter((viewpoint) =>
-    isVisibleViewpoint(viewpoint, showStocks, showThemes),
+    isVisibleViewpoint(viewpoint, showStocks, showThemes, showMacro, showOther),
   );
   const visibleMentionedStocks = showStocks ? day.mentionedStocks : [];
   const visibleMentionedThemes = showThemes ? day.mentionedThemes : [];
@@ -137,7 +149,7 @@ export function AuthorDayCard({
           <div className="rounded-[24px] border border-dashed border-[color:var(--border-strong)] bg-[color:var(--paper-strong)]/60 px-4 py-4">
             <p className="text-sm font-semibold text-[color:var(--ink)]">当前筛选下暂无可展示观点</p>
             <p className="mt-1 text-sm leading-6 text-[color:var(--muted-ink)]">
-              可在页面上方重新勾选股票或 Theme 查看对应分类内容。
+              可在页面上方重新勾选股票、Theme、宏观或其他查看对应分类内容。
             </p>
           </div>
         ) : (
