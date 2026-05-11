@@ -1,7 +1,7 @@
 "use client";
 
 import type { SupabaseClient, User } from "@supabase/supabase-js";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { UserProfile } from "@/lib/types";
@@ -50,46 +50,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const currentUserIdRef = useRef<string | null>(null);
+
+  const loadProfile = useCallback(
+    async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
+      if (showLoading) setLoading(true);
+
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const user = userData.user;
+        if (!user?.email) {
+          currentUserIdRef.current = null;
+          setProfile(null);
+          return;
+        }
+
+        currentUserIdRef.current = user.id;
+        const displayName = metadataString(user, "full_name") || user.email.split("@")[0];
+        const avatarUrl = metadataString(user, "avatar_url");
+        const { data, error } = await supabase.rpc("upsert_current_profile", {
+          avatar_url_arg: avatarUrl,
+          display_name_arg: displayName,
+        });
+
+        if (error) {
+          console.error(error);
+          setProfile(profileFromUser(user));
+          return;
+        }
+
+        setProfile(mapProfile(data));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [supabase],
+  );
 
   const refreshProfile = useCallback(async () => {
-    setLoading(true);
-    const { data: userData } = await supabase.auth.getUser();
-    const user = userData.user;
-    if (!user?.email) {
-      setProfile(null);
-      setLoading(false);
-      return;
-    }
+    await loadProfile();
+  }, [loadProfile]);
 
-    const displayName = metadataString(user, "full_name") || user.email.split("@")[0];
-    const avatarUrl = metadataString(user, "avatar_url");
-    const { data, error } = await supabase.rpc("upsert_current_profile", {
-      avatar_url_arg: avatarUrl,
-      display_name_arg: displayName,
-    });
+  const refreshProfileSoon = useCallback(() => {
+    setTimeout(() => {
+      loadProfile().catch(console.error);
+    }, 0);
+  }, [loadProfile]);
 
-    if (error) {
-      console.error(error);
-      setProfile(profileFromUser(user));
-      setLoading(false);
-      return;
-    }
-
-    setProfile(mapProfile(data));
+  const handleSignOut = useCallback(() => {
+    currentUserIdRef.current = null;
+    setProfile(null);
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
-    Promise.resolve().then(refreshProfile).catch(console.error);
+    Promise.resolve().then(() => loadProfile({ showLoading: true })).catch(console.error);
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      setTimeout(() => {
-        refreshProfile().catch(console.error);
-      }, 0);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") {
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        handleSignOut();
+        return;
+      }
+
+      if (event === "SIGNED_IN") {
+        const nextUserId = session?.user?.id ?? null;
+        if (nextUserId && nextUserId === currentUserIdRef.current) {
+          return;
+        }
+      }
+
+      refreshProfileSoon();
     });
     return () => subscription.unsubscribe();
-  }, [refreshProfile, supabase]);
+  }, [handleSignOut, loadProfile, refreshProfileSoon, supabase]);
 
   const signIn = useCallback(async () => {
     await supabase.auth.signInWithOAuth({
