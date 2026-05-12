@@ -47,8 +47,7 @@ function FeedPageContent() {
   const [showOther, setShowOther] = useState(false);
   const page = parsePage(searchParams.get("page"));
   const requestedId = searchParams.get("account");
-  const [selectedAccountId, setSelectedAccountId] = useState(requestedId || "");
-  const activeId = selectedAccountId || authors[0]?.accountId || "";
+  const activeId = requestedId || authors[0]?.accountId || "";
 
   useEffect(() => {
     if (loading) return;
@@ -108,29 +107,7 @@ function FeedPageContent() {
     };
   }, [activeId, loading, page, profile, supabase]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (requestedId) {
-      Promise.resolve().then(() => {
-        if (!cancelled) setSelectedAccountId(requestedId);
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (!selectedAccountId && authors[0]?.accountId) {
-      Promise.resolve().then(() => {
-        if (!cancelled) setSelectedAccountId(authors[0].accountId);
-      });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [authors, requestedId, selectedAccountId]);
-
   function selectAuthor(accountId: string) {
-    setSelectedAccountId(accountId);
     const next = new URLSearchParams(searchParams);
     next.set("account", accountId);
     next.delete("page");
