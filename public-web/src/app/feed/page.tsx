@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 
 import { AuthorDayCard } from "@/components/author-day-card";
@@ -30,11 +30,21 @@ function TimelineUpdatingNotice() {
   );
 }
 
+function buildFeedUrl(query: string, accountId: string, page: number) {
+  const next = new URLSearchParams();
+  if (query) next.set("q", query);
+  if (accountId) next.set("account", accountId);
+  if (page > 1) next.set("page", String(page));
+  const params = next.toString();
+  return params ? `/feed?${params}` : "/feed";
+}
+
 function FeedPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { loading, profile, signIn, supabase } = useAuth();
-  const queryParam = searchParams.get("q") || "";
+  const [listQuery, setListQuery] = useState(searchParams.get("q") || "");
+  const [selectedAccountId, setSelectedAccountId] = useState(searchParams.get("account") || "");
+  const [page, setPage] = useState(() => parsePage(searchParams.get("page")));
   const [authors, setAuthors] = useState<AuthorListItem[]>([]);
   const [detail, setDetail] = useState<AuthorDetailData | null>(null);
   const [listLoading, setListLoading] = useState(true);
@@ -45,9 +55,7 @@ function FeedPageContent() {
   const [showThemes, setShowThemes] = useState(false);
   const [showMacro, setShowMacro] = useState(false);
   const [showOther, setShowOther] = useState(false);
-  const page = parsePage(searchParams.get("page"));
-  const requestedId = searchParams.get("account");
-  const activeId = requestedId || authors[0]?.accountId || "";
+  const activeId = selectedAccountId || authors[0]?.accountId || "";
 
   useEffect(() => {
     if (loading) return;
@@ -55,7 +63,7 @@ function FeedPageContent() {
     Promise.resolve().then(() => {
       if (!cancelled) setListLoading(true);
     });
-    listVisibleAuthors(supabase, profile, queryParam)
+    listVisibleAuthors(supabase, profile, listQuery)
       .then((rows) => {
         if (cancelled) return;
         setAuthors(rows);
@@ -72,7 +80,7 @@ function FeedPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile, queryParam, supabase]);
+  }, [loading, profile, listQuery, supabase]);
 
   useEffect(() => {
     if (loading || !activeId) {
@@ -107,11 +115,22 @@ function FeedPageContent() {
     };
   }, [activeId, loading, page, profile, supabase]);
 
+  useEffect(() => {
+    function syncFromLocation() {
+      const next = new URLSearchParams(window.location.search);
+      setListQuery(next.get("q") || "");
+      setSelectedAccountId(next.get("account") || "");
+      setPage(parsePage(next.get("page")));
+    }
+
+    window.addEventListener("popstate", syncFromLocation);
+    return () => window.removeEventListener("popstate", syncFromLocation);
+  }, []);
+
   function selectAuthor(accountId: string) {
-    const next = new URLSearchParams(searchParams);
-    next.set("account", accountId);
-    next.delete("page");
-    router.push(`/feed?${next.toString()}`, { scroll: false });
+    setSelectedAccountId(accountId);
+    setPage(1);
+    window.history.pushState(null, "", buildFeedUrl(listQuery, accountId, 1));
     setPanelOpen(false);
   }
 
@@ -119,12 +138,10 @@ function FeedPageContent() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const nextQuery = String(formData.get("q") || "").trim();
-    const next = new URLSearchParams(searchParams);
-    if (nextQuery) next.set("q", nextQuery);
-    else next.delete("q");
-    next.delete("account");
-    next.delete("page");
-    router.push(next.toString() ? `/feed?${next.toString()}` : "/feed", { scroll: false });
+    setListQuery(nextQuery);
+    setSelectedAccountId("");
+    setPage(1);
+    window.history.pushState(null, "", buildFeedUrl(nextQuery, "", 1));
   }
 
   if (loading) return <LoadingPanel />;
@@ -162,7 +179,7 @@ function FeedPageContent() {
                 <CardDescription>{profile ? "你的订阅账号" : "公开轻量预览"}</CardDescription>
               </div>
               <form className="space-y-3" onSubmit={search}>
-                <Input key={queryParam} name="q" defaultValue={queryParam} placeholder="搜索账号" />
+                <Input key={listQuery} name="q" defaultValue={listQuery} placeholder="搜索账号" />
                 <Button type="submit" className="w-full">
                   <Search className="h-4 w-4" />
                   更新列表
