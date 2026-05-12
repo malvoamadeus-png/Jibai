@@ -22,11 +22,19 @@ function parsePage(value: string | null) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function TimelineUpdatingNotice() {
+  return (
+    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper-strong)]/70 px-4 py-3 text-sm font-medium text-[color:var(--muted-ink)]">
+      正在更新右侧时间线
+    </div>
+  );
+}
+
 function FeedPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { loading, profile, signIn, supabase } = useAuth();
-  const [query, setQuery] = useState(searchParams.get("q") || "");
+  const queryParam = searchParams.get("q") || "";
   const [authors, setAuthors] = useState<AuthorListItem[]>([]);
   const [detail, setDetail] = useState<AuthorDetailData | null>(null);
   const [listLoading, setListLoading] = useState(true);
@@ -50,7 +58,7 @@ function FeedPageContent() {
     Promise.resolve().then(() => {
       if (!cancelled) setListLoading(true);
     });
-    listVisibleAuthors(supabase, profile, searchParams.get("q") || "")
+    listVisibleAuthors(supabase, profile, queryParam)
       .then((rows) => {
         if (cancelled) return;
         setAuthors(rows);
@@ -67,13 +75,13 @@ function FeedPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile, searchParams, supabase]);
+  }, [loading, profile, queryParam, supabase]);
 
   useEffect(() => {
     if (loading || !activeId) {
       let cancelled = false;
       Promise.resolve().then(() => {
-        if (!cancelled) setDetail(null);
+        if (!cancelled && !loading) setDetail(null);
       });
       return () => {
         cancelled = true;
@@ -103,21 +111,24 @@ function FeedPageContent() {
   }, [activeId, loading, page, profile, supabase]);
 
   function selectAuthor(accountId: string) {
+    if (accountId === activeId) return;
     const next = new URLSearchParams(searchParams);
     next.set("account", accountId);
     next.delete("page");
-    router.push(`/feed?${next.toString()}`);
+    router.push(`/feed?${next.toString()}`, { scroll: false });
     setPanelOpen(false);
   }
 
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const nextQuery = String(formData.get("q") || "").trim();
     const next = new URLSearchParams(searchParams);
-    if (query.trim()) next.set("q", query.trim());
+    if (nextQuery) next.set("q", nextQuery);
     else next.delete("q");
     next.delete("account");
     next.delete("page");
-    router.push(next.toString() ? `/feed?${next.toString()}` : "/feed");
+    router.push(next.toString() ? `/feed?${next.toString()}` : "/feed", { scroll: false });
   }
 
   if (loading) return <LoadingPanel />;
@@ -155,7 +166,7 @@ function FeedPageContent() {
                 <CardDescription>{profile ? "你的订阅账号" : "公开轻量预览"}</CardDescription>
               </div>
               <form className="space-y-3" onSubmit={search}>
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索账号" />
+                <Input key={queryParam} name="q" defaultValue={queryParam} placeholder="搜索账号" />
                 <Button type="submit" className="w-full">
                   <Search className="h-4 w-4" />
                   更新列表
@@ -182,8 +193,8 @@ function FeedPageContent() {
 
         <section className="min-w-0 space-y-4 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
           {error ? <div className="empty field-error">{error}</div> : null}
-          {detailLoading ? <div className="empty">时间线加载中</div> : null}
-          {!detailLoading && detail ? (
+          {detailLoading ? <TimelineUpdatingNotice /> : null}
+          {detail ? (
             <>
               <Card>
                 <CardHeader className="gap-4 sm:flex sm:flex-row sm:items-start sm:justify-between">
