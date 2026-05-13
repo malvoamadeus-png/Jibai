@@ -14,11 +14,6 @@ from typing import Iterable
 
 from dotenv import load_dotenv
 
-try:
-    import requests  # type: ignore
-except Exception:  # pragma: no cover
-    requests = None
-
 from packages.common.models import MarketTopRiskSnapshot
 from packages.common.paths import get_paths
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
@@ -106,14 +101,9 @@ def _fetch_url(url: str, cache_name: str, *, max_age_hours: int = 24) -> bytes:
     last_exc: Exception | None = None
     for attempt in range(1, 4):
         try:
-            if requests is not None:
-                resp = requests.get(url, headers=headers, timeout=_request_timeout())
-                resp.raise_for_status()
-                data = resp.content
-            else:
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=_request_timeout()[1]) as resp:
-                    data = resp.read()
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=_request_timeout()[1]) as resp:
+                data = resp.read()
             path.write_bytes(data)
             return data
         except Exception as exc:
