@@ -25,6 +25,7 @@ import type {
   ViewEntityType,
   ViewEvidenceType,
   ViewJudgmentType,
+  ViewSignalType,
   ViewStance,
 } from "@/lib/types";
 import { makeAccountKey } from "@/lib/utils";
@@ -96,6 +97,7 @@ function normalizeViewpoint(rawValue: unknown): AuthorDayViewpoint | null {
     entityName: asString(raw.entity_name ?? raw.entityName),
     stance,
     direction: asString(raw.direction, "unknown") as ViewDirection,
+    signalType: asString(raw.signal_type ?? raw.signalType, "unknown") as ViewSignalType,
     judgmentType: asString(raw.judgment_type ?? raw.judgmentType, "unknown") as ViewJudgmentType,
     conviction: asString(raw.conviction, "unknown") as ViewConviction,
     evidenceType: asString(raw.evidence_type ?? raw.evidenceType, "unknown") as ViewEvidenceType,
@@ -117,6 +119,7 @@ function normalizeEntityAuthorView(rawValue: unknown): EntityAuthorView {
     author_nickname: asString(raw.author_nickname ?? raw.display_name),
     stance: asString(raw.stance, "unknown") as ViewStance,
     direction: asString(raw.direction, "unknown") as ViewDirection,
+    signal_type: asString(raw.signal_type, "unknown") as ViewSignalType,
     judgment_type: asString(raw.judgment_type, "unknown") as ViewJudgmentType,
     conviction: asString(raw.conviction, "unknown") as ViewConviction,
     evidence_type: asString(raw.evidence_type, "unknown") as ViewEvidenceType,
@@ -345,7 +348,7 @@ export async function getVisibleAuthorTimeline(
 
 export async function listEntities(
   supabase: SupabaseClient,
-  type: "stock" | "theme",
+  type: "stock",
   profile: UserProfile | null,
   query = "",
   limit = 100,
@@ -362,7 +365,7 @@ export async function listEntities(
 export async function getVisibleEntityTimeline(
   supabase: SupabaseClient,
   profile: UserProfile | null,
-  type: "stock" | "theme",
+  type: "stock",
   entityKey: string,
   page = 1,
 ): Promise<EntityDetailData | null> {

@@ -9,7 +9,6 @@ import { LoadingPanel } from "@/components/page-states";
 import { SignInCta } from "@/components/signin-cta";
 import { StockDayCard } from "@/components/stock-day-card";
 import { StockKlineCard } from "@/components/stock-kline-card";
-import { ThemeDayCard } from "@/components/theme-day-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +49,7 @@ function buildChart(detail: EntityDetailData): StockKlineData {
 export function EntityBrowser({
   type,
 }: {
-  type: "stock" | "theme";
+  type: "stock";
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -63,17 +62,14 @@ export function EntityBrowser({
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const page = parsePage(searchParams.get("page"));
-  const paramName = type === "stock" ? "stock" : "theme";
+  const paramName = "stock";
   const requestedKey = searchParams.get(paramName);
   const activeKey = useMemo(() => {
     if (requestedKey && items.some((item) => item.key === requestedKey)) return requestedKey;
     return items[0]?.key || "";
   }, [items, requestedKey]);
-  const title = type === "stock" ? "按股票看观点时间线" : "按 Theme 看观点时间线";
-  const description =
-    type === "stock"
-      ? "左侧快速切换股票，右侧查看日线标记和按日作者观点。"
-      : "左侧快速切换 Theme，右侧查看同一主题下的按日作者观点。";
+  const title = "按股票看观点时间线";
+  const description = "左侧快速切换股票，右侧查看日线标记和按日作者观点。";
 
   useEffect(() => {
     if (loading) return;
@@ -137,7 +133,7 @@ export function EntityBrowser({
     const next = new URLSearchParams(searchParams);
     next.set(paramName, key);
     next.delete("page");
-    router.push(`/${type === "stock" ? "stocks" : "themes"}?${next.toString()}`);
+    router.push(`/stocks?${next.toString()}`);
     setPanelOpen(false);
   }
 
@@ -148,7 +144,7 @@ export function EntityBrowser({
     else next.delete("q");
     next.delete(paramName);
     next.delete("page");
-    const path = type === "stock" ? "/stocks" : "/themes";
+    const path = "/stocks";
     router.push(next.toString() ? `${path}?${next.toString()}` : path);
   }
 
@@ -159,7 +155,7 @@ export function EntityBrowser({
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="warm">{type === "stock" ? "按股票" : "按 Theme"}</Badge>
+            <Badge variant="warm">按股票</Badge>
             {!profile ? <Badge variant="neutral">公开预览 · 仅 1 条</Badge> : null}
           </div>
           <CardTitle className="text-3xl">{title}</CardTitle>
@@ -185,7 +181,7 @@ export function EntityBrowser({
                 <CardDescription>{profile ? "按你的订阅过滤" : "公开轻量预览"}</CardDescription>
               </div>
               <form className="space-y-3" onSubmit={search}>
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={type === "stock" ? "搜索股票" : "搜索 Theme"} />
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索股票" />
                 <Button type="submit" className="w-full">
                   <Search className="h-4 w-4" />
                   更新列表
@@ -240,13 +236,9 @@ export function EntityBrowser({
 
               {detail.timeline.rows.length ? (
                 <div className="space-y-4">
-                  {detail.timeline.rows.map((day) =>
-                    type === "stock" ? (
-                      <StockDayCard key={`${detail.key}-${day.date}`} day={day} />
-                    ) : (
-                      <ThemeDayCard key={`${detail.key}-${day.date}`} day={day} />
-                    ),
-                  )}
+                  {detail.timeline.rows.map((day) => (
+                    <StockDayCard key={`${detail.key}-${day.date}`} day={day} />
+                  ))}
                 </div>
               ) : (
                 <div className="empty">暂无时间线记录</div>

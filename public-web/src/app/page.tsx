@@ -46,7 +46,7 @@ export default function HomePage() {
         <div className="panel">
           <h1 className="brand-title">集百</h1>
           <p className="muted">
-            把已审批 X 账号的观点按人、股票和 Theme 重新整理。未登录可看账号库和一条轻量预览，登录后按你的订阅范围展开完整时间线。
+            把已审批 X 账号的股票观点按人和股票重新整理。未登录可看账号库和一条轻量预览，登录后按你的订阅范围展开完整时间线。
           </p>
           <div className="submit-row">
             <Link className="primary-button" href="/accounts">

@@ -25,6 +25,7 @@ export type ViewStance =
   | "unknown";
 
 export type ViewDirection = "positive" | "negative" | "neutral" | "mixed" | "unknown";
+export type ViewSignalType = "explicit_stance" | "logic_based" | "unknown";
 export type ViewJudgmentType =
   | "direct"
   | "implied"
@@ -108,6 +109,7 @@ export type AuthorDayViewpoint = {
   entityName: string;
   stance: ViewStance;
   direction: ViewDirection;
+  signalType: ViewSignalType;
   judgmentType: ViewJudgmentType;
   conviction: ViewConviction;
   evidenceType: ViewEvidenceType;
@@ -159,6 +161,7 @@ export type EntityAuthorView = {
   author_nickname: string;
   stance: ViewStance;
   direction: ViewDirection;
+  signal_type: ViewSignalType;
   judgment_type: ViewJudgmentType;
   conviction: ViewConviction;
   evidence_type: ViewEvidenceType;
@@ -175,8 +178,6 @@ export type StockTimelineDay = {
   authorViews: EntityAuthorView[];
   updatedAt: string;
 };
-
-export type ThemeTimelineDay = StockTimelineDay;
 
 export type EntityDetailData = {
   key: string;

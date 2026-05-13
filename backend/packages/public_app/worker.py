@@ -3,13 +3,15 @@ from __future__ import annotations
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from packages.ai.pipeline import (
+    LIGHT_MARKET_DATA_MAX_SECURITIES,
+    LIGHT_MARKET_DATA_WINDOW_DAYS,
     MARKET_DATA_WINDOW_DAYS,
     refresh_security_market_data,
     run_analysis_with_store,
@@ -18,7 +20,7 @@ from packages.common.models import CrawlAccountResult, RawNoteRecord
 from packages.common.paths import ensure_runtime_dirs, get_paths
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
 from packages.common.settings import load_settings
-from packages.common.time_utils import SHANGHAI_TZ, now_iso
+from packages.common.time_utils import SHANGHAI_TZ, note_date_key, now_iso, today_date_key
 from packages.x.config import AccountTarget, WatchlistConfig
 from packages.x.service import crawl_account_once
 
@@ -53,6 +55,41 @@ def _poll_seconds() -> int:
 
 def _account_pause_seconds() -> float:
     return max(0.0, float(os.getenv("PUBLIC_WORKER_ACCOUNT_DELAY_SECONDS", "5")))
+
+
+def _light_market_data_days() -> int:
+    return max(1, int(os.getenv("PUBLIC_WORKER_LIGHT_MARKET_DATA_DAYS", str(LIGHT_MARKET_DATA_WINDOW_DAYS))))
+
+
+def _light_market_data_max_securities() -> int:
+    return max(
+        0,
+        int(os.getenv("PUBLIC_WORKER_LIGHT_MARKET_DATA_MAX_SECURITIES", str(LIGHT_MARKET_DATA_MAX_SECURITIES))),
+    )
+
+
+def _analysis_window_days() -> int:
+    return max(1, _env_int("PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS", 3))
+
+
+def _recent_window(days: int) -> tuple[str, str]:
+    safe_days = max(1, int(days))
+    end_date = today_date_key()
+    start_date = (datetime.now(SHANGHAI_TZ).date() - timedelta(days=safe_days - 1)).isoformat()
+    return start_date, end_date
+
+
+def _filter_recent_notes(notes: list[RawNoteRecord], *, days: int) -> tuple[list[RawNoteRecord], str, str]:
+    start_date, end_date = _recent_window(days)
+    return (
+        [
+            note
+            for note in notes
+            if start_date <= note_date_key(note.publish_time, note.fetched_at) <= end_date
+        ],
+        start_date,
+        end_date,
+    )
 
 
 def _nitter_instances() -> list[str] | None:
@@ -249,13 +286,20 @@ def _process_job(job: CrawlJob) -> None:
             if index < len(accounts) - 1:
                 time.sleep(_account_pause_seconds())
 
-        notes = store.list_all_content_items(platform="x")
+        all_notes = store.list_all_content_items(platform="x")
+        notes, _start_date, _end_date = _filter_recent_notes(
+            all_notes,
+            days=_analysis_window_days(),
+        )
+        is_backfill = job.kind == "initial_backfill"
         summary = run_analysis_with_store(
             store=store,
             paths=paths,
             notes=notes,
             crawl_results=crawl_results,
             crawl_errors=crawl_errors,
+            market_data_days=None if is_backfill else _light_market_data_days(),
+            market_data_max_securities=None if is_backfill else _light_market_data_max_securities(),
         )
         mark_job_succeeded(
             conn,
@@ -333,7 +377,9 @@ def diagnose_worker_once() -> int:
         f"crawl_times={','.join(_crawl_times())} "
         f"poll={_poll_seconds()}s "
         f"stale_job_minutes={_stale_running_job_minutes()} "
-        f"market_data_days={MARKET_DATA_WINDOW_DAYS}"
+        f"market_data_days={MARKET_DATA_WINDOW_DAYS} "
+        f"light_market_data_days={_light_market_data_days()} "
+        f"light_market_data_max={_light_market_data_max_securities()}"
     )
     print(
         "[public-worker] ai "
@@ -614,9 +660,16 @@ def rebuild_public_timelines_once() -> int:
     ensure_runtime_dirs(paths)
     with postgres_connection() as conn:
         store = PostgresInsightStore(conn)
-        notes = store.list_all_content_items(platform="x")
+        all_notes = store.list_all_content_items(platform="x")
+        notes, start_date, end_date = _filter_recent_notes(
+            all_notes,
+            days=_analysis_window_days(),
+        )
         if not notes:
-            print("[public-worker] no public X content found")
+            print(
+                "[public-worker] no public X content found in analysis window "
+                f"start={start_date} end={end_date}"
+            )
             return 1
         summary = run_analysis_with_store(
             store=store,
@@ -628,14 +681,61 @@ def rebuild_public_timelines_once() -> int:
 
     print(
         "[public-worker] rebuilt_timelines "
+        f"start={start_date} "
+        f"end={end_date} "
         f"notes={len(notes)} "
         f"author_days={len(summary.snapshot.author_summaries)} "
         f"stock_days={len(summary.snapshot.stock_views)} "
-        f"theme_days={len(summary.snapshot.theme_views)} "
         f"market_prices={summary.market_prices} "
         f"market_errors={len(summary.market_errors)}"
     )
     for error in summary.market_errors[:10]:
+        print(error)
+    return 1 if summary.exit_code else 0
+
+
+def reanalyze_recent_public_content_once(*, days: int = 3, clear_analysis: bool = True) -> int:
+    safe_days = max(1, int(days))
+    paths = get_paths()
+    ensure_runtime_dirs(paths)
+
+    with postgres_connection() as conn:
+        store = PostgresInsightStore(conn)
+        all_notes = store.list_all_content_items(platform="x")
+        notes, start_date, end_date = _filter_recent_notes(all_notes, days=safe_days)
+        if not notes:
+            if clear_analysis:
+                store.clear_analysis_outputs()
+            print(
+                "[public-worker] no public X content in date window "
+                f"start={start_date} end={end_date}"
+            )
+            return 1
+        summary = run_analysis_with_store(
+            store=store,
+            paths=paths,
+            notes=notes,
+            crawl_results=_synthetic_crawl_results(notes),
+            crawl_errors=[],
+            force_reanalysis=True,
+            clear_analysis_outputs=clear_analysis,
+            market_data_days=_light_market_data_days(),
+            market_data_max_securities=_light_market_data_max_securities(),
+        )
+
+    print(
+        "[public-worker] reanalyzed_recent "
+        f"start={start_date} "
+        f"end={end_date} "
+        f"notes={len(notes)} "
+        f"reanalyzed_notes={len(summary.snapshot.note_extracts)} "
+        f"author_days={len(summary.snapshot.author_summaries)} "
+        f"stock_days={len(summary.snapshot.stock_views)} "
+        f"market_prices={summary.market_prices} "
+        f"market_errors={len(summary.market_errors)} "
+        f"errors={len(summary.snapshot.errors)}"
+    )
+    for error in [*summary.snapshot.errors, *summary.market_errors][:10]:
         print(error)
     return 1 if summary.exit_code else 0
 
@@ -668,6 +768,8 @@ def run_worker(*, once: bool = False) -> int:
         "[public-worker] started. crawl_times="
         + ", ".join(_crawl_times())
         + f"; poll={_poll_seconds()}s; account_delay={_account_pause_seconds()}s"
+        + f"; light_market_data_days={_light_market_data_days()}"
+        + f"; light_market_data_max={_light_market_data_max_securities()}"
     )
     scheduler.start()
     return 0

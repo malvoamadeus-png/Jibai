@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,16 @@ from litellm import completion
 from packages.common.settings import AppSettings
 
 API_TIMEOUT = 300
+
+
+def _api_timeout_seconds() -> int:
+    raw = os.getenv("AI_API_TIMEOUT_SECONDS")
+    if not raw:
+        return API_TIMEOUT
+    try:
+        return max(15, int(raw))
+    except ValueError:
+        return API_TIMEOUT
 
 
 @dataclass(slots=True)
@@ -55,7 +66,7 @@ class LLMJsonClient:
             "messages": messages,
             "temperature": 0.2,
             "max_tokens": max_tokens,
-            "timeout": API_TIMEOUT,
+            "timeout": _api_timeout_seconds(),
             "api_key": self.settings.api_key,
         }
         if self.settings.provider == "openai-compatible" and self.settings.base_url:

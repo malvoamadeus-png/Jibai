@@ -27,6 +27,7 @@ from packages.common.models import (
     ViewEvidenceType,
     ViewHorizon,
     ViewJudgmentType,
+    ViewSignalType,
     ViewpointRecord,
     ViewStance,
 )
@@ -48,8 +49,10 @@ from .prompts import (
 )
 
 
-ANALYSIS_VERSION = "viewpoints_v3"
+ANALYSIS_VERSION = "stock_signals_v1"
 MARKET_DATA_WINDOW_DAYS = 180
+LIGHT_MARKET_DATA_WINDOW_DAYS = 7
+LIGHT_MARKET_DATA_MAX_SECURITIES = 10
 STANCE_PRIORITY: dict[ViewStance, int] = {
     "strong_bullish": 5,
     "bullish": 4,
@@ -62,6 +65,12 @@ STANCE_PRIORITY: dict[ViewStance, int] = {
 }
 VALID_STANCES = set(STANCE_PRIORITY)
 VALID_DIRECTIONS: set[ViewDirection] = {"positive", "negative", "neutral", "mixed", "unknown"}
+VALID_SIGNAL_TYPES: set[ViewSignalType] = {"explicit_stance", "logic_based", "unknown"}
+INVALID_SIGNAL_JUDGMENT_TYPES: set[ViewJudgmentType] = {
+    "factual_only",
+    "quoted",
+    "mention_only",
+}
 VALID_JUDGMENT_TYPES: set[ViewJudgmentType] = {
     "direct",
     "implied",
@@ -206,6 +215,15 @@ def _combine_directions(left: ViewDirection, right: ViewDirection) -> ViewDirect
     return "mixed"
 
 
+def _combine_signal_types(left: ViewSignalType, right: ViewSignalType) -> ViewSignalType:
+    priority: dict[ViewSignalType, int] = {
+        "logic_based": 2,
+        "explicit_stance": 1,
+        "unknown": 0,
+    }
+    return left if priority[left] >= priority[right] else right
+
+
 def _combine_judgment_types(left: ViewJudgmentType, right: ViewJudgmentType) -> ViewJudgmentType:
     priority: dict[ViewJudgmentType, int] = {
         "direct": 5,
@@ -304,6 +322,7 @@ def _coerce_viewpoint_payloads(payload: dict[str, object]) -> list[dict[str, obj
                     "direction": _direction_from_stance(
                         item.get("stance") if item.get("stance") in VALID_STANCES else "unknown"  # type: ignore[arg-type]
                     ),
+                    "signal_type": "unknown",
                     "judgment_type": "unknown",
                     "conviction": "unknown",
                     "evidence_type": "unknown",
@@ -323,7 +342,7 @@ def _parse_viewpoint(
     aliases: dict[str, SecurityIdentity],
 ) -> ViewpointRecord | None:
     entity_type_raw = str(raw.get("entity_type") or "").strip().casefold()
-    entity_type = entity_type_raw if entity_type_raw in {"stock", "theme", "macro", "other"} else ""
+    entity_type = entity_type_raw if entity_type_raw == "stock" else ""
     legacy_stock_name = str(raw.get("stock_name") or "").strip()
     legacy_stock_key = str(raw.get("stock_code_or_name") or "").strip()
     entity_name = str(raw.get("entity_name") or legacy_stock_name or legacy_stock_key).strip()
@@ -341,12 +360,20 @@ def _parse_viewpoint(
         if direction_raw in VALID_DIRECTIONS
         else _direction_from_stance(legacy_stance)  # type: ignore[arg-type]
     )
+    if direction not in {"positive", "negative"}:
+        return None
+    signal_type_raw = str(raw.get("signal_type") or "").strip()
+    signal_type = signal_type_raw if signal_type_raw in VALID_SIGNAL_TYPES else "unknown"
+    if signal_type == "unknown":
+        return None
     judgment_type_raw = str(raw.get("judgment_type") or "").strip()
     judgment_type = (
         judgment_type_raw if judgment_type_raw in VALID_JUDGMENT_TYPES else "unknown"
     )
     if judgment_type == "unknown" and legacy_stance == "mention_only":
         judgment_type = "mention_only"
+    if judgment_type in INVALID_SIGNAL_JUDGMENT_TYPES:
+        return None
     conviction_raw = str(raw.get("conviction") or "").strip()
     conviction = conviction_raw if conviction_raw in VALID_CONVICTIONS else "unknown"
     if conviction == "unknown" and judgment_type == "mention_only":
@@ -364,26 +391,24 @@ def _parse_viewpoint(
     logic = str(raw.get("logic") or raw.get("view_summary") or "").strip()
     evidence = str(raw.get("evidence") or "").strip()
 
-    if entity_type == "stock":
-        identity = resolve_security_identity(
-            raw_name=entity_code_or_name or entity_name,
-            stock_name=entity_name,
-            aliases=aliases,
-        )
-        if identity is None:
-            return None
-        entity_key = identity.security_key
-        entity_name = identity.display_name
-    else:
-        entity_key = _normalize_entity_key(entity_name, default=entity_type)
+    identity = resolve_security_identity(
+        raw_name=entity_code_or_name or entity_name,
+        stock_name=entity_name,
+        aliases=aliases,
+    )
+    if identity is None:
+        return None
+    entity_key = identity.security_key
+    entity_name = identity.display_name
 
     return ViewpointRecord(
-        entity_type=entity_type,  # type: ignore[arg-type]
+        entity_type="stock",
         entity_key=entity_key,
         entity_name=entity_name,
         entity_code_or_name=entity_code_or_name or entity_name,
         stance=stance,  # type: ignore[arg-type]
         direction=direction,  # type: ignore[arg-type]
+        signal_type=signal_type,  # type: ignore[arg-type]
         judgment_type=judgment_type,  # type: ignore[arg-type]
         conviction=conviction,  # type: ignore[arg-type]
         evidence_type=evidence_type,  # type: ignore[arg-type]
@@ -401,7 +426,13 @@ def _normalize_viewpoint(
     aliases: dict[str, SecurityIdentity],
 ) -> ViewpointRecord | None:
     if viewpoint.entity_type != "stock":
-        return viewpoint.model_copy(update={"sort_order": order})
+        return None
+    if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+        return None
+    if viewpoint.direction not in {"positive", "negative"}:
+        return None
+    if viewpoint.judgment_type in INVALID_SIGNAL_JUDGMENT_TYPES:
+        return None
 
     raw_name = (viewpoint.entity_code_or_name or viewpoint.entity_name).strip()
     identity = resolve_security_identity(
@@ -416,6 +447,7 @@ def _normalize_viewpoint(
         update={
             "entity_key": identity.security_key,
             "entity_name": identity.display_name,
+            "entity_type": "stock",
             "sort_order": order,
         }
     )
@@ -535,6 +567,8 @@ def _analyze_missing_notes(
     notes: list[RawNoteRecord],
     paths: AppPaths,
     force: bool = False,
+    progress_label: str | None = None,
+    commit_each: bool = False,
 ) -> tuple[dict[str, NoteExtractRecord], list[NoteExtractRecord], list[str]]:
     aliases = load_security_aliases(paths)
     existing = store.get_analysis_map()
@@ -550,7 +584,14 @@ def _analyze_missing_notes(
         return existing, created, errors
 
     client = LLMJsonClient(settings)
-    for note in missing:
+    total = len(missing)
+    for index, note in enumerate(missing, start=1):
+        if progress_label:
+            print(
+                f"{progress_label} analyzing_note={index}/{total} "
+                f"account={note.account_name} note_id={note.note_id}",
+                flush=True,
+            )
         try:
             result = client.generate_json(
                 build_note_extract_messages(note),
@@ -559,8 +600,8 @@ def _analyze_missing_notes(
             )
             payload = dict(result.parsed)
             viewpoints = []
-            for index, raw_view in enumerate(_coerce_viewpoint_payloads(payload)):
-                parsed = _parse_viewpoint(raw_view, order=index, aliases=aliases)
+            for viewpoint_index, raw_view in enumerate(_coerce_viewpoint_payloads(payload)):
+                parsed = _parse_viewpoint(raw_view, order=viewpoint_index, aliases=aliases)
                 if parsed is not None:
                     viewpoints.append(parsed)
             summary_text = str(payload.get("summary_text") or "").strip() or _fallback_note_summary(note)
@@ -592,10 +633,24 @@ def _analyze_missing_notes(
             )
             extract, _ = _normalize_extract(extract, aliases)
             store.replace_content_analysis(extract, aliases=aliases)
+            if commit_each and hasattr(store, "conn"):
+                store.conn.commit()
             existing[_note_key(extract.platform, extract.note_id)] = extract
             created.append(extract)
+            if progress_label:
+                print(
+                    f"{progress_label} analyzed_note={index}/{total} "
+                    f"viewpoints={len(extract.viewpoints)}",
+                    flush=True,
+                )
         except Exception as exc:
             errors.append(f"[note {note.platform}/{note.note_id}] {exc}")
+            if progress_label:
+                print(
+                    f"{progress_label} analysis_error={index}/{total} "
+                    f"note_id={note.note_id} error={exc}",
+                    flush=True,
+                )
     refreshed = store.get_analysis_map()
     return refreshed, created, errors
 
@@ -621,6 +676,14 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
     aggregated: dict[tuple[str, str], AuthorDayViewpoint] = {}
     for extract in extracts:
         for viewpoint in extract.viewpoints:
+            if viewpoint.entity_type != "stock":
+                continue
+            if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+                continue
+            if viewpoint.direction not in {"positive", "negative"}:
+                continue
+            if viewpoint.judgment_type in INVALID_SIGNAL_JUDGMENT_TYPES:
+                continue
             key = (viewpoint.entity_type, viewpoint.entity_key)
             current = aggregated.get(key)
             if current is None:
@@ -630,6 +693,7 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
                     entity_name=viewpoint.entity_name,
                     stance=viewpoint.stance,
                     direction=viewpoint.direction,
+                    signal_type=viewpoint.signal_type,
                     judgment_type=viewpoint.judgment_type,
                     conviction=viewpoint.conviction,
                     evidence_type=viewpoint.evidence_type,
@@ -643,6 +707,10 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
             else:
                 current.stance = _combine_stances(current.stance, viewpoint.stance)
                 current.direction = _combine_directions(current.direction, viewpoint.direction)
+                current.signal_type = _combine_signal_types(
+                    current.signal_type,
+                    viewpoint.signal_type,
+                )
                 current.judgment_type = _combine_judgment_types(
                     current.judgment_type,
                     viewpoint.judgment_type,
@@ -688,7 +756,7 @@ def _build_author_day_record(
 ) -> AuthorDayRecord:
     day_viewpoints = _aggregate_author_day_viewpoints(extracts)
     mentioned_stocks = [item.entity_name for item in day_viewpoints if item.entity_type == "stock"]
-    mentioned_themes = [item.entity_name for item in day_viewpoints if item.entity_type == "theme"]
+    mentioned_themes: list[str] = []
     notes_payload = [
         AuthorTimelineNote(
             note_id=note.note_id,
@@ -767,6 +835,7 @@ def _materialize_author_timelines(
     notes: list[RawNoteRecord],
     extracts: dict[str, NoteExtractRecord],
     crawl_results: list[CrawlAccountResult],
+    progress_label: str | None = None,
 ) -> tuple[list[AuthorDayRecord], list[str]]:
     errors: list[str] = []
     updated_records: list[AuthorDayRecord] = []
@@ -776,11 +845,23 @@ def _materialize_author_timelines(
         _account_key(item.platform, item.account_name): item for item in crawl_results
     }
     today = today_date_key()
+    total_days = sum(
+        len(set(notes_by_account_date.get(account_id, {}).keys()) | {today})
+        for account_id in crawl_result_map
+    )
+    processed_days = 0
 
     for account_id, crawl_result in crawl_result_map.items():
         all_dates = set(notes_by_account_date.get(account_id, {}).keys())
         all_dates.add(today)
         for date in sorted(all_dates, reverse=True):
+            processed_days += 1
+            if progress_label:
+                print(
+                    f"{progress_label} materializing_author_day={processed_days}/{total_days} "
+                    f"account={crawl_result.account_name} date={date}",
+                    flush=True,
+                )
             day_notes = notes_by_account_date.get(account_id, {}).get(date, [])
             day_extracts = extracts_by_account_date.get(account_id, {}).get(date, [])
             existing = store.get_author_daily_summary(
@@ -825,12 +906,19 @@ def _materialize_stock_timelines(
     *,
     store: InsightStore,
     extracts: dict[str, NoteExtractRecord],
+    progress_label: str | None = None,
 ) -> list[StockDayRecord]:
     grouped: dict[str, dict[str, list[tuple[NoteExtractRecord, ViewpointRecord]]]] = {}
     display_names: dict[str, str] = {}
     for extract in extracts.values():
         for viewpoint in extract.viewpoints:
             if viewpoint.entity_type != "stock":
+                continue
+            if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+                continue
+            if viewpoint.direction not in {"positive", "negative"}:
+                continue
+            if viewpoint.judgment_type in INVALID_SIGNAL_JUDGMENT_TYPES:
                 continue
             display_names[viewpoint.entity_key] = viewpoint.entity_name
             grouped.setdefault(viewpoint.entity_key, {}).setdefault(extract.date, []).append(
@@ -839,8 +927,17 @@ def _materialize_stock_timelines(
 
     store.clear_security_daily_views()
     updated_records: list[StockDayRecord] = []
+    total_days = sum(len(date_map) for date_map in grouped.values())
+    processed_days = 0
     for security_key, date_map in grouped.items():
         for date, items in date_map.items():
+            processed_days += 1
+            if progress_label:
+                print(
+                    f"{progress_label} materializing_stock_day={processed_days}/{total_days} "
+                    f"stock={security_key} date={date}",
+                    flush=True,
+                )
             author_map: dict[str, EntityAuthorView] = {}
             for extract, viewpoint in items:
                 author_key = _account_key(extract.platform, extract.account_name)
@@ -852,6 +949,7 @@ def _materialize_stock_timelines(
                         author_nickname=extract.author_nickname,
                         stance=viewpoint.stance,
                         direction=viewpoint.direction,
+                        signal_type=viewpoint.signal_type,
                         judgment_type=viewpoint.judgment_type,
                         conviction=viewpoint.conviction,
                         evidence_type=viewpoint.evidence_type,
@@ -864,6 +962,7 @@ def _materialize_stock_timelines(
                 )
                 view.stance = _combine_stances(view.stance, viewpoint.stance)
                 view.direction = _combine_directions(view.direction, viewpoint.direction)
+                view.signal_type = _combine_signal_types(view.signal_type, viewpoint.signal_type)
                 view.judgment_type = _combine_judgment_types(
                     view.judgment_type,
                     viewpoint.judgment_type,
@@ -954,6 +1053,15 @@ def _market_error_label(security_key: str, identity: SecurityIdentity) -> str:
     return security_key
 
 
+def _stock_keys_from_extracts(extracts: list[NoteExtractRecord]) -> list[str]:
+    keys: list[str] = []
+    for extract in extracts:
+        for viewpoint in extract.viewpoints:
+            if viewpoint.entity_type == "stock" and viewpoint.entity_key:
+                keys.append(viewpoint.entity_key)
+    return list(dict.fromkeys(keys))
+
+
 def refresh_security_market_data(
     *,
     store: Any,
@@ -981,7 +1089,7 @@ def refresh_security_market_data(
     requested_days = int(
         days if days is not None else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", MARKET_DATA_WINDOW_DAYS)
     )
-    effective_days = min(MARKET_DATA_WINDOW_DAYS, max(30, requested_days))
+    effective_days = min(MARKET_DATA_WINDOW_DAYS, max(1, requested_days))
     effective_delay = max(
         0.0,
         float(
@@ -1041,10 +1149,18 @@ def _refresh_stock_market_data(
     *,
     store: Any,
     stock_records: list[StockDayRecord],
+    market_data_stock_keys: list[str] | None = None,
+    market_data_days: int | None = None,
+    market_data_max_securities: int | None = None,
 ) -> tuple[int, list[str]]:
+    security_keys = market_data_stock_keys
+    if security_keys is None:
+        security_keys = _ordered_stock_keys_for_market_data(stock_records)
     return refresh_security_market_data(
         store=store,
-        security_keys=_ordered_stock_keys_for_market_data(stock_records),
+        security_keys=security_keys,
+        max_securities=market_data_max_securities,
+        days=market_data_days,
     )
 
 
@@ -1053,85 +1169,8 @@ def _materialize_theme_timelines(
     store: InsightStore,
     extracts: dict[str, NoteExtractRecord],
 ) -> list[ThemeDayRecord]:
-    grouped: dict[str, dict[str, list[tuple[NoteExtractRecord, ViewpointRecord]]]] = {}
-    display_names: dict[str, str] = {}
-    for extract in extracts.values():
-        for viewpoint in extract.viewpoints:
-            if viewpoint.entity_type != "theme":
-                continue
-            display_names[viewpoint.entity_key] = viewpoint.entity_name
-            grouped.setdefault(viewpoint.entity_key, {}).setdefault(extract.date, []).append(
-                (extract, viewpoint)
-            )
-
     store.clear_theme_daily_views()
-    updated_records: list[ThemeDayRecord] = []
-    for theme_key, date_map in grouped.items():
-        for date, items in date_map.items():
-            author_map: dict[str, EntityAuthorView] = {}
-            for extract, viewpoint in items:
-                author_key = _account_key(extract.platform, extract.account_name)
-                view = author_map.setdefault(
-                    author_key,
-                    EntityAuthorView(
-                        platform=extract.platform,
-                        account_name=extract.account_name,
-                        author_nickname=extract.author_nickname,
-                        stance=viewpoint.stance,
-                        direction=viewpoint.direction,
-                        judgment_type=viewpoint.judgment_type,
-                        conviction=viewpoint.conviction,
-                        evidence_type=viewpoint.evidence_type,
-                        logic="",
-                        note_ids=[],
-                        note_urls=[],
-                        evidence=[],
-                        time_horizons=[],
-                    ),
-                )
-                view.stance = _combine_stances(view.stance, viewpoint.stance)
-                view.direction = _combine_directions(view.direction, viewpoint.direction)
-                view.judgment_type = _combine_judgment_types(
-                    view.judgment_type,
-                    viewpoint.judgment_type,
-                )
-                view.conviction = _combine_convictions(view.conviction, viewpoint.conviction)
-                view.evidence_type = _combine_evidence_types(
-                    view.evidence_type,
-                    viewpoint.evidence_type,
-                )
-                view.logic = _merge_text(view.logic, viewpoint.logic)
-                if viewpoint.evidence and viewpoint.evidence not in view.evidence:
-                    view.evidence.append(viewpoint.evidence)
-                if viewpoint.time_horizon not in view.time_horizons:
-                    view.time_horizons.append(viewpoint.time_horizon)
-                if extract.note_id not in view.note_ids:
-                    view.note_ids.append(extract.note_id)
-                if extract.note_url not in view.note_urls:
-                    view.note_urls.append(extract.note_url)
-
-            author_views = sorted(
-                author_map.values(),
-                key=lambda item: (item.platform, item.account_name),
-            )
-            record = ThemeDayRecord(
-                date=date,
-                theme_key=theme_key,
-                theme_name=display_names.get(theme_key) or theme_key,
-                mention_count=len(items),
-                author_views=author_views,
-                content_hash=_hash_payload(
-                    {
-                        "theme_key": theme_key,
-                        "date": date,
-                        "author_views": [item.model_dump(mode="json") for item in author_views],
-                    }
-                ),
-                updated_at=now_iso(),
-            )
-            store.upsert_theme_daily_view(theme_key, record)
-            updated_records.append(record)
-    return updated_records
+    return []
 
 
 def _build_synthetic_crawl_results(notes: list[RawNoteRecord]) -> list[CrawlAccountResult]:
@@ -1205,6 +1244,7 @@ def run_analysis(
     crawl_results: list[CrawlAccountResult],
     crawl_errors: list[str],
     force_reanalysis: bool = False,
+    clear_analysis_outputs: bool = False,
 ) -> AnalysisRunSummary:
     with sqlite_connection(paths) as conn:
         init_db(conn)
@@ -1216,6 +1256,7 @@ def run_analysis(
             crawl_results=crawl_results,
             crawl_errors=crawl_errors,
             force_reanalysis=force_reanalysis,
+            clear_analysis_outputs=clear_analysis_outputs,
         )
 
 
@@ -1227,17 +1268,37 @@ def run_analysis_with_store(
     crawl_results: list[CrawlAccountResult],
     crawl_errors: list[str],
     force_reanalysis: bool = False,
+    clear_analysis_outputs: bool = False,
+    market_data_stock_keys: list[str] | None = None,
+    market_data_days: int | None = None,
+    market_data_max_securities: int | None = None,
 ) -> AnalysisRunSummary:
     run_at = now_iso()
     run_id = run_at.replace(":", "").replace("+08:00", "").replace("-", "")
     aliases = load_security_aliases(paths)
+    progress_label = "[public-reanalyze]" if force_reanalysis else None
+
+    if clear_analysis_outputs and hasattr(store, "clear_analysis_outputs"):
+        store.clear_analysis_outputs()
+        if hasattr(store, "conn"):
+            store.conn.commit()
+        if progress_label:
+            print(f"{progress_label} cleared_analysis_outputs", flush=True)
 
     extracts, created_extracts, extract_errors = _analyze_missing_notes(
         store=store,
         notes=notes,
         paths=paths,
         force=force_reanalysis,
+        progress_label=progress_label,
+        commit_each=force_reanalysis,
     )
+    note_scope = {_note_key(note.platform, note.note_id) for note in notes}
+    extracts = {
+        key: extract
+        for key, extract in extracts.items()
+        if key in note_scope
+    }
     extracts, _normalized_extract_count = _normalize_analysis_map_with_aliases(
         store=store,
         extracts=extracts,
@@ -1249,20 +1310,36 @@ def run_analysis_with_store(
         notes=notes,
         extracts=extracts,
         crawl_results=crawl_results,
+        progress_label=progress_label,
     )
+    if force_reanalysis and hasattr(store, "conn"):
+        store.conn.commit()
     stock_records = _materialize_stock_timelines(
         store=store,
         extracts=extracts,
+        progress_label=progress_label,
+    )
+    if force_reanalysis and hasattr(store, "conn"):
+        store.conn.commit()
+    selected_market_data_stock_keys = (
+        _stock_keys_from_extracts(created_extracts)
+        if market_data_stock_keys is None and market_data_days is not None
+        else market_data_stock_keys
     )
     market_prices, market_errors = _refresh_stock_market_data(
         store=store,
         stock_records=stock_records,
+        market_data_stock_keys=selected_market_data_stock_keys,
+        market_data_days=market_data_days,
+        market_data_max_securities=market_data_max_securities,
     )
     theme_records = _materialize_theme_timelines(
         store=store,
         extracts=extracts,
     )
     store.prune_orphan_securities()
+    if force_reanalysis and hasattr(store, "conn"):
+        store.conn.commit()
 
     snapshot = AnalysisSnapshot(
         run_id=run_id,

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import type { AuthorDayViewpoint, AuthorTimelineDay } from "@/lib/types";
+import type { AuthorTimelineDay } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
@@ -8,39 +8,13 @@ import { entityTypeLabel, viewSignalLabel, viewSignalVariant } from "@/lib/utils
 
 type AuthorDayCardProps = {
   day: AuthorTimelineDay;
-  showStocks?: boolean;
-  showThemes?: boolean;
-  showMacro?: boolean;
-  showOther?: boolean;
 };
-
-function isVisibleViewpoint(
-  viewpoint: AuthorDayViewpoint,
-  showStocks: boolean,
-  showThemes: boolean,
-  showMacro: boolean,
-  showOther: boolean,
-) {
-  if (viewpoint.entityType === "stock") return showStocks;
-  if (viewpoint.entityType === "theme") return showThemes;
-  if (viewpoint.entityType === "macro") return showMacro;
-  if (viewpoint.entityType === "other") return showOther;
-  return false;
-}
 
 export function AuthorDayCard({
   day,
-  showStocks = true,
-  showThemes = false,
-  showMacro = false,
-  showOther = false,
 }: AuthorDayCardProps) {
-  const visibleViewpoints = day.viewpoints.filter((viewpoint) =>
-    isVisibleViewpoint(viewpoint, showStocks, showThemes, showMacro, showOther),
-  );
-  const visibleMentionedStocks = showStocks ? day.mentionedStocks : [];
-  const visibleMentionedThemes = showThemes ? day.mentionedThemes : [];
-  const hasHiddenViewpoints = visibleViewpoints.length === 0 && day.viewpoints.length > 0;
+  const visibleViewpoints = day.viewpoints.filter((viewpoint) => viewpoint.entityType === "stock");
+  const visibleMentionedStocks = day.mentionedStocks;
 
   return (
     <Card>
@@ -59,7 +33,7 @@ export function AuthorDayCard({
           </div>
         </div>
 
-        {(visibleMentionedStocks.length > 0 || visibleMentionedThemes.length > 0) && (
+        {visibleMentionedStocks.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {visibleMentionedStocks.map((stock) => (
               <span
@@ -67,14 +41,6 @@ export function AuthorDayCard({
                 className="rounded-full border border-[color:var(--border-strong)] px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)]"
               >
                 股票 · {stock}
-              </span>
-            ))}
-            {visibleMentionedThemes.map((theme) => (
-              <span
-                key={`theme-${theme}`}
-                className="rounded-full border border-[color:var(--border-strong)] px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)]"
-              >
-                Theme · {theme}
               </span>
             ))}
           </div>
@@ -103,16 +69,7 @@ export function AuthorDayCard({
                     >
                       {viewpoint.entityName}
                     </Link>
-                  ) : viewpoint.entityType === "theme" ? (
-                    <Link
-                      href={`/themes?theme=${encodeURIComponent(viewpoint.entityKey)}`}
-                      className="text-base font-semibold underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
-                    >
-                      {viewpoint.entityName}
-                    </Link>
-                  ) : (
-                    <p className="text-base font-semibold">{viewpoint.entityName}</p>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap items-start gap-2">
@@ -144,13 +101,6 @@ export function AuthorDayCard({
                 </div>
               </div>
             ))}
-          </div>
-        ) : hasHiddenViewpoints ? (
-          <div className="rounded-[24px] border border-dashed border-[color:var(--border-strong)] bg-[color:var(--paper-strong)]/60 px-4 py-4">
-            <p className="text-sm font-semibold text-[color:var(--ink)]">当前筛选下暂无可展示观点</p>
-            <p className="mt-1 text-sm leading-6 text-[color:var(--muted-ink)]">
-              可在页面上方重新勾选股票、Theme、宏观或其他查看对应分类内容。
-            </p>
           </div>
         ) : (
           <div className="space-y-3 rounded-[24px] border border-dashed border-[color:var(--border-strong)] bg-[color:var(--paper-strong)]/60 px-4 py-4">

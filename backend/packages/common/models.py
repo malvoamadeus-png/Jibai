@@ -18,6 +18,7 @@ ViewStance = Literal[
     "unknown",
 ]
 ViewDirection = Literal["positive", "negative", "neutral", "mixed", "unknown"]
+ViewSignalType = Literal["explicit_stance", "logic_based", "unknown"]
 ViewJudgmentType = Literal[
     "direct",
     "implied",
@@ -85,6 +86,7 @@ class ViewpointRecord(BaseModel):
     entity_code_or_name: str | None = None
     stance: ViewStance = "unknown"
     direction: ViewDirection = "unknown"
+    signal_type: ViewSignalType = "unknown"
     judgment_type: ViewJudgmentType = "unknown"
     conviction: ViewConviction = "unknown"
     evidence_type: ViewEvidenceType = "unknown"
@@ -130,6 +132,7 @@ class AuthorDayViewpoint(BaseModel):
     entity_name: str
     stance: ViewStance = "unknown"
     direction: ViewDirection = "unknown"
+    signal_type: ViewSignalType = "unknown"
     judgment_type: ViewJudgmentType = "unknown"
     conviction: ViewConviction = "unknown"
     evidence_type: ViewEvidenceType = "unknown"
@@ -173,6 +176,7 @@ class EntityAuthorView(BaseModel):
     author_nickname: str = ""
     stance: ViewStance = "unknown"
     direction: ViewDirection = "unknown"
+    signal_type: ViewSignalType = "unknown"
     judgment_type: ViewJudgmentType = "unknown"
     conviction: ViewConviction = "unknown"
     evidence_type: ViewEvidenceType = "unknown"

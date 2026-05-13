@@ -164,6 +164,7 @@ def init_db(conn: sqlite3.Connection) -> None:
           stock_name TEXT,
           stance TEXT NOT NULL,
           direction TEXT NOT NULL DEFAULT 'unknown',
+          signal_type TEXT NOT NULL DEFAULT 'unknown',
           judgment_type TEXT NOT NULL DEFAULT 'unknown',
           conviction TEXT NOT NULL DEFAULT 'unknown',
           evidence_type TEXT NOT NULL DEFAULT 'unknown',
@@ -184,6 +185,7 @@ def init_db(conn: sqlite3.Connection) -> None:
           entity_code_or_name TEXT,
           stance TEXT NOT NULL,
           direction TEXT NOT NULL DEFAULT 'unknown',
+          signal_type TEXT NOT NULL DEFAULT 'unknown',
           judgment_type TEXT NOT NULL DEFAULT 'unknown',
           conviction TEXT NOT NULL DEFAULT 'unknown',
           evidence_type TEXT NOT NULL DEFAULT 'unknown',
@@ -285,6 +287,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     for table in ("content_viewpoints", "security_mentions"):
         _ensure_column(conn, table, "direction", "direction TEXT NOT NULL DEFAULT 'unknown'")
+        _ensure_column(conn, table, "signal_type", "signal_type TEXT NOT NULL DEFAULT 'unknown'")
         _ensure_column(conn, table, "judgment_type", "judgment_type TEXT NOT NULL DEFAULT 'unknown'")
         _ensure_column(conn, table, "conviction", "conviction TEXT NOT NULL DEFAULT 'unknown'")
         _ensure_column(conn, table, "evidence_type", "evidence_type TEXT NOT NULL DEFAULT 'unknown'")
@@ -483,6 +486,7 @@ class InsightStore:
                   entity_code_or_name,
                   stance,
                   direction,
+                  signal_type,
                   judgment_type,
                   conviction,
                   evidence_type,
@@ -638,6 +642,14 @@ class InsightStore:
         alias_map = aliases or {}
 
         for index, viewpoint in enumerate(extract.viewpoints):
+            if viewpoint.entity_type != "stock":
+                continue
+            if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+                continue
+            if viewpoint.direction not in {"positive", "negative"}:
+                continue
+            if viewpoint.judgment_type in {"factual_only", "quoted", "mention_only"}:
+                continue
             security_id: int | None = None
             theme_id: int | None = None
             raw_name = (viewpoint.entity_code_or_name or viewpoint.entity_name).strip()
@@ -658,14 +670,15 @@ class InsightStore:
                     """
                     INSERT INTO security_mentions (
                       content_id, security_id, raw_name, stock_name, stance,
-                      direction, judgment_type, conviction, evidence_type,
+                      direction, signal_type, judgment_type, conviction, evidence_type,
                       view_summary, evidence, sort_order, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(content_id, security_id, raw_name, sort_order) DO UPDATE SET
                       stock_name = excluded.stock_name,
                       stance = excluded.stance,
                       direction = excluded.direction,
+                      signal_type = excluded.signal_type,
                       judgment_type = excluded.judgment_type,
                       conviction = excluded.conviction,
                       evidence_type = excluded.evidence_type,
@@ -680,6 +693,7 @@ class InsightStore:
                         viewpoint.entity_name,
                         viewpoint.stance,
                         viewpoint.direction,
+                        viewpoint.signal_type,
                         viewpoint.judgment_type,
                         viewpoint.conviction,
                         viewpoint.evidence_type,
@@ -688,22 +702,20 @@ class InsightStore:
                         index,
                     ),
                 )
-            elif viewpoint.entity_type == "theme":
-                theme_id = self.ensure_theme(viewpoint.entity_key, viewpoint.entity_name, raw_name)
-
             self.conn.execute(
                 """
                 INSERT INTO content_viewpoints (
                   content_id, entity_type, entity_key, entity_name, entity_code_or_name,
-                  stance, direction, judgment_type, conviction, evidence_type,
+                  stance, direction, signal_type, judgment_type, conviction, evidence_type,
                   logic, evidence, time_horizon, sort_order, security_id, theme_id, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(content_id, entity_type, entity_key, sort_order) DO UPDATE SET
                   entity_name = excluded.entity_name,
                   entity_code_or_name = excluded.entity_code_or_name,
                   stance = excluded.stance,
                   direction = excluded.direction,
+                  signal_type = excluded.signal_type,
                   judgment_type = excluded.judgment_type,
                   conviction = excluded.conviction,
                   evidence_type = excluded.evidence_type,
@@ -722,6 +734,7 @@ class InsightStore:
                     raw_name,
                     viewpoint.stance,
                     viewpoint.direction,
+                    viewpoint.signal_type,
                     viewpoint.judgment_type,
                     viewpoint.conviction,
                     viewpoint.evidence_type,
@@ -748,6 +761,14 @@ class InsightStore:
             """
         )
         return int(cursor.rowcount or 0)
+
+    def clear_analysis_outputs(self) -> None:
+        self.conn.execute("DELETE FROM author_daily_summaries")
+        self.conn.execute("DELETE FROM security_daily_views")
+        self.conn.execute("DELETE FROM theme_daily_views")
+        self.conn.execute("DELETE FROM security_mentions")
+        self.conn.execute("DELETE FROM content_viewpoints")
+        self.conn.execute("DELETE FROM content_analyses")
 
     def get_author_daily_summary(
         self,

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, BookText, CircleDollarSign, Home, LogOut, Orbit, Radar, Shield, UserRound } from "lucide-react";
+import { Bell, BookText, CircleDollarSign, Home, LogOut, Orbit, Shield, UserRound } from "lucide-react";
 
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,6 @@ export function Nav() {
     { href: "/accounts", label: "账号库", icon: BookText },
     { href: "/feed", label: "我的订阅", icon: Bell },
     { href: "/stocks", label: "按股票", icon: CircleDollarSign },
-    { href: "/themes", label: "按 Theme", icon: Radar },
   ];
 
   return (
@@ -28,7 +27,7 @@ export function Nav() {
           <div>
             <p className="eyebrow">一把抓住、顷刻炼化</p>
             <h1 className="brand-title">集百</h1>
-            <p>订阅已审批 X 账号，按作者、股票和 Theme 回看观点变化。</p>
+            <p>订阅已审批 X 账号，按作者和股票回看观点变化。</p>
           </div>
         </div>
 

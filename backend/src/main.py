@@ -118,6 +118,22 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help="Delay between symbols. Defaults to PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS.",
     )
+    public_reanalyze_recent_parser = subparsers.add_parser(
+        "public-reanalyze-recent",
+        help="Clear public analysis outputs and force reanalysis for recent Shanghai natural days.",
+    )
+    public_reanalyze_recent_parser.add_argument(
+        "--days",
+        type=int,
+        default=3,
+        help="Number of Shanghai natural days to reanalyze, including today. Defaults to 3.",
+    )
+    public_reanalyze_recent_parser.add_argument(
+        "--clear-analysis",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Clear existing public analysis and materialized timeline outputs before reanalysis.",
+    )
     return parser.parse_args()
 
 
@@ -166,6 +182,13 @@ def main() -> int:
             limit=args.limit,
             days=args.days,
             delay_seconds=args.delay_seconds,
+        )
+    if args.command == "public-reanalyze-recent":
+        from packages.public_app.worker import reanalyze_recent_public_content_once  # noqa: PLC0415
+
+        return reanalyze_recent_public_content_once(
+            days=args.days,
+            clear_analysis=args.clear_analysis,
         )
     raise ValueError(f"Unknown command: {args.command}")
 

@@ -253,6 +253,7 @@ class PostgresInsightStore:
                   entity_code_or_name,
                   stance,
                   direction,
+                  signal_type,
                   judgment_type,
                   conviction,
                   evidence_type,
@@ -402,6 +403,14 @@ class PostgresInsightStore:
         alias_map = aliases or {}
 
         for index, viewpoint in enumerate(extract.viewpoints):
+            if viewpoint.entity_type != "stock":
+                continue
+            if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+                continue
+            if viewpoint.direction not in {"positive", "negative"}:
+                continue
+            if viewpoint.judgment_type in {"factual_only", "quoted", "mention_only"}:
+                continue
             security_id: str | None = None
             theme_id: str | None = None
             raw_name = (viewpoint.entity_code_or_name or viewpoint.entity_name).strip()
@@ -419,14 +428,15 @@ class PostgresInsightStore:
                     """
                     INSERT INTO security_mentions (
                       content_id, security_id, raw_name, stock_name, stance,
-                      direction, judgment_type, conviction, evidence_type,
+                      direction, signal_type, judgment_type, conviction, evidence_type,
                       view_summary, evidence, sort_order, updated_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                     ON CONFLICT(content_id, security_id, raw_name, sort_order) DO UPDATE SET
                       stock_name = EXCLUDED.stock_name,
                       stance = EXCLUDED.stance,
                       direction = EXCLUDED.direction,
+                      signal_type = EXCLUDED.signal_type,
                       judgment_type = EXCLUDED.judgment_type,
                       conviction = EXCLUDED.conviction,
                       evidence_type = EXCLUDED.evidence_type,
@@ -441,6 +451,7 @@ class PostgresInsightStore:
                         viewpoint.entity_name,
                         viewpoint.stance,
                         viewpoint.direction,
+                        viewpoint.signal_type,
                         viewpoint.judgment_type,
                         viewpoint.conviction,
                         viewpoint.evidence_type,
@@ -449,22 +460,20 @@ class PostgresInsightStore:
                         index,
                     ),
                 )
-            elif viewpoint.entity_type == "theme":
-                theme_id = self.ensure_theme(viewpoint.entity_key, viewpoint.entity_name, raw_name)
-
             self.conn.execute(
                 """
                 INSERT INTO content_viewpoints (
                   content_id, entity_type, entity_key, entity_name, entity_code_or_name,
-                  stance, direction, judgment_type, conviction, evidence_type,
+                  stance, direction, signal_type, judgment_type, conviction, evidence_type,
                   logic, evidence, time_horizon, sort_order, security_id, theme_id, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                 ON CONFLICT(content_id, entity_type, entity_key, sort_order) DO UPDATE SET
                   entity_name = EXCLUDED.entity_name,
                   entity_code_or_name = EXCLUDED.entity_code_or_name,
                   stance = EXCLUDED.stance,
                   direction = EXCLUDED.direction,
+                  signal_type = EXCLUDED.signal_type,
                   judgment_type = EXCLUDED.judgment_type,
                   conviction = EXCLUDED.conviction,
                   evidence_type = EXCLUDED.evidence_type,
@@ -483,6 +492,7 @@ class PostgresInsightStore:
                     raw_name,
                     viewpoint.stance,
                     viewpoint.direction,
+                    viewpoint.signal_type,
                     viewpoint.judgment_type,
                     viewpoint.conviction,
                     viewpoint.evidence_type,
@@ -509,6 +519,14 @@ class PostgresInsightStore:
             """
         )
         return int(cursor.rowcount or 0)
+
+    def clear_analysis_outputs(self) -> None:
+        self.conn.execute("DELETE FROM author_daily_summaries")
+        self.conn.execute("DELETE FROM security_daily_views")
+        self.conn.execute("DELETE FROM theme_daily_views")
+        self.conn.execute("DELETE FROM security_mentions")
+        self.conn.execute("DELETE FROM content_viewpoints")
+        self.conn.execute("DELETE FROM content_analyses")
 
     def get_author_daily_summary(
         self,

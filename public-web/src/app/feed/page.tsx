@@ -51,10 +51,6 @@ function FeedPageContent() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [showStocks, setShowStocks] = useState(true);
-  const [showThemes, setShowThemes] = useState(false);
-  const [showMacro, setShowMacro] = useState(false);
-  const [showOther, setShowOther] = useState(false);
   const activeId = selectedAccountId || authors[0]?.accountId || "";
 
   useEffect(() => {
@@ -156,7 +152,7 @@ function FeedPageContent() {
           </div>
           <CardTitle className="text-3xl">按人看观点时间线</CardTitle>
           <CardDescription>
-            左侧快速切换订阅账号，右侧查看该账号按日沉淀的观点、逻辑、证据和来源。
+            左侧快速切换订阅账号，右侧查看该账号按日沉淀的股票观点、逻辑、证据和来源。
           </CardDescription>
         </CardHeader>
       </Card>
@@ -215,44 +211,6 @@ function FeedPageContent() {
                     <CardTitle className="text-3xl">{detail.accountName || detail.authorNickname}</CardTitle>
                     <CardDescription className="break-all">{detail.profileUrl}</CardDescription>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-3 sm:justify-end">
-                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
-                      <input
-                        type="checkbox"
-                        checked={showStocks}
-                        onChange={(event) => setShowStocks(event.target.checked)}
-                        className="feed-filter-checkbox"
-                      />
-                      股票
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
-                      <input
-                        type="checkbox"
-                        checked={showThemes}
-                        onChange={(event) => setShowThemes(event.target.checked)}
-                        className="feed-filter-checkbox"
-                      />
-                      Theme
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
-                      <input
-                        type="checkbox"
-                        checked={showMacro}
-                        onChange={(event) => setShowMacro(event.target.checked)}
-                        className="feed-filter-checkbox"
-                      />
-                      宏观
-                    </label>
-                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[color:var(--muted-ink)]">
-                      <input
-                        type="checkbox"
-                        checked={showOther}
-                        onChange={(event) => setShowOther(event.target.checked)}
-                        className="feed-filter-checkbox"
-                      />
-                      其他
-                    </label>
-                  </div>
                 </CardHeader>
               </Card>
               {detail.timeline.rows.length ? (
@@ -261,10 +219,6 @@ function FeedPageContent() {
                     <AuthorDayCard
                       key={`${detail.accountId}-${day.date}`}
                       day={day}
-                      showStocks={showStocks}
-                      showThemes={showThemes}
-                      showMacro={showMacro}
-                      showOther={showOther}
                     />
                   ))}
                 </div>

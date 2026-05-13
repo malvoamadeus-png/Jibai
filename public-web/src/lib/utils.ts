@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-import type { ViewDirection, ViewEntityType, ViewJudgmentType, ViewStance } from "@/lib/types";
+import type { ViewDirection, ViewEntityType, ViewJudgmentType, ViewSignalType, ViewStance } from "@/lib/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -92,19 +92,34 @@ export function judgmentTypeLabel(judgmentType: ViewJudgmentType) {
   return mapping[judgmentType];
 }
 
+export function signalTypeLabel(signalType: ViewSignalType) {
+  const mapping: Record<ViewSignalType, string> = {
+    explicit_stance: "明确表态",
+    logic_based: "逻辑判断",
+    unknown: "判断不明",
+  };
+  return mapping[signalType];
+}
+
 type ViewSignal = {
   stance: ViewStance;
   direction?: ViewDirection;
+  signalType?: ViewSignalType;
+  signal_type?: ViewSignalType;
   judgmentType?: ViewJudgmentType;
   judgment_type?: ViewJudgmentType;
 };
 
 export function viewSignalLabel(view: ViewSignal) {
+  const signalType = view.signalType ?? view.signal_type ?? "unknown";
+  const direction = view.direction ?? directionFromStance(view.stance);
+  if (signalType !== "unknown") {
+    return `${directionLabel(direction)} · ${signalTypeLabel(signalType)}`;
+  }
   const judgmentType = view.judgmentType ?? view.judgment_type ?? "unknown";
   if (judgmentType === "mention_only") {
     return "仅提及";
   }
-  const direction = view.direction ?? directionFromStance(view.stance);
   if (direction === "unknown" && judgmentType === "unknown") {
     return stanceLabel(view.stance);
   }
