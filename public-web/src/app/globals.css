@@ -584,6 +584,77 @@ tr:last-child td {
   background: var(--danger);
 }
 
+.risk-guide {
+  margin-top: 18px;
+  padding: 0;
+}
+
+.risk-guide summary {
+  display: flex;
+  min-height: 62px;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 24px;
+  font-weight: 700;
+}
+
+.risk-guide summary::-webkit-details-marker {
+  display: none;
+}
+
+.risk-guide summary svg {
+  flex: 0 0 auto;
+  transition: transform 0.18s ease;
+}
+
+.risk-guide[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.risk-guide-body {
+  display: grid;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  padding: 0 24px 24px;
+}
+
+.risk-guide-body > p {
+  margin: 16px 0 0;
+}
+
+.risk-guide-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.risk-guide-item {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  background: var(--paper-strong);
+}
+
+.risk-guide-item p {
+  margin-bottom: 0;
+  line-height: 1.7;
+}
+
+.risk-guide-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.risk-guide-title h3 {
+  margin: 0;
+}
+
 .brand-title {
   font-family: KaiTi, STKaiti, "Songti SC", SimSun, "Noto Serif SC", serif;
   font-weight: 700;
@@ -632,7 +703,8 @@ tr:last-child td {
   .hero-grid,
   .dashboard-grid,
   .metric-row,
-  .risk-grid {
+  .risk-grid,
+  .risk-guide-list {
     grid-template-columns: 1fr;
   }
 

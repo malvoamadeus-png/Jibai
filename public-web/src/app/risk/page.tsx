@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, AlertTriangle, CheckCircle2, Gauge, RefreshCw } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, ChevronDown, Gauge, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { LoadingPanel } from "@/components/page-states";
@@ -24,6 +24,51 @@ const LEVEL_TEXT = {
   elevated: "升温",
   high: "高风险",
 } as const;
+
+const INDICATOR_NOTES = [
+  {
+    name: "breadth_weakness_score",
+    title: "市场宽度恶化",
+    group: "预警",
+    body: "把 RSP/SPY 和 QQEW/QQQ 的 13 周相对表现转成历史分位后取反，数值越高表示等权指数越明显跑输市值加权指数。近高位回测里，该信号触发后未来 26 周平均最大回撤约 -8.0%，10%+ 回撤概率约 30.7%，高于近高位基准 21.1%。",
+  },
+  {
+    name: "rsp_spy_13w_rel_pctl",
+    title: "RSP / SPY 13 周相对分位",
+    group: "预警",
+    body: "计算 RSP 13 周收益减 SPY 13 周收益，再转为扩展历史分位。分位低说明等权标普跑输市值加权标普，市场上涨更依赖少数大市值股票。近高位回测里，低分位触发后未来 26 周平均最大回撤约 -7.9%，10%+ 回撤概率约 28.2%。",
+  },
+  {
+    name: "qqew_qqq_13w_rel_pctl",
+    title: "QQEW / QQQ 13 周相对分位",
+    group: "预警",
+    body: "计算 QQEW 13 周收益减 QQQ 13 周收益，再转为扩展历史分位。分位低说明纳指内部等权股票跑输龙头权重股，科技板块参与度变差。近高位回测里，低分位触发后未来 26 周平均最大回撤约 -7.3%，10%+ 回撤概率约 25.9%。",
+  },
+  {
+    name: "breakage_score",
+    title: "金融条件 / 信用确认",
+    group: "确认",
+    body: "由 NFCI 13 周变化分位、ANFCI 压力分位和 BAA10Y 信用利差分位组合而成。它不是最早的预警，更像风险从股票内部扩散到金融条件和信用市场后的确认。近高位回测里，该组合触发后未来 26 周平均最大回撤约 -8.0%，10%+ 回撤概率约 32.1%。",
+  },
+  {
+    name: "nfci_13w_chg_pctl",
+    title: "NFCI 13 周转紧分位",
+    group: "确认",
+    body: "NFCI 来自 Chicago Fed，经 FRED 获取。这里计算 NFCI 13 周变化，再转历史分位；分位越高，表示金融条件从宽松转紧越快。近高位回测里，高分位触发后未来 26 周平均最大回撤约 -7.6%，10%+ 回撤概率约 28.9%。",
+  },
+  {
+    name: "anfci_pctl",
+    title: "ANFCI 压力分位",
+    group: "确认",
+    body: "ANFCI 是调整后的 Chicago Fed 金融条件指数，经 FRED 获取。这里使用绝对水平的历史分位；分位越高，表示金融系统压力越高。近高位回测里，高分位触发后未来 26 周平均最大回撤约 -7.4%，10%+ 回撤概率约 27.7%。",
+  },
+  {
+    name: "credit_baa10y_pctl",
+    title: "BAA10Y 信用利差分位",
+    group: "确认",
+    body: "BAA10Y 是 Baa 公司债收益率相对 10 年期美债收益率的利差，经 FRED 获取。这里使用绝对水平历史分位；分位越高，表示信用市场要求更高风险补偿。近高位回测里，高分位触发后未来 26 周平均最大回撤约 -7.2%，10%+ 回撤概率约 30.4%。",
+  },
+];
 
 function formatPct(value: number | null, digits = 1) {
   if (value === null || !Number.isFinite(value)) return "-";
@@ -61,6 +106,33 @@ function SignalRow({ name, signal }: { name: string; signal: MarketTopRiskSignal
       <td>{formatScore(signal.value)}</td>
       <td className="muted">{signal.module}</td>
     </tr>
+  );
+}
+
+function IndicatorGuide() {
+  return (
+    <details className="panel risk-guide">
+      <summary>
+        <span>指标说明与回测口径</span>
+        <ChevronDown size={17} />
+      </summary>
+      <div className="risk-guide-body">
+        <p className="muted">
+          回测口径固定为 Nasdaq 100 距 52 周高点 10% 以内的近高位周，观察信号触发后未来 26 周最大回撤。近高位基准为平均最大回撤 -5.5%，10%+ 回撤概率 21.1%。
+        </p>
+        <div className="risk-guide-list">
+          {INDICATOR_NOTES.map((item) => (
+            <article className="risk-guide-item" key={item.name}>
+              <div className="risk-guide-title">
+                <span className="status-pill">{item.group}</span>
+                <h3>{item.title}</h3>
+              </div>
+              <p className="muted">{item.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -216,6 +288,8 @@ export default function RiskPage() {
               ))}
             </div>
           </section>
+
+          <IndicatorGuide />
         </>
       ) : null}
     </main>
