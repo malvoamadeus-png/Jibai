@@ -27,6 +27,7 @@ frontend/.vercel/
 data/config/*.json
 !data/config/*.example.json
 data/runtime/
+docs/
 
 Reference/*
 !Reference/twitter-data-capture.md
