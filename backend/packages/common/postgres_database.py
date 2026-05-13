@@ -14,6 +14,7 @@ from .database import json_loads
 from .models import (
     AuthorDayRecord,
     CrawlAccountResult,
+    MarketTopRiskSnapshot,
     NoteExtractRecord,
     RawNoteRecord,
     StockDayRecord,
@@ -780,6 +781,46 @@ class PostgresInsightStore:
                 (row["id"], before_date),
             )
             return int(cursor.rowcount or 0)
+
+    def upsert_market_top_risk_snapshot(self, snapshot: MarketTopRiskSnapshot) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO market_top_risk_snapshots (
+              week, nasdaq100, ndx_dd_from_52w_high, breadth_weakness_score,
+              breakage_score, risk_score, risk_level, warning_active,
+              confirmation_active, signals_json, metrics_json, source_json,
+              updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT(week) DO UPDATE SET
+              nasdaq100 = EXCLUDED.nasdaq100,
+              ndx_dd_from_52w_high = EXCLUDED.ndx_dd_from_52w_high,
+              breadth_weakness_score = EXCLUDED.breadth_weakness_score,
+              breakage_score = EXCLUDED.breakage_score,
+              risk_score = EXCLUDED.risk_score,
+              risk_level = EXCLUDED.risk_level,
+              warning_active = EXCLUDED.warning_active,
+              confirmation_active = EXCLUDED.confirmation_active,
+              signals_json = EXCLUDED.signals_json,
+              metrics_json = EXCLUDED.metrics_json,
+              source_json = EXCLUDED.source_json,
+              updated_at = now()
+            """,
+            (
+                snapshot.week,
+                snapshot.nasdaq100,
+                snapshot.ndx_dd_from_52w_high,
+                snapshot.breadth_weakness_score,
+                snapshot.breakage_score,
+                snapshot.risk_score,
+                snapshot.risk_level,
+                snapshot.warning_active,
+                snapshot.confirmation_active,
+                _json(snapshot.signals),
+                _json(snapshot.metrics),
+                _json(snapshot.sources),
+            ),
+        )
 
     def clear_theme_daily_views(self) -> None:
         self.conn.execute("DELETE FROM theme_daily_views")

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, BookText, CircleDollarSign, Home, LogOut, Orbit, Shield, UserRound } from "lucide-react";
+import { Activity, Bell, BookText, CircleDollarSign, Home, LogOut, Orbit, Shield, UserRound } from "lucide-react";
 
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ export function Nav() {
     { href: "/accounts", label: "账号库", icon: BookText },
     { href: "/feed", label: "我的订阅", icon: Bell },
     { href: "/stocks", label: "按股票", icon: CircleDollarSign },
+    { href: "/risk", label: "顶部风险", icon: Activity },
   ];
 
   return (

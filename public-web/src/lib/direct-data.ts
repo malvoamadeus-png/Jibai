@@ -13,6 +13,10 @@ import type {
   EntityDetailData,
   EntityListItem,
   FeedDay,
+  MarketTopRiskData,
+  MarketTopRiskHistoryPoint,
+  MarketTopRiskSignal,
+  MarketTopRiskSnapshot,
   PagedResult,
   RequestListItem,
   StockKlineCandle,
@@ -223,6 +227,63 @@ function normalizeStockChart(rawValue: unknown): StockKlineData | null {
   };
 }
 
+function normalizeRiskSignal(rawValue: unknown): MarketTopRiskSignal {
+  const raw = asRecord(rawValue);
+  return {
+    value: asNullableNumber(raw.value),
+    active: Boolean(raw.active ?? raw.signal),
+    module: asString(raw.module),
+  };
+}
+
+function normalizeRiskSignals(rawValue: unknown): Record<string, MarketTopRiskSignal> {
+  const raw = asRecord(rawValue);
+  return Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, normalizeRiskSignal(value)]));
+}
+
+function normalizeRiskLevel(value: unknown): MarketTopRiskSnapshot["riskLevel"] {
+  const text = asString(value, "low");
+  if (text === "watch" || text === "elevated" || text === "high") return text;
+  return "low";
+}
+
+function normalizeMarketTopRiskSnapshot(rawValue: unknown): MarketTopRiskSnapshot | null {
+  const raw = asRecord(rawValue);
+  const week = asString(raw.week);
+  if (!week) return null;
+  return {
+    week,
+    nasdaq100: asNullableNumber(raw.nasdaq100),
+    ndxDdFrom52wHigh: asNullableNumber(raw.ndx_dd_from_52w_high ?? raw.ndxDdFrom52wHigh),
+    breadthWeaknessScore: asNullableNumber(raw.breadth_weakness_score ?? raw.breadthWeaknessScore),
+    breakageScore: asNullableNumber(raw.breakage_score ?? raw.breakageScore),
+    riskScore: asNumber(raw.risk_score ?? raw.riskScore),
+    riskLevel: normalizeRiskLevel(raw.risk_level ?? raw.riskLevel),
+    warningActive: Boolean(raw.warning_active ?? raw.warningActive),
+    confirmationActive: Boolean(raw.confirmation_active ?? raw.confirmationActive),
+    signals: normalizeRiskSignals(raw.signals),
+    metrics: asRecord(raw.metrics),
+    sources: asRecord(raw.sources),
+    updatedAt: asString(raw.updated_at ?? raw.updatedAt),
+  };
+}
+
+function normalizeMarketTopRiskHistoryPoint(rawValue: unknown): MarketTopRiskHistoryPoint | null {
+  const raw = asRecord(rawValue);
+  const week = asString(raw.week);
+  if (!week) return null;
+  return {
+    week,
+    nasdaq100: asNullableNumber(raw.nasdaq100),
+    breadthWeaknessScore: asNullableNumber(raw.breadth_weakness_score ?? raw.breadthWeaknessScore),
+    breakageScore: asNullableNumber(raw.breakage_score ?? raw.breakageScore),
+    riskScore: asNumber(raw.risk_score ?? raw.riskScore),
+    riskLevel: normalizeRiskLevel(raw.risk_level ?? raw.riskLevel),
+    warningActive: Boolean(raw.warning_active ?? raw.warningActive),
+    confirmationActive: Boolean(raw.confirmation_active ?? raw.confirmationActive),
+  };
+}
+
 function normalizePaged<T>(
   rawValue: unknown,
   normalizeRow: (value: unknown) => T,
@@ -390,6 +451,29 @@ export async function getVisibleEntityTimeline(
     timeline: normalizePaged(payload.timeline, normalizeEntityDay),
     chart: type === "stock" ? normalizeStockChart(payload.chart) : null,
   } satisfies EntityDetailData;
+}
+
+export async function getMarketTopRisk(
+  supabase: SupabaseClient,
+  historyLimit = 80,
+): Promise<MarketTopRiskData> {
+  const { data, error } = await supabase.rpc("get_market_top_risk", {
+    history_limit_arg: historyLimit,
+  });
+  assertNoError(error);
+  const payload = asRecord(data);
+  const baseline = asRecord(payload.baseline);
+  return {
+    latest: normalizeMarketTopRiskSnapshot(payload.latest),
+    history: asArray(payload.history)
+      .map(normalizeMarketTopRiskHistoryPoint)
+      .filter((item): item is MarketTopRiskHistoryPoint => item !== null),
+    baseline: {
+      nearHighFwd26wAvgDrawdown: asNullableNumber(baseline.near_high_fwd_26w_avg_drawdown),
+      nearHighFwd26wDd10Probability: asNullableNumber(baseline.near_high_fwd_26w_dd10_probability),
+      method: asString(baseline.method),
+    },
+  };
 }
 
 export async function listMyRequests(

@@ -36,6 +36,7 @@ from .jobs import (
     mark_job_succeeded,
     requeue_stale_running_jobs,
 )
+from .market_top_risk import sync_market_top_risk_once
 
 
 DEFAULT_CRAWL_TIMES = ("04:00", "10:00", "16:00", "22:00")
@@ -47,6 +48,14 @@ def _crawl_times() -> list[str]:
     raw = os.getenv("PUBLIC_WORKER_CRAWL_TIMES", ",".join(DEFAULT_CRAWL_TIMES))
     values = [item.strip() for item in raw.split(",") if item.strip()]
     return values or list(DEFAULT_CRAWL_TIMES)
+
+
+def _top_risk_sync_time() -> str:
+    return os.getenv("PUBLIC_WORKER_TOP_RISK_SYNC_TIME", "05:20").strip() or "05:20"
+
+
+def _top_risk_history_limit() -> int:
+    return max(1, _env_int("PUBLIC_WORKER_TOP_RISK_HISTORY_LIMIT", 90))
 
 
 def _poll_seconds() -> int:
@@ -375,6 +384,7 @@ def diagnose_worker_once() -> int:
     print(
         "[public-worker] doctor "
         f"crawl_times={','.join(_crawl_times())} "
+        f"top_risk_sync_time={_top_risk_sync_time()} "
         f"poll={_poll_seconds()}s "
         f"stale_job_minutes={_stale_running_job_minutes()} "
         f"market_data_days={MARKET_DATA_WINDOW_DAYS} "
@@ -764,12 +774,20 @@ def run_worker(*, once: bool = False) -> int:
         id="public-worker-poll",
         replace_existing=True,
     )
+    top_risk_hour, top_risk_minute = _top_risk_sync_time().split(":", 1)
+    scheduler.add_job(
+        lambda: sync_market_top_risk_once(history_limit=_top_risk_history_limit()),
+        CronTrigger(hour=int(top_risk_hour), minute=int(top_risk_minute), timezone=SHANGHAI_TZ),
+        id="public-market-top-risk-sync",
+        replace_existing=True,
+    )
     print(
         "[public-worker] started. crawl_times="
         + ", ".join(_crawl_times())
         + f"; poll={_poll_seconds()}s; account_delay={_account_pause_seconds()}s"
         + f"; light_market_data_days={_light_market_data_days()}"
         + f"; light_market_data_max={_light_market_data_max_securities()}"
+        + f"; top_risk_sync_time={_top_risk_sync_time()}"
     )
     scheduler.start()
     return 0

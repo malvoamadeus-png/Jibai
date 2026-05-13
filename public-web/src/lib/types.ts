@@ -210,6 +210,49 @@ export type StockKlineData = {
   markers: StockKlineMarker[];
 };
 
+export type MarketTopRiskSignal = {
+  value: number | null;
+  active: boolean;
+  module: string;
+};
+
+export type MarketTopRiskSnapshot = {
+  week: string;
+  nasdaq100: number | null;
+  ndxDdFrom52wHigh: number | null;
+  breadthWeaknessScore: number | null;
+  breakageScore: number | null;
+  riskScore: number;
+  riskLevel: "low" | "watch" | "elevated" | "high";
+  warningActive: boolean;
+  confirmationActive: boolean;
+  signals: Record<string, MarketTopRiskSignal>;
+  metrics: Record<string, unknown>;
+  sources: Record<string, unknown>;
+  updatedAt: string;
+};
+
+export type MarketTopRiskHistoryPoint = {
+  week: string;
+  nasdaq100: number | null;
+  breadthWeaknessScore: number | null;
+  breakageScore: number | null;
+  riskScore: number;
+  riskLevel: MarketTopRiskSnapshot["riskLevel"];
+  warningActive: boolean;
+  confirmationActive: boolean;
+};
+
+export type MarketTopRiskData = {
+  latest: MarketTopRiskSnapshot | null;
+  history: MarketTopRiskHistoryPoint[];
+  baseline: {
+    nearHighFwd26wAvgDrawdown: number | null;
+    nearHighFwd26wDd10Probability: number | null;
+    method: string;
+  };
+};
+
 export type AdminRequestItem = {
   id: string;
   rawInput: string;

@@ -134,6 +134,16 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="Clear existing public analysis and materialized timeline outputs before reanalysis.",
     )
+    public_market_top_risk_parser = subparsers.add_parser(
+        "public-sync-market-top-risk",
+        help="Fetch public market data, compute US top-risk snapshots, and sync them to Supabase.",
+    )
+    public_market_top_risk_parser.add_argument(
+        "--history-limit",
+        type=int,
+        default=90,
+        help="Number of recent weekly snapshots to upsert. Defaults to 90.",
+    )
     return parser.parse_args()
 
 
@@ -190,6 +200,10 @@ def main() -> int:
             days=args.days,
             clear_analysis=args.clear_analysis,
         )
+    if args.command == "public-sync-market-top-risk":
+        from packages.public_app.market_top_risk import sync_market_top_risk_once  # noqa: PLC0415
+
+        return sync_market_top_risk_once(history_limit=args.history_limit)
     raise ValueError(f"Unknown command: {args.command}")
 
 

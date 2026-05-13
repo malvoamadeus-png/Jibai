@@ -212,6 +212,21 @@ class StockPriceCandle(BaseModel):
     volume: float | None = None
 
 
+class MarketTopRiskSnapshot(BaseModel):
+    week: str
+    nasdaq100: float | None = None
+    ndx_dd_from_52w_high: float | None = None
+    breadth_weakness_score: float | None = None
+    breakage_score: float | None = None
+    risk_score: float
+    risk_level: Literal["low", "watch", "elevated", "high"]
+    warning_active: bool
+    confirmation_active: bool
+    signals: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    sources: dict[str, Any] = Field(default_factory=dict)
+
+
 class ThemeDayRecord(BaseModel):
     date: str
     theme_key: str

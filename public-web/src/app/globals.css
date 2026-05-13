@@ -432,6 +432,158 @@ tr:last-child td {
   padding: 22px;
 }
 
+.risk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 18px;
+}
+
+.risk-main-panel {
+  display: grid;
+  gap: 20px;
+}
+
+.risk-title-row,
+.risk-state-item,
+.risk-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.risk-title-row {
+  justify-content: space-between;
+}
+
+.risk-title-row h2 {
+  margin-bottom: 0;
+  font-size: 34px;
+}
+
+.risk-level {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.risk-level-low {
+  background: rgba(84, 103, 92, 0.1);
+  color: #54675c;
+}
+
+.risk-level-watch {
+  background: rgba(181, 106, 59, 0.1);
+  color: var(--accent-strong);
+}
+
+.risk-level-elevated {
+  background: rgba(181, 106, 59, 0.18);
+  color: var(--accent-strong);
+}
+
+.risk-level-high {
+  background: rgba(178, 67, 59, 0.12);
+  color: var(--danger);
+}
+
+.risk-bar {
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper-strong);
+}
+
+.risk-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5f7f68, var(--accent), var(--danger));
+}
+
+.risk-metric-row {
+  margin-top: 0;
+}
+
+.risk-state-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.risk-state-item {
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 14px;
+}
+
+.risk-state-item p {
+  margin: 4px 0 0;
+}
+
+.risk-meta {
+  flex-wrap: wrap;
+  margin-top: 16px;
+  color: var(--muted-ink);
+  font-size: 13px;
+}
+
+.risk-section-head {
+  align-items: center;
+}
+
+.risk-pill-active {
+  border-color: rgba(178, 67, 59, 0.35);
+  background: rgba(178, 67, 59, 0.08);
+  color: var(--danger);
+}
+
+.risk-table-wrap {
+  box-shadow: none;
+}
+
+.risk-history {
+  display: grid;
+  height: 140px;
+  grid-template-columns: repeat(40, minmax(4px, 1fr));
+  align-items: end;
+  gap: 5px;
+}
+
+.risk-history-bar {
+  display: flex;
+  height: 100%;
+  align-items: end;
+  border-radius: 999px;
+  background: var(--paper-strong);
+}
+
+.risk-history-bar span {
+  display: block;
+  width: 100%;
+  min-height: 4px;
+  border-radius: 999px;
+}
+
+.risk-history-low span {
+  background: #5f7f68;
+}
+
+.risk-history-watch span {
+  background: #b58b3b;
+}
+
+.risk-history-elevated span {
+  background: var(--accent);
+}
+
+.risk-history-high span {
+  background: var(--danger);
+}
+
 .brand-title {
   font-family: KaiTi, STKaiti, "Songti SC", SimSun, "Noto Serif SC", serif;
   font-weight: 700;
@@ -479,7 +631,8 @@ tr:last-child td {
 
   .hero-grid,
   .dashboard-grid,
-  .metric-row {
+  .metric-row,
+  .risk-grid {
     grid-template-columns: 1fr;
   }
 

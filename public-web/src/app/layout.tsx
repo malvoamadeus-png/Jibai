@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 
 import { AuthProvider } from "@/lib/auth-context";
 import { Nav } from "@/components/nav";
@@ -24,6 +25,7 @@ export default async function RootLayout({
             <div className="app-main">{children}</div>
           </div>
         </AuthProvider>
+        <Analytics />
       </body>
     </html>
   );
