@@ -6,6 +6,8 @@ import io
 import json
 import math
 import os
+import shutil
+import subprocess
 import time
 import urllib.parse
 import urllib.request
@@ -101,9 +103,12 @@ def _fetch_url(url: str, cache_name: str, *, max_age_hours: int = 24) -> bytes:
     last_exc: Exception | None = None
     for attempt in range(1, 4):
         try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=_request_timeout()[1]) as resp:
-                data = resp.read()
+            if os.getenv("PUBLIC_WORKER_TOP_RISK_USE_CURL", "true").lower() != "false":
+                data = _fetch_url_with_curl(url)
+            else:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=_request_timeout()[1]) as resp:
+                    data = resp.read()
             path.write_bytes(data)
             return data
         except Exception as exc:
@@ -111,6 +116,32 @@ def _fetch_url(url: str, cache_name: str, *, max_age_hours: int = 24) -> bytes:
             if attempt < 3:
                 time.sleep(2 * attempt)
     raise RuntimeError(f"Fetch failed for {url}: {last_exc}") from last_exc
+
+
+def _fetch_url_with_curl(url: str) -> bytes:
+    curl_path = shutil.which("curl")
+    if not curl_path:
+        raise RuntimeError("curl is not available")
+    connect_timeout, read_timeout = _request_timeout()
+    result = subprocess.run(
+        [
+            curl_path,
+            "-L",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--connect-timeout",
+            str(int(connect_timeout)),
+            "--max-time",
+            str(int(read_timeout)),
+            "--user-agent",
+            USER_AGENT,
+            url,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return result.stdout
 
 
 def _fetch_fred_series(series_id: str) -> dict[dt.date, float]:
