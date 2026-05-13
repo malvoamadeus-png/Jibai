@@ -398,10 +398,14 @@ def build_market_top_risk_snapshots(*, history_limit: int = 90) -> list[MarketTo
 
 def sync_market_top_risk_once(*, history_limit: int = 90) -> int:
     load_dotenv(".env", override=False)
-    snapshots = build_market_top_risk_snapshots(history_limit=history_limit)
+    try:
+        snapshots = build_market_top_risk_snapshots(history_limit=history_limit)
+    except Exception as exc:
+        print(f"[public-worker] market_top_risk fetch_failed={exc}")
+        return 0
     if not snapshots:
         print("[public-worker] market_top_risk no snapshots built")
-        return 1
+        return 0
     with postgres_connection() as conn:
         store = PostgresInsightStore(conn)
         for snapshot in snapshots:
