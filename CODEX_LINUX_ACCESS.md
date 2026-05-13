@@ -1,112 +1,100 @@
 # Codex Linux Access
 
-本文档说明新的 Codex session 如何连接生产 Linux 服务器读取日志、执行诊断命令和排查 Jibai 服务。
+This document tells a new Codex session how to connect to the Linux server.
+It is intentionally project-neutral: it only covers SSH/MCP access and safe
+remote-command habits.
 
-## 连接方式
+## Connection
 
-生产服务器：
+Current server access:
 
 - Host: `47.76.243.147`
 - User: `root`
-- Key: `C:\Users\Windows\.ssh\id_ed25519`
-- Repo path: `/opt/Jibai`
+- Private key: `C:\Users\Windows\.ssh\id_ed25519`
+- MCP server name: `ssh-prod`
 
-不要把私钥内容、数据库 URL、Supabase key 或其他密钥写进对话、文档、commit 或日志输出。
+Do not paste private-key contents, database URLs, API keys, tokens, cookies, or
+other secrets into chat, documentation, commits, or logs.
 
-## 推荐配置：Codex MCP
+## Recommended Setup: Codex MCP
 
-在 Windows 本机执行一次：
+Run this once on the Windows machine:
 
 ```powershell
 codex mcp add ssh-prod -- npx -y ssh-mcp -- --host=47.76.243.147 --user=root --key=C:\Users\Windows\.ssh\id_ed25519
 ```
 
-这会把 MCP server 写入当前 Windows 用户的全局 Codex 配置：
+This writes the MCP server into the current Windows user's global Codex config:
 
 ```text
 C:\Users\Windows\.codex\config.toml
 ```
 
-同一台电脑、同一个 Windows 用户下，新开的 Codex session 通常会自动看到 `ssh-prod`。已经打开的旧 session 可能不会热加载，需要重启 Codex 或新开 session。
+New Codex sessions on the same Windows user normally discover `ssh-prod`
+automatically. Sessions that were already open may not hot-reload the MCP
+server; restart Codex or open a new session if the tool is missing.
 
-之后可以直接要求 Codex：
+Once available, ask Codex directly:
 
 ```text
-用 ssh-prod 连接服务器，查看 /opt/Jibai 的 public-worker 状态。
+Use ssh-prod to connect to the Linux server and run a read-only diagnostic command.
 ```
 
-## 可选配置：SSH Alias
+## Optional Setup: SSH Alias
 
-也可以在 `C:\Users\Windows\.ssh\config` 中配置别名：
+You can also define an SSH alias in `C:\Users\Windows\.ssh\config`:
 
 ```sshconfig
-Host jibai-prod
+Host linux-prod
   HostName 47.76.243.147
   User root
   IdentityFile C:\Users\Windows\.ssh\id_ed25519
 ```
 
-然后 MCP 可以改成：
+Then register MCP against the alias:
 
 ```powershell
-codex mcp add ssh-prod -- npx -y ssh-mcp -- --host=jibai-prod
+codex mcp add ssh-prod -- npx -y ssh-mcp -- --host=linux-prod
 ```
 
-以后换 IP 或 key 时，只需要改 SSH config。
+With this approach, changing the host, user, or key only requires updating the
+SSH config.
 
-## MCP 不可用时的直接 SSH
+## Fallback: Direct SSH
 
-如果当前 Codex session 没加载到 MCP，可以直接用本机 SSH：
+If the current Codex session cannot see the MCP tool, direct SSH still works
+from PowerShell:
 
 ```powershell
-ssh -i C:\Users\Windows\.ssh\id_ed25519 -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new root@47.76.243.147 "cd /opt/Jibai && pwd && git status --short"
+ssh -i C:\Users\Windows\.ssh\id_ed25519 -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new root@47.76.243.147 "pwd && hostname && uptime"
 ```
 
-多行诊断脚本建议通过 stdin 传入，避免复杂转义：
+For multiline diagnostics, pass the script through stdin to avoid quoting
+problems:
 
 ```powershell
 $script = @'
-cd /opt/Jibai
-systemctl status jibai-public-worker --no-pager -l
-journalctl -u jibai-public-worker -n 120 --no-pager
+set -e
+pwd
+hostname
+uptime
+df -h
 '@
 
 $script | ssh -i C:\Users\Windows\.ssh\id_ed25519 -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new root@47.76.243.147 "bash -s"
 ```
 
-## Jibai 常用命令
+## Safe Remote-Command Rules
 
-服务状态：
-
-```bash
-systemctl status jibai-public-worker --no-pager -l
-```
-
-Worker 日志：
-
-```bash
-journalctl -u jibai-public-worker -n 200 --no-pager
-```
-
-Worker 诊断：
-
-```bash
-cd /opt/Jibai
-set -a
-. /etc/jibai/public-worker.env
-set +a
-.venv/bin/python backend/src/main.py public-worker-doctor
-```
-
-重启 worker：
-
-```bash
-systemctl restart jibai-public-worker
-```
-
-## 注意事项
-
-- 读取环境变量时只输出变量名，不输出变量值。
-- 查询数据库时优先写只读 SQL；需要执行迁移时先说明目的和影响范围。
-- 临时文件放在 `/tmp`，执行完删除。
-- 不要在服务器上执行 `git reset --hard` 或覆盖用户改动，除非用户明确要求。
+- Prefer read-only commands first: `pwd`, `hostname`, `uptime`, `ps`, `df`,
+  `systemctl status`, `journalctl`, `ls`, `find`, `grep`, and application
+  health checks.
+- When inspecting environment variables, print variable names only unless the
+  user explicitly asks for values and understands the risk.
+- Do not run destructive commands such as `rm -rf`, `git reset --hard`,
+  forced overwrites, database migrations, or service restarts unless the user
+  requested that exact action.
+- For long outputs, limit the result with options such as `-n`, `--no-pager`,
+  or explicit filters.
+- Put temporary scripts in `/tmp` and remove them after use.
+- If a command changes state, state the intended impact before running it.

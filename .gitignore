@@ -28,4 +28,6 @@ data/config/*.json
 !data/config/*.example.json
 data/runtime/
 
-Reference/
+Reference/*
+!Reference/twitter-data-capture.md
+!Reference/twitter_capture_reference.py

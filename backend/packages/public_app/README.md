@@ -8,8 +8,9 @@ Public web uses Supabase as the primary database. Vercel only serves `public-web
 - Enqueues scheduled crawl jobs at `04:00,10:00,16:00,22:00` Asia/Shanghai.
 - Processes only one crawl job at a time with a Postgres advisory lock.
 - Crawls X accounts serially with a 5 second account delay.
-- Runs AI analysis and writes summaries, viewpoints, stocks, and themes back to Supabase.
-- Refreshes daily market-data cache for stocks mentioned in the current run. Plain
+- Runs stock-only AI signal analysis and writes author summaries, stock viewpoints, and stock timelines back to Supabase.
+- Initial backfills refresh the 180-day market-data cache. Scheduled crawls use
+  a lightweight refresh for stocks newly analyzed in that run. Plain
   tickers such as `NVDA`, `AAPL`, and `TSLA` use Yahoo Finance. A-share markets
   `SSE`, `SZSE`, and `BJSE` still use EastMoney.
 
@@ -34,6 +35,9 @@ PUBLIC_WORKER_PAGE_WAIT_SECONDS=6
 PUBLIC_WORKER_NITTER_INSTANCES=nitter.tiekoetter.com,nitter.catsarch.com,xcancel.com
 PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES=30
 PUBLIC_WORKER_MARKET_DATA_DAYS=180
+PUBLIC_WORKER_LIGHT_MARKET_DATA_MAX_SECURITIES=10
+PUBLIC_WORKER_LIGHT_MARKET_DATA_DAYS=7
+PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS=3
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
 
 AI_PROVIDER=openai-compatible
@@ -49,7 +53,7 @@ AI settings use the same OpenAI-compatible configuration as the local backend.
 If local development uses an OpenAI relay endpoint, copy the same endpoint into
 `AI_BASE_URL` and the same relay key into `AI_API_KEY`. Without an AI key, the
 worker can still crawl X content and write daily fallback summaries, but it
-cannot generate structured viewpoints, stock pages, or theme pages from new
+cannot generate structured stock viewpoints or stock pages from new
 content. `public-worker-doctor` prints `api_key_configured=yes/no` so this is
 visible during diagnosis.
 
@@ -60,10 +64,17 @@ bot protection or go offline, so keep this value configurable on the server
 instead of relying on the code defaults. Use comma-separated host names without
 `https://`.
 
-Market-data settings are optional. The defaults refresh at most 30 stocks per
-analysis run, cache 180 days of daily candles, and wait 0.25 seconds
-between symbols. Market-data failures are isolated from the crawl and AI
-pipeline; the job result records `market_errors=N`.
+Market-data settings are optional. Backfill and manual market refresh default
+to at most 30 stocks and 180 days of daily candles. Scheduled crawls default to
+at most 10 newly analyzed stocks and 7 days of daily candles, and skip market
+data when the run produced no new stock analysis. Market-data failures are
+isolated from the crawl and AI pipeline; the job result records
+`market_errors=N`.
+
+Analysis output is intentionally windowed. `PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS`
+defaults to `3`, using Asia/Shanghai natural days, so old raw posts stay in
+`content_items` but do not reappear in the public timelines after the analysis
+tables are cleared.
 
 ## Commands
 
@@ -78,6 +89,7 @@ python backend/src/main.py public-worker --once
 python backend/src/main.py public-worker
 python backend/src/main.py public-worker-doctor
 python backend/src/main.py public-enqueue-scheduled
+python backend/src/main.py public-reanalyze-recent --days 3 --clear-analysis
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-import-sqlite
 ```
@@ -87,6 +99,10 @@ manual tests after migrations or deploys. `public-worker` starts the long-runnin
 poller and in-process scheduler. `public-enqueue-scheduled` inserts one scheduled
 crawl job immediately, which is useful when you want the worker to process a run
 without waiting for the next configured wall-clock time.
+
+`public-reanalyze-recent --days 3 --clear-analysis` keeps raw `content_items`,
+clears analysis/materialized outputs, and force-runs the current stock-only
+signal extraction over the latest three Asia/Shanghai natural days.
 
 `public-worker-doctor` is read-only. Run it on the server with the same
 environment file as the worker to print queue counts, due pending jobs, running

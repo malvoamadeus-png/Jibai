@@ -44,7 +44,13 @@ def _to_number(value: Any) -> float | None:
 
 
 def _to_yahoo_range(days: int) -> str:
-    normalized_days = max(30, min(int(days), 5000))
+    normalized_days = max(1, min(int(days), 5000))
+    if normalized_days <= 5:
+        return "5d"
+    if normalized_days <= 31:
+        return "1mo"
+    if normalized_days <= 95:
+        return "3mo"
     if normalized_days <= 190:
         return "6mo"
     if normalized_days <= 370:
@@ -190,7 +196,7 @@ def fetch_eastmoney_daily(*, ticker: str, market: str, days: int = 180) -> dict[
             "fqt": "1",
             "beg": "0",
             "end": "20500101",
-            "lmt": max(30, min(int(days), 1000)),
+            "lmt": max(1, min(int(days), 1000)),
         },
         headers={
             "User-Agent": "Mozilla/5.0",
@@ -263,7 +269,7 @@ def _parse_twse_date(value: str) -> str | None:
 
 
 def fetch_twse_daily(*, ticker: str, days: int = 180) -> dict[str, Any]:
-    normalized_days = max(30, min(int(days), 5000))
+    normalized_days = max(1, min(int(days), 5000))
     end_date = date_class.today()
     start_date = end_date - timedelta(days=normalized_days)
     session = requests.Session()
@@ -335,7 +341,7 @@ def fetch_twse_daily(*, ticker: str, days: int = 180) -> dict[str, Any]:
 
 
 def fetch_yahoo_daily(*, symbol: str, days: int = 180) -> dict[str, Any]:
-    normalized_days = max(30, min(int(days), 5000))
+    normalized_days = max(1, min(int(days), 5000))
     session = requests.Session()
 
     response = session.get(

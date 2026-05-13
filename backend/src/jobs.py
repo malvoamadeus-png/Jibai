@@ -68,7 +68,6 @@ def run_once_job(config_path: str | None) -> int:
         f"run_id={analysis_summary.snapshot.run_id}",
         f"author_days={len(analysis_summary.snapshot.author_summaries)}",
         f"stock_days={len(analysis_summary.snapshot.stock_views)}",
-        f"theme_days={len(analysis_summary.snapshot.theme_views)}",
         f"errors={len(analysis_summary.snapshot.errors)}",
     )
     print(
@@ -76,7 +75,6 @@ def run_once_job(config_path: str | None) -> int:
         f"新增内容 {len(crawl_summary.new_notes)} 条，AI新增分析 {len(analysis_summary.snapshot.note_extracts)} 条，",
         f"作者日 {len(analysis_summary.snapshot.author_summaries)} 个，",
         f"股票日 {len(analysis_summary.snapshot.stock_views)} 个，",
-        f"Theme日 {len(analysis_summary.snapshot.theme_views)} 个，",
         f"错误 {len(analysis_summary.snapshot.errors)} 个",
         flush=True,
     )
@@ -128,7 +126,6 @@ def run_once_x_job(config_path: str | None) -> int:
         f"run_id={analysis_summary.snapshot.run_id}",
         f"author_days={len(analysis_summary.snapshot.author_summaries)}",
         f"stock_days={len(analysis_summary.snapshot.stock_views)}",
-        f"theme_days={len(analysis_summary.snapshot.theme_views)}",
         f"errors={len(analysis_summary.snapshot.errors)}",
     )
     print(
@@ -136,7 +133,6 @@ def run_once_x_job(config_path: str | None) -> int:
         f"新增内容 {len(crawl_summary.new_notes)} 条，AI新增分析 {len(analysis_summary.snapshot.note_extracts)} 条，",
         f"作者日 {len(analysis_summary.snapshot.author_summaries)} 个，",
         f"股票日 {len(analysis_summary.snapshot.stock_views)} 个，",
-        f"Theme日 {len(analysis_summary.snapshot.theme_views)} 个，",
         f"错误 {len(analysis_summary.snapshot.errors)} 个",
         flush=True,
     )
@@ -168,7 +164,6 @@ def run_normalize_securities_job() -> int:
         f"run_id={summary.snapshot.run_id}",
         f"author_days={len(summary.snapshot.author_summaries)}",
         f"stock_days={len(summary.snapshot.stock_views)}",
-        f"theme_days={len(summary.snapshot.theme_views)}",
         f"errors={len(summary.snapshot.errors)}",
     )
     return 1 if summary.exit_code else 0
@@ -187,7 +182,6 @@ def run_reanalyze_existing_job() -> int:
         f"reanalyzed_notes={len(summary.snapshot.note_extracts)}",
         f"author_days={len(summary.snapshot.author_summaries)}",
         f"stock_days={len(summary.snapshot.stock_views)}",
-        f"theme_days={len(summary.snapshot.theme_views)}",
         f"errors={len(summary.snapshot.errors)}",
     )
     return 1 if summary.exit_code else 0
