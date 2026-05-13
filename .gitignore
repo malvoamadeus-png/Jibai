@@ -28,6 +28,8 @@ data/config/*.json
 !data/config/*.example.json
 data/runtime/
 docs/
+!docs/
+!docs/*.md
 
 Reference/*
 !Reference/twitter-data-capture.md
