@@ -5,6 +5,7 @@ import datetime as dt
 import io
 import json
 import math
+import os
 import time
 import urllib.parse
 import urllib.request
@@ -41,6 +42,12 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
+
+
+def _request_timeout() -> tuple[float, float]:
+    connect = float(os.getenv("PUBLIC_WORKER_TOP_RISK_CONNECT_TIMEOUT_SECONDS", "20"))
+    read = float(os.getenv("PUBLIC_WORKER_TOP_RISK_READ_TIMEOUT_SECONDS", "120"))
+    return (max(5.0, connect), max(30.0, read))
 
 
 def _parse_date(raw: str) -> dt.date | None:
@@ -100,12 +107,12 @@ def _fetch_url(url: str, cache_name: str, *, max_age_hours: int = 24) -> bytes:
     for attempt in range(1, 4):
         try:
             if requests is not None:
-                resp = requests.get(url, headers=headers, timeout=(15, 45))
+                resp = requests.get(url, headers=headers, timeout=_request_timeout())
                 resp.raise_for_status()
                 data = resp.content
             else:
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=60) as resp:
+                with urllib.request.urlopen(req, timeout=_request_timeout()[1]) as resp:
                     data = resp.read()
             path.write_bytes(data)
             return data
