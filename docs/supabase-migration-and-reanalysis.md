@@ -132,11 +132,11 @@ For another migration, change only `sql_path`.
 The public reanalysis command now runs locally as long as `.env` has
 `SUPABASE_DB_URL` and AI credentials.
 
-For latest three Asia/Shanghai natural days:
+For the current 30-day public history window:
 
 ```bash
 AI_API_TIMEOUT_SECONDS=90 \
-/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --days 3 --clear-analysis
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
 ```
 
 What it does:
@@ -258,6 +258,26 @@ important checks are:
 - stock RPC returns successfully
 - theme entity list is empty
 - theme timeline is `null`
+
+## Restore Author Timeline History Window
+
+`supabase/migrations/013_restore_author_timeline_history_window.sql` fixes the
+author list and author timeline RPCs after the stock-signal-only migration
+limited visible author days to the latest three Shanghai natural days. The RPCs
+still filter to valid stock signals, but they no longer apply a hard three-day
+date filter; the visible history is determined by the materialized
+`author_daily_summaries` rows.
+
+Rebuild with:
+
+```bash
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-refresh-market-data --days 180
+```
+
+Afterward, verify that `author_daily_summaries` spans the intended 30-day
+content window and `security_daily_prices` spans the intended 180-day K-line
+cache window.
 
 ## Frontend Verification
 

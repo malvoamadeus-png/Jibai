@@ -1068,6 +1068,7 @@ def refresh_security_market_data(
     security_keys: list[str],
     max_securities: int | None = None,
     days: int | None = None,
+    retain_days: int | None = None,
     delay_seconds: float | None = None,
 ) -> tuple[int, list[str]]:
     ordered_keys = list(dict.fromkeys(key.strip() for key in security_keys if key and key.strip()))
@@ -1090,6 +1091,12 @@ def refresh_security_market_data(
         days if days is not None else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", MARKET_DATA_WINDOW_DAYS)
     )
     effective_days = min(MARKET_DATA_WINDOW_DAYS, max(1, requested_days))
+    requested_retain_days = int(
+        retain_days
+        if retain_days is not None
+        else _env_int("PUBLIC_WORKER_MARKET_DATA_DAYS", MARKET_DATA_WINDOW_DAYS)
+    )
+    effective_retain_days = min(MARKET_DATA_WINDOW_DAYS, max(effective_days, requested_retain_days))
     effective_delay = max(
         0.0,
         float(
@@ -1101,7 +1108,8 @@ def refresh_security_market_data(
 
     identities = store.get_security_identities(ordered_keys)
     fetched_at = now_iso()
-    cutoff_date = (date_class.today() - timedelta(days=effective_days)).isoformat()
+    fetch_cutoff_date = (date_class.today() - timedelta(days=effective_days)).isoformat()
+    retain_cutoff_date = (date_class.today() - timedelta(days=effective_retain_days)).isoformat()
     written_candles = 0
     errors: list[str] = []
 
@@ -1120,7 +1128,7 @@ def refresh_security_market_data(
             candles = [
                 candle
                 for candle in payload.get("candles") or []
-                if str(candle.get("date") or "") >= cutoff_date
+                if str(candle.get("date") or "") >= fetch_cutoff_date
             ]
             if not candles:
                 message = str(payload.get("message") or "Market data returned no daily candles.")
@@ -1135,7 +1143,7 @@ def refresh_security_market_data(
                 fetched_at=fetched_at,
             )
             if hasattr(store, "prune_security_daily_prices"):
-                store.prune_security_daily_prices(security_key=security_key, before_date=cutoff_date)
+                store.prune_security_daily_prices(security_key=security_key, before_date=retain_cutoff_date)
         except Exception as exc:
             errors.append(f"[market {_market_error_label(security_key, identity)}] {exc}")
 

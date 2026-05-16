@@ -4,8 +4,12 @@ import argparse
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = BACKEND_DIR.parent
+load_dotenv(ROOT_DIR / ".env", override=False)
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 

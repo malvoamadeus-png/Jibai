@@ -63,8 +63,10 @@ AI 配置优先级：
 7. 写入 `content_analyses` 和 `content_viewpoints`。
 8. 按作者、日期聚合为 `author_daily_summaries`。
 9. 按股票、日期聚合为 `security_daily_views`。
-10. 轻量刷新相关股票近期行情，写入 `security_daily_prices`。
+10. 轻量刷新相关股票近期行情，写入 `security_daily_prices`。轻量刷新只控制本次抓取最近几天的数据，不能把日线缓存裁剪到轻量窗口；公开 K 线仍保留 180 天缓存窗口。
 11. 生成本地 snapshot，写入 `data/runtime/ai/snapshots/`。
+
+公开 Supabase worker 的分析重建窗口默认是 30 个上海自然日，和初始回填的 30 天内容窗口一致。定时抓取可以只抓较少新帖，但清空并重建分析表时不能只用 1 到 3 天窗口，否则作者时间线会被重建成只剩最近几天。
 
 ## 观点结构
 
@@ -92,7 +94,7 @@ AI 配置优先级：
 | `security_mentions` | 兼容旧结构的股票提及记录 |
 | `author_daily_summaries` | 作者每天的观点摘要 |
 | `security_daily_views` | 股票每天被哪些作者如何看待 |
-| `security_daily_prices` | 股票日线价格缓存 |
+| `security_daily_prices` | 股票日线价格缓存，公开 K 线按 180 天窗口读取 |
 | `analysis_runs` | 每次分析运行记录 |
 
 ## 股票归一化

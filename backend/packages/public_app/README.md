@@ -37,7 +37,7 @@ PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES=30
 PUBLIC_WORKER_MARKET_DATA_DAYS=180
 PUBLIC_WORKER_LIGHT_MARKET_DATA_MAX_SECURITIES=10
 PUBLIC_WORKER_LIGHT_MARKET_DATA_DAYS=7
-PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS=3
+PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS=30
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
 
 AI_PROVIDER=openai-compatible
@@ -66,15 +66,19 @@ instead of relying on the code defaults. Use comma-separated host names without
 
 Market-data settings are optional. Backfill and manual market refresh default
 to at most 30 stocks and 180 days of daily candles. Scheduled crawls default to
-at most 10 newly analyzed stocks and 7 days of daily candles, and skip market
-data when the run produced no new stock analysis. Market-data failures are
-isolated from the crawl and AI pipeline; the job result records
-`market_errors=N`.
+at most 10 newly analyzed stocks and only fetch the latest 7 days of daily
+candles, but the K-line cache is still retained for the 180-day
+`PUBLIC_WORKER_MARKET_DATA_DAYS` window. Do not use the light refresh window as
+the delete/prune window. Scheduled crawls skip market data when the run produced
+no new stock analysis. Market-data failures are isolated from the crawl and AI
+pipeline; the job result records `market_errors=N`.
 
 Analysis output is intentionally windowed. `PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS`
-defaults to `3`, using Asia/Shanghai natural days, so old raw posts stay in
-`content_items` but do not reappear in the public timelines after the analysis
-tables are cleared.
+defaults to `30`, matching the initial backfill lookback and using
+Asia/Shanghai natural days. Old raw posts stay in `content_items`; when
+analysis tables are cleared and rebuilt, the public timelines should be
+rebuilt from this 30-day window rather than only the latest scheduled crawl
+window.
 
 ## Commands
 
@@ -89,7 +93,7 @@ python backend/src/main.py public-worker --once
 python backend/src/main.py public-worker
 python backend/src/main.py public-worker-doctor
 python backend/src/main.py public-enqueue-scheduled
-python backend/src/main.py public-reanalyze-recent --days 3 --clear-analysis
+python backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-import-sqlite
 ```
@@ -100,9 +104,9 @@ poller and in-process scheduler. `public-enqueue-scheduled` inserts one schedule
 crawl job immediately, which is useful when you want the worker to process a run
 without waiting for the next configured wall-clock time.
 
-`public-reanalyze-recent --days 3 --clear-analysis` keeps raw `content_items`,
+`public-reanalyze-recent --days 30 --clear-analysis` keeps raw `content_items`,
 clears analysis/materialized outputs, and force-runs the current stock-only
-signal extraction over the latest three Asia/Shanghai natural days.
+signal extraction over the latest thirty Asia/Shanghai natural days.
 
 `public-worker-doctor` is read-only. Run it on the server with the same
 environment file as the worker to print queue counts, due pending jobs, running

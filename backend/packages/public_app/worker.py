@@ -78,7 +78,7 @@ def _light_market_data_max_securities() -> int:
 
 
 def _analysis_window_days() -> int:
-    return max(1, _env_int("PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS", 3))
+    return max(1, _env_int("PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS", 30))
 
 
 def _recent_window(days: int) -> tuple[str, str]:
