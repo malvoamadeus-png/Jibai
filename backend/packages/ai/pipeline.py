@@ -644,6 +644,8 @@ def _analyze_missing_notes(
                     flush=True,
                 )
         except Exception as exc:
+            if hasattr(store, "conn"):
+                store.conn.rollback()
             errors.append(f"[note {note.platform}/{note.note_id}] {exc}")
             if progress_label:
                 print(
