@@ -131,6 +131,13 @@ For the stock/crypto domain split, use:
 sql_path = Path("supabase/migrations/015_crypto_domain.sql")
 ```
 
+If account submission fails with
+`column reference "account_id" is ambiguous` after the domain split, apply:
+
+```python
+sql_path = Path("supabase/migrations/016_fix_submit_x_account_ambiguity.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -302,6 +309,7 @@ important checks are:
 - theme entity list is empty
 - theme timeline is `null`
 - crypto RPCs return successfully after migration 015, even if there is no crypto data yet
+- `submit_x_account(..., domain_arg)` can insert or update a domain-scoped request after migration 016
 
 ## Restore Author Timeline History Window
 
