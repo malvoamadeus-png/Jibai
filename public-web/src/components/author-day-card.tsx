@@ -8,13 +8,18 @@ import { entityTypeLabel, viewSignalLabel, viewSignalVariant } from "@/lib/utils
 
 type AuthorDayCardProps = {
   day: AuthorTimelineDay;
+  domain?: "stock" | "crypto";
 };
 
 export function AuthorDayCard({
   day,
+  domain = "stock",
 }: AuthorDayCardProps) {
-  const visibleViewpoints = day.viewpoints.filter((viewpoint) => viewpoint.entityType === "stock");
-  const visibleMentionedStocks = day.mentionedStocks;
+  const isCrypto = domain === "crypto";
+  const visibleViewpoints = day.viewpoints.filter((viewpoint) =>
+    isCrypto ? viewpoint.entityType === "crypto_entity" : viewpoint.entityType === "stock",
+  );
+  const visibleMentioned = Array.from(new Set(isCrypto ? day.mentionedCrypto : day.mentionedStocks));
 
   return (
     <Card>
@@ -25,7 +30,7 @@ export function AuthorDayCard({
               <Badge variant="warm">{day.date}</Badge>
               <StatusBadge status={day.status} />
             </div>
-            <CardTitle className="text-2xl leading-tight">{day.summaryText}</CardTitle>
+            {!isCrypto ? <CardTitle className="text-2xl leading-tight">{day.summaryText}</CardTitle> : null}
           </div>
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3 text-right">
             <p className="text-xs uppercase tracking-[0.16em] text-[color:var(--soft-ink)]">当日内容</p>
@@ -33,14 +38,14 @@ export function AuthorDayCard({
           </div>
         </div>
 
-        {visibleMentionedStocks.length > 0 && (
+        {visibleMentioned.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {visibleMentionedStocks.map((stock) => (
+            {visibleMentioned.map((item) => (
               <span
-                key={`stock-${stock}`}
+                key={`${domain}-${item}`}
                 className="rounded-full border border-[color:var(--border-strong)] px-3 py-1.5 text-xs font-medium text-[color:var(--muted-ink)]"
               >
-                股票 · {stock}
+                {isCrypto ? "标的" : "股票"} · {item}
               </span>
             ))}
           </div>
@@ -51,20 +56,28 @@ export function AuthorDayCard({
         {visibleViewpoints.length > 0 ? (
           <div className="overflow-hidden rounded-[24px] border border-[color:var(--border)]">
             <div className="hidden grid-cols-[140px_128px_minmax(0,1fr)_112px] gap-4 bg-[color:var(--paper-strong)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--soft-ink)] md:grid">
-              <span>对象</span>
+              <span>{isCrypto ? "标的" : "对象"}</span>
               <span>类型 / 态度</span>
               <span>逻辑</span>
               <span>来源</span>
             </div>
-            {visibleViewpoints.map((viewpoint) => (
+            {visibleViewpoints.map((viewpoint, index) => (
               <div
-                key={`${day.date}-${viewpoint.entityType}-${viewpoint.entityKey}`}
+                key={`${day.date}-${viewpoint.entityType}-${viewpoint.entityKey}-${viewpoint.noteIds.join(",")}-${index}`}
                 className="grid gap-3 border-t border-[color:var(--border)] bg-[color:var(--panel)] px-4 py-4 first:border-t-0 md:grid-cols-[140px_128px_minmax(0,1fr)_112px] md:gap-4"
               >
                 <div className="space-y-2">
                   {viewpoint.entityType === "stock" ? (
                     <Link
                       href={`/stocks?stock=${encodeURIComponent(viewpoint.entityKey)}`}
+                      className="text-base font-semibold underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
+                    >
+                      {viewpoint.entityName}
+                    </Link>
+                  ) : null}
+                  {viewpoint.entityType === "crypto_entity" ? (
+                    <Link
+                      href={`/crypto/assets?asset=${encodeURIComponent(viewpoint.entityKey)}`}
                       className="text-base font-semibold underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
                     >
                       {viewpoint.entityName}

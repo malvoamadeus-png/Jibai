@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowUp, CalendarDays, Hash, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 
 import { InsightListCard } from "@/components/insight-list-card";
@@ -64,30 +64,34 @@ function buildChart(detail: EntityDetailData): StockKlineData {
 
 export function EntityBrowser({
   type,
+  domain = "stock",
 }: {
-  type: "stock";
+  type: "stock" | "crypto";
+  domain?: "stock" | "crypto";
 }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { loading, profile, signIn, supabase } = useAuth();
+  const isCrypto = domain === "crypto" || type === "crypto";
+  const paramName = isCrypto ? "asset" : "stock";
   const [query, setQuery] = useState(searchParams.get("q") || "");
+  const [listQuery, setListQuery] = useState(searchParams.get("q") || "");
+  const [selectedKey, setSelectedKey] = useState(searchParams.get(paramName) || "");
+  const [page, setPage] = useState(() => parsePage(searchParams.get("page")));
+  const [sort, setSort] = useState<EntitySortKey>(() => parseSort(searchParams.get("sort")));
   const [items, setItems] = useState<EntityListItem[]>([]);
   const [detail, setDetail] = useState<EntityDetailData | null>(null);
   const [listLoading, setListLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const page = parsePage(searchParams.get("page"));
-  const sort = parseSort(searchParams.get("sort"));
   const activeSort = SORT_OPTIONS.find((item) => item.key === sort) || SORT_OPTIONS[0];
-  const paramName = "stock";
-  const requestedKey = searchParams.get(paramName);
   const activeKey = useMemo(() => {
-    if (requestedKey && items.some((item) => item.key === requestedKey)) return requestedKey;
+    if (selectedKey && items.some((item) => item.key === selectedKey)) return selectedKey;
     return items[0]?.key || "";
-  }, [items, requestedKey]);
-  const title = "按股票（详情）";
-  const description = "左侧快速切换股票，右侧查看日线标记和按日作者观点。";
+  }, [items, selectedKey]);
+  const basePath = isCrypto ? "/crypto/assets" : "/stocks";
+  const title = isCrypto ? "按标的（详情）" : "按股票（详情）";
+  const description = isCrypto ? "左侧快速切换项目或资产，右侧查看按日作者信号、原文标识、逻辑和来源。" : "左侧快速切换股票，右侧查看日线标记和按日作者观点。";
 
   useEffect(() => {
     if (loading) return;
@@ -95,7 +99,7 @@ export function EntityBrowser({
     Promise.resolve().then(() => {
       if (!cancelled) setListLoading(true);
     });
-    listEntities(supabase, type, profile, searchParams.get("q") || "", 100, sort)
+    listEntities(supabase, type, profile, listQuery, 100, sort)
       .then((rows) => {
         if (cancelled) return;
         setItems(rows);
@@ -112,7 +116,7 @@ export function EntityBrowser({
     return () => {
       cancelled = true;
     };
-  }, [loading, profile, searchParams, sort, supabase, type]);
+  }, [listQuery, loading, profile, sort, supabase, type]);
 
   useEffect(() => {
     if (loading || !activeKey) {
@@ -147,31 +151,50 @@ export function EntityBrowser({
     };
   }, [activeKey, loading, page, profile, supabase, type]);
 
+  useEffect(() => {
+    function syncFromLocation() {
+      const next = new URLSearchParams(window.location.search);
+      setQuery(next.get("q") || "");
+      setListQuery(next.get("q") || "");
+      setSelectedKey(next.get(paramName) || "");
+      setPage(parsePage(next.get("page")));
+      setSort(parseSort(next.get("sort")));
+    }
+
+    window.addEventListener("popstate", syncFromLocation);
+    return () => window.removeEventListener("popstate", syncFromLocation);
+  }, [paramName]);
+
+  function buildEntityUrl(nextQuery: string, key: string, nextPage: number, nextSort: EntitySortKey) {
+    const next = new URLSearchParams();
+    if (nextQuery) next.set("q", nextQuery);
+    if (key) next.set(paramName, key);
+    if (nextPage > 1) next.set("page", String(nextPage));
+    if (nextSort !== "date_desc") next.set("sort", nextSort);
+    const params = next.toString();
+    return params ? `${basePath}?${params}` : basePath;
+  }
+
   function selectItem(key: string) {
-    const next = new URLSearchParams(searchParams);
-    next.set(paramName, key);
-    next.delete("page");
-    router.push(`/stocks?${next.toString()}`);
+    setSelectedKey(key);
+    setPage(1);
+    window.history.pushState(null, "", buildEntityUrl(listQuery, key, 1, sort));
     setPanelOpen(false);
   }
 
   function selectSort(nextSort: EntitySortKey) {
-    const next = new URLSearchParams(searchParams);
-    if (nextSort === "date_desc") next.delete("sort");
-    else next.set("sort", nextSort);
-    next.delete("page");
-    router.push(`/stocks?${next.toString()}`);
+    setSort(nextSort);
+    setPage(1);
+    window.history.pushState(null, "", buildEntityUrl(listQuery, selectedKey, 1, nextSort));
   }
 
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const next = new URLSearchParams(searchParams);
-    if (query.trim()) next.set("q", query.trim());
-    else next.delete("q");
-    next.delete(paramName);
-    next.delete("page");
-    const path = "/stocks";
-    router.push(next.toString() ? `${path}?${next.toString()}` : path);
+    const nextQuery = query.trim();
+    setListQuery(nextQuery);
+    setSelectedKey("");
+    setPage(1);
+    window.history.pushState(null, "", buildEntityUrl(nextQuery, "", 1, sort));
   }
 
   if (loading) return <LoadingPanel />;
@@ -181,7 +204,7 @@ export function EntityBrowser({
       <Card className="lg:shrink-0">
         <CardHeader className="lg:py-5">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="warm">按股票（详情）</Badge>
+            <Badge variant="warm">{title}</Badge>
             {!profile ? <Badge variant="neutral">公开预览 · 仅 1 条</Badge> : null}
           </div>
           <CardTitle className="text-3xl">{title}</CardTitle>
@@ -207,7 +230,7 @@ export function EntityBrowser({
                 <CardDescription>{profile ? "按你的订阅过滤" : "公开轻量预览"}</CardDescription>
               </div>
               <form className="space-y-3" onSubmit={search}>
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索股票" />
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isCrypto ? "搜索标的" : "搜索股票"} />
                 <Button type="submit" className="w-full">
                   <Search className="h-4 w-4" />
                   更新列表
@@ -269,7 +292,7 @@ export function EntityBrowser({
                 </CardHeader>
               </Card>
 
-              {type === "stock" && profile ? (
+              {!isCrypto && profile ? (
                 <StockKlineCard
                   displayName={detail.displayName}
                   chart={buildChart(detail)}
@@ -284,7 +307,7 @@ export function EntityBrowser({
               {detail.timeline.rows.length ? (
                 <div className="space-y-4">
                   {detail.timeline.rows.map((day) => (
-                    <StockDayCard key={`${detail.key}-${day.date}`} day={day} />
+                    <StockDayCard key={`${detail.key}-${day.date}`} day={day} domain={isCrypto ? "crypto" : "stock"} />
                   ))}
                 </div>
               ) : (

@@ -30,16 +30,17 @@ function TimelineUpdatingNotice() {
   );
 }
 
-function buildFeedUrl(query: string, accountId: string, page: number) {
+function buildFeedUrl(query: string, accountId: string, page: number, domain: "stock" | "crypto") {
   const next = new URLSearchParams();
   if (query) next.set("q", query);
   if (accountId) next.set("account", accountId);
   if (page > 1) next.set("page", String(page));
   const params = next.toString();
-  return params ? `/feed?${params}` : "/feed";
+  const basePath = domain === "crypto" ? "/crypto/feed" : "/feed";
+  return params ? `${basePath}?${params}` : basePath;
 }
 
-function FeedPageContent() {
+function FeedPageContent({ domain = "stock" }: { domain?: "stock" | "crypto" }) {
   const searchParams = useSearchParams();
   const { loading, profile, signIn, supabase } = useAuth();
   const [listQuery, setListQuery] = useState(searchParams.get("q") || "");
@@ -59,7 +60,7 @@ function FeedPageContent() {
     Promise.resolve().then(() => {
       if (!cancelled) setListLoading(true);
     });
-    listVisibleAuthors(supabase, profile, listQuery)
+    listVisibleAuthors(supabase, profile, listQuery, 100, domain)
       .then((rows) => {
         if (cancelled) return;
         setAuthors(rows);
@@ -76,7 +77,7 @@ function FeedPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile, listQuery, supabase]);
+  }, [domain, loading, profile, listQuery, supabase]);
 
   useEffect(() => {
     if (loading || !activeId) {
@@ -92,7 +93,7 @@ function FeedPageContent() {
     Promise.resolve().then(() => {
       if (!cancelled) setDetailLoading(true);
     });
-    getVisibleAuthorTimeline(supabase, profile, activeId, page)
+    getVisibleAuthorTimeline(supabase, profile, activeId, page, domain)
       .then((nextDetail) => {
         if (cancelled) return;
         setDetail(nextDetail);
@@ -109,7 +110,7 @@ function FeedPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [activeId, loading, page, profile, supabase]);
+  }, [activeId, domain, loading, page, profile, supabase]);
 
   useEffect(() => {
     function syncFromLocation() {
@@ -126,7 +127,7 @@ function FeedPageContent() {
   function selectAuthor(accountId: string) {
     setSelectedAccountId(accountId);
     setPage(1);
-    window.history.pushState(null, "", buildFeedUrl(listQuery, accountId, 1));
+    window.history.pushState(null, "", buildFeedUrl(listQuery, accountId, 1, domain));
     setPanelOpen(false);
   }
 
@@ -137,7 +138,7 @@ function FeedPageContent() {
     setListQuery(nextQuery);
     setSelectedAccountId("");
     setPage(1);
-    window.history.pushState(null, "", buildFeedUrl(nextQuery, "", 1));
+    window.history.pushState(null, "", buildFeedUrl(nextQuery, "", 1, domain));
   }
 
   if (loading) return <LoadingPanel />;
@@ -150,9 +151,11 @@ function FeedPageContent() {
             <Badge variant="warm">{profile ? "我的订阅" : "公开预览"}</Badge>
             {!profile ? <Badge variant="neutral">仅 1 条</Badge> : null}
           </div>
-          <CardTitle className="text-3xl">按人看观点时间线</CardTitle>
+          <CardTitle className="text-3xl">{domain === "crypto" ? "按人看加密信号时间线" : "按人看观点时间线"}</CardTitle>
           <CardDescription>
-            左侧快速切换订阅账号，右侧查看该账号按日沉淀的股票观点、逻辑、证据和来源。
+            {domain === "crypto"
+              ? "左侧快速切换订阅账号，右侧查看该账号按日拆出的 crypto 标的信号、原文标识、逻辑和来源。"
+              : "左侧快速切换订阅账号，右侧查看该账号按日沉淀的股票观点、逻辑、证据和来源。"}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -219,6 +222,7 @@ function FeedPageContent() {
                     <AuthorDayCard
                       key={`${detail.accountId}-${day.date}`}
                       day={day}
+                      domain={domain}
                     />
                   ))}
                 </div>
@@ -234,10 +238,10 @@ function FeedPageContent() {
   );
 }
 
-export default function FeedPage() {
+export default function FeedPage({ domain = "stock" }: { domain?: "stock" | "crypto" }) {
   return (
     <Suspense fallback={<LoadingPanel />}>
-      <FeedPageContent />
+      <FeedPageContent domain={domain} />
     </Suspense>
   );
 }

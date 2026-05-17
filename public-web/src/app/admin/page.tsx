@@ -73,7 +73,7 @@ function formatJobResult(job: AdminJobItem) {
   return `${parts.join("；")}。`;
 }
 
-export default function AdminPage() {
+export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "crypto" }) {
   const { loading, profile, signIn, supabase } = useAuth();
   const [approvedCount, setApprovedCount] = useState(0);
   const [approvedAccounts, setApprovedAccounts] = useState<AdminAccountItem[]>([]);
@@ -82,12 +82,12 @@ export default function AdminPage() {
 
   const reload = useCallback(async () => {
     if (!profile?.isAdmin) return;
-    const dashboard = await listAdminDashboard(supabase);
+    const dashboard = await listAdminDashboard(supabase, domain);
     setApprovedCount(dashboard.approvedCount);
     setApprovedAccounts(dashboard.approvedAccounts);
     setRequests(dashboard.requests);
     setJobs(dashboard.jobs);
-  }, [profile, supabase]);
+  }, [domain, profile, supabase]);
 
   useEffect(() => {
     Promise.resolve().then(reload).catch(console.error);
@@ -112,7 +112,7 @@ export default function AdminPage() {
           <h1>管理</h1>
           <p className="muted">审批账号请求。通过后会创建首次回溯任务，阿里云 worker 会定时轮询并串行执行。</p>
         </div>
-        <ManualRunButton onChanged={reload} />
+        <ManualRunButton onChanged={reload} domain={domain} />
       </div>
 
       <section className="metric-row">
@@ -188,7 +188,7 @@ export default function AdminPage() {
                 </td>
                 <td className="muted">{formatTime(account.backfillCompletedAt)}</td>
                 <td>
-                  <DisableButton accountId={account.id} onChanged={reload} />
+                  <DisableButton accountId={account.id} onChanged={reload} domain={domain} />
                 </td>
               </tr>
             ))}

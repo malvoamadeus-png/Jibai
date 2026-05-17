@@ -1,0 +1,29 @@
+{
+  "BTC": {
+    "asset_key": "bitcoin",
+    "display_name": "Bitcoin",
+    "symbol": "BTC",
+    "identifier_type": "symbol",
+    "raw_identifiers": ["BTC", "$BTC", "Bitcoin"],
+    "aliases": ["比特币"],
+    "normalized_status": "canonical"
+  },
+  "Ethereum": {
+    "asset_key": "ethereum",
+    "display_name": "Ethereum",
+    "symbol": "ETH",
+    "identifier_type": "symbol",
+    "raw_identifiers": ["ETH", "$ETH", "Ethereum"],
+    "aliases": ["以太坊"],
+    "normalized_status": "canonical"
+  },
+  "uPEG_ETH": {
+    "asset_key": "upeg_eth",
+    "display_name": "uPEG_ETH",
+    "symbol": "uPEG",
+    "identifier_type": "project_name",
+    "raw_identifiers": ["uPEG_ETH", "uPEG"],
+    "x_accounts": ["@upeg_eth"],
+    "normalized_status": "canonical"
+  }
+}

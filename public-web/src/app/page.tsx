@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/auth-context";
 import { listAccounts as listDirectAccounts, listFeed as listDirectFeed } from "@/lib/direct-data";
 import type { AccountListItem, FeedDay } from "@/lib/types";
 
-export default function HomePage() {
+export default function HomePage({ domain = "stock" }: { domain?: "stock" | "crypto" }) {
   const { loading, profile, signIn, supabase } = useAuth();
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [feed, setFeed] = useState<FeedDay[]>([]);
@@ -20,8 +20,8 @@ export default function HomePage() {
     let cancelled = false;
     async function load() {
       const [nextAccounts, nextFeed] = await Promise.all([
-        listDirectAccounts(supabase, profile),
-        listDirectFeed(supabase, profile, 6),
+        listDirectAccounts(supabase, profile, "", domain),
+        listDirectFeed(supabase, profile, 6, domain),
       ]);
       if (!cancelled) {
         setAccounts(nextAccounts);
@@ -38,7 +38,9 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [loading, profile, supabase]);
+  }, [domain, loading, profile, supabase]);
+  const isCrypto = domain === "crypto";
+  const basePath = isCrypto ? "/crypto" : "";
 
   return (
     <main className="page">
@@ -46,14 +48,16 @@ export default function HomePage() {
         <div className="panel">
           <h1 className="brand-title">集百</h1>
           <p className="muted">
-            把已审批 X 账号的股票观点按人和股票重新整理。未登录可看账号库和一条轻量预览，登录后按你的订阅范围展开完整时间线。
+            {isCrypto
+              ? "把已审批 X 账号的 crypto 项目和资产信号按人和标的重新整理。弱提及、转发、公告和数据播报也会保留。"
+              : "把已审批 X 账号的股票观点按人和股票重新整理。未登录可看账号库和一条轻量预览，登录后按你的订阅范围展开完整时间线。"}
           </p>
           <div className="submit-row">
-            <Link className="primary-button" href="/accounts">
+            <Link className="primary-button" href={`${basePath}/accounts`}>
               <Library size={16} />
               账号库
             </Link>
-            <Link className="secondary-button" href="/feed">
+            <Link className="secondary-button" href={`${basePath}/feed`}>
               <ArrowRight size={16} />
               {profile ? "我的订阅" : "看一条预览"}
             </Link>
@@ -83,7 +87,7 @@ export default function HomePage() {
               <h2>{profile ? "最近更新" : "公开预览"}</h2>
               <p className="muted">{profile ? "来自你的订阅账号。" : "未登录只展示 1 个真实对象的少量内容。"}</p>
             </div>
-            <Link className="secondary-button" href="/feed">
+            <Link className="secondary-button" href={`${basePath}/feed`}>
               进入时间线
             </Link>
           </div>
@@ -98,7 +102,7 @@ export default function HomePage() {
                     <span>{item.noteCount} 条内容</span>
                   </div>
                   <h3>{item.displayName || item.username}</h3>
-                  <p className="muted">{item.summary}</p>
+                  <p className="muted">{isCrypto ? `${item.viewpoints.length} 个标的信号` : item.summary}</p>
                 </article>
               ))}
             </div>

@@ -10,7 +10,11 @@ import { useAuth } from "@/lib/auth-context";
 import { listAccounts, listMyRequests } from "@/lib/direct-data";
 import type { AccountListItem, RequestListItem } from "@/lib/types";
 
-export default function AccountsPage() {
+export default function AccountsPage({
+  domain = "stock",
+}: {
+  domain?: "stock" | "crypto";
+}) {
   const { loading, profile, signIn, supabase } = useAuth();
   const [query, setQuery] = useState("");
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
@@ -21,8 +25,8 @@ export default function AccountsPage() {
     if (loading) return;
     try {
       const [nextAccounts, nextRequests] = await Promise.all([
-        listAccounts(supabase, profile, query),
-        profile ? listMyRequests(supabase, profile) : Promise.resolve([]),
+        listAccounts(supabase, profile, query, domain),
+        profile ? listMyRequests(supabase, profile, domain) : Promise.resolve([]),
       ]);
       setAccounts(nextAccounts);
       setRequests(nextRequests);
@@ -32,7 +36,7 @@ export default function AccountsPage() {
       setRequests([]);
       setError(err instanceof Error ? err.message : "账号库加载失败");
     }
-  }, [loading, profile, query, supabase]);
+  }, [domain, loading, profile, query, supabase]);
 
   useEffect(() => {
     Promise.resolve().then(reload);
@@ -44,7 +48,7 @@ export default function AccountsPage() {
     <main className="page">
       <div className="section-head">
         <div>
-          <h1>账号库</h1>
+          <h1>{domain === "crypto" ? "加密账号库" : "账号库"}</h1>
           <p className="muted">
             已审批账号未登录也可浏览。订阅、提交新账号和查看自己的提交记录需要 Google 登录。
           </p>
@@ -64,7 +68,7 @@ export default function AccountsPage() {
           </button>
         </div>
         {error ? <div className="empty field-error">数据接口未就绪：{error}</div> : null}
-        {profile ? <SubmitAccountForm onSubmitted={reload} /> : <SignInCta onLogin={signIn} compact />}
+        {profile ? <SubmitAccountForm onSubmitted={reload} domain={domain} /> : <SignInCta onLogin={signIn} compact />}
       </section>
 
       <section className="table-panel" style={{ marginTop: 18 }}>
@@ -89,7 +93,7 @@ export default function AccountsPage() {
                   <span className="status-pill">{account.backfillCompletedAt ? "已有导入" : "等待导入"}</span>
                 </td>
                 <td>
-                  <AccountSubscriptionButton accountId={account.id} subscribed={account.subscribed} onChanged={reload} />
+                  <AccountSubscriptionButton accountId={account.id} subscribed={account.subscribed} onChanged={reload} domain={domain} />
                 </td>
               </tr>
             ))}

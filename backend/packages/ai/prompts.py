@@ -6,6 +6,7 @@ from packages.common.models import NoteExtractRecord, RawNoteRecord
 
 
 NOTE_EXTRACT_REQUIRED_KEYS = ["summary_text", "viewpoints"]
+CRYPTO_NOTE_EXTRACT_REQUIRED_KEYS = ["summary_text", "viewpoints"]
 AUTHOR_SUMMARY_REQUIRED_KEYS = ["summary_text"]
 
 
@@ -58,6 +59,61 @@ def build_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
                 "logic 对 explicit_stance 只需简短说明作者明确表态；对 logic_based 必须写出“基于什么证据 -> 得出什么股票结论”的逻辑链。"
                 "evidence 必须写出能支撑该判断的原文依据，尽量贴近原文表达，但不要大段照抄。"
                 "同一对象如果在文中只有一个判断，就只输出一条，不要拆碎。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": "请分析下面这篇内容并输出结构化 JSON：\n\n" + json.dumps(payload, ensure_ascii=False),
+        },
+    ]
+
+
+def build_crypto_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
+    payload = {
+        "platform": note.platform,
+        "account_name": note.account_name,
+        "author_nickname": note.author_nickname,
+        "note_id": note.note_id,
+        "title": note.title,
+        "desc": note.desc,
+        "publish_time": note.publish_time,
+        "url": note.url,
+    }
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是一个中文 crypto 信息信号抽取助手。"
+                "请只输出 JSON 对象，不要输出 markdown。"
+                "JSON 顶层必须包含 summary_text, viewpoints。"
+                "summary_text 只作为兼容字段，一句概括即可；有效数据以 viewpoints 为准。"
+                "viewpoints 是数组，每个元素代表一条可落到项目或资产的 crypto 推荐实体/信息信号。"
+                "不要局限标准 symbol；项目名、代币名、meme ticker、EVM 合约地址、Solana 地址、项目 X 账号、$ticker 都可以作为实体。"
+                "只要作者发布、转发、提及、公告、数据播报或价格播报涉及具体 crypto 实体，就应输出；没有明确方向时保留为弱信号。"
+                "每条观点必须包含字段："
+                "entity_type, entity_name, entity_code_or_name, entity_identifier_type, raw_identifiers, stance, direction, "
+                "signal_type, judgment_type, conviction, evidence_type, source_signal_level, logic, evidence, time_horizon。"
+                "entity_type 固定为 crypto_entity。"
+                "entity_name 写项目或资产名称，例如 Bitcoin、Ethereum、Solana、uPEG_ETH。"
+                "entity_code_or_name 写原文最稳定标识，可以是 BTC、ETH、uPEG、0x...、Solana 地址或 @项目账号。"
+                "entity_identifier_type 只能是 project_name, symbol, evm_contract, solana_address, project_account, meme_ticker, unknown。"
+                "raw_identifiers 是数组，放原文出现过的全部关键标识。"
+                "signal_type 只能是 explicit_stance, logic_based, informational, mention_signal。"
+                "explicit_stance 表示作者明确看好/看空/买/卖/参与/避开。"
+                "logic_based 表示作者基于链上、代币经济、生态、收入、流动性、解锁、融资、上所、催化等证据推出方向。"
+                "informational 表示新闻、公告、数据、价格或事实播报，仍要保留。"
+                "mention_signal 表示仅提及、转发或弱相关线索。"
+                "direction 只能是 positive, negative, neutral, mixed, unknown；弱信号通常用 unknown。"
+                "stance 使用兼容字段：positive 对应 bullish/strong_bullish，negative 对应 bearish/strong_bearish，unknown 弱信号用 mention_only 或 unknown。"
+                "judgment_type 只能是 direct, implied, factual_only, quoted, mention_only, unknown；转发他人观点可用 quoted，公告/播报可用 factual_only，纯提及可用 mention_only。"
+                "conviction 只能是 strong, medium, weak, none, unknown；弱信号用 none 或 weak。"
+                "evidence_type 只能是 price_action, rumor, position, capital_flow, technical, macro, onchain, tokenomics, unlock, ecosystem, "
+                "protocol_revenue, catalyst, listing, liquidity, funding_rate, security_incident, regulation, other, unknown。"
+                "source_signal_level 只能是 strong, weak；明确观点或完整逻辑用 strong，转发/提及/播报用 weak。"
+                "logic 对强信号写出证据到结论的链条；对弱信号说明它是什么信息信号。"
+                "evidence 写贴近原文的短证据，不要大段照抄。"
+                "time_horizon 只能是 short_term, medium_term, long_term, unspecified。"
+                "同一实体在同一篇内容里可以合并为一条；多实体需要拆开。"
             ),
         },
         {

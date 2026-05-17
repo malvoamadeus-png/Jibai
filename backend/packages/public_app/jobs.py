@@ -20,17 +20,23 @@ class CrawlJob:
     id: str
     kind: str
     account_id: str | None
+    domain: str = "stock"
 
 
-def enqueue_scheduled_crawl(conn: Connection[dict[str, Any]], dedupe_key: str) -> str:
+def _normalize_domain(value: str | None) -> str:
+    return "crypto" if value == "crypto" else "stock"
+
+
+def enqueue_scheduled_crawl(conn: Connection[dict[str, Any]], dedupe_key: str, domain: str = "stock") -> str:
+    safe_domain = _normalize_domain(domain)
     row = conn.execute(
         """
-        INSERT INTO crawl_jobs (kind, status, dedupe_key, metadata_json)
-        VALUES ('scheduled_crawl', 'pending', %s, %s)
+        INSERT INTO crawl_jobs (kind, status, domain, dedupe_key, metadata_json)
+        VALUES ('scheduled_crawl', 'pending', %s, %s, %s)
         ON CONFLICT(dedupe_key) DO UPDATE SET updated_at = crawl_jobs.updated_at
         RETURNING id
         """,
-        (dedupe_key, Jsonb({"source": "worker-scheduler"})),
+        (safe_domain, dedupe_key, Jsonb({"source": "worker-scheduler", "domain": safe_domain})),
     ).fetchone()
     if row is None:
         raise RuntimeError("Failed to enqueue scheduled crawl.")
@@ -54,12 +60,17 @@ def claim_next_job(conn: Connection[dict[str, Any]]) -> CrawlJob | None:
           LIMIT 1
           FOR UPDATE SKIP LOCKED
         )
-        RETURNING id, kind, account_id
+        RETURNING id, kind, account_id, domain
         """
     ).fetchone()
     if row is None:
         return None
-    return CrawlJob(id=str(row["id"]), kind=str(row["kind"]), account_id=None if row["account_id"] is None else str(row["account_id"]))
+    return CrawlJob(
+        id=str(row["id"]),
+        kind=str(row["kind"]),
+        account_id=None if row["account_id"] is None else str(row["account_id"]),
+        domain=_normalize_domain(str(row["domain"] or "stock")),
+    )
 
 
 def requeue_stale_running_jobs(conn: Connection[dict[str, Any]], stale_after_minutes: int) -> int:
@@ -110,7 +121,8 @@ def mark_job_failed(conn: Connection[dict[str, Any]], job_id: str, error_text: s
     )
 
 
-def mark_backfill_completed(conn: Connection[dict[str, Any]], account_id: str) -> None:
+def mark_backfill_completed(conn: Connection[dict[str, Any]], account_id: str, domain: str = "stock") -> None:
+    safe_domain = _normalize_domain(domain)
     conn.execute(
         """
         UPDATE x_accounts
@@ -120,6 +132,16 @@ def mark_backfill_completed(conn: Connection[dict[str, Any]], account_id: str) -
         """,
         (account_id,),
     )
+    conn.execute(
+        """
+        UPDATE account_domains
+        SET backfill_completed_at = COALESCE(backfill_completed_at, now()),
+            updated_at = now()
+        WHERE account_id = %s
+          AND domain = %s
+        """,
+        (account_id, safe_domain),
+    )
 
 
 def list_accounts_for_job(conn: Connection[dict[str, Any]], job: CrawlJob) -> list[PublicXAccount]:
@@ -127,27 +149,33 @@ def list_accounts_for_job(conn: Connection[dict[str, Any]], job: CrawlJob) -> li
         rows = conn.execute(
             """
             SELECT id, username, display_name, profile_url
-            FROM x_accounts
-            WHERE id = %s
-              AND status = 'approved'
+            FROM x_accounts a
+            JOIN account_domains ad ON ad.account_id = a.id
+            WHERE a.id = %s
+              AND ad.domain = %s
+              AND ad.status = 'approved'
             LIMIT 1
             """,
-            (job.account_id,),
+            (job.account_id, job.domain),
         ).fetchall()
     else:
         rows = conn.execute(
             """
             SELECT a.id, a.username, a.display_name, a.profile_url
             FROM x_accounts a
-            WHERE a.status = 'approved'
+            JOIN account_domains ad ON ad.account_id = a.id
+            WHERE ad.domain = %s
+              AND ad.status = 'approved'
               AND EXISTS (
                 SELECT 1
                 FROM user_subscriptions s
                 WHERE s.account_id = a.id
+                  AND s.domain = %s
               )
             ORDER BY a.approved_at NULLS LAST, a.created_at ASC
             LIMIT 100
-            """
+            """,
+            (job.domain, job.domain),
         ).fetchall()
     return [
         PublicXAccount(

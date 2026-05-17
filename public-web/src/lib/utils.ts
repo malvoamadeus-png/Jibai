@@ -96,6 +96,8 @@ export function signalTypeLabel(signalType: ViewSignalType) {
   const mapping: Record<ViewSignalType, string> = {
     explicit_stance: "明确表态",
     logic_based: "逻辑判断",
+    informational: "信息播报",
+    mention_signal: "弱信号",
     unknown: "判断不明",
   };
   return mapping[signalType];
@@ -137,6 +139,7 @@ export function viewSignalVariant(view: ViewSignal) {
 export function entityTypeLabel(entityType: ViewEntityType) {
   const mapping: Record<ViewEntityType, string> = {
     stock: "股票",
+    crypto_entity: "标的",
     theme: "Theme",
     macro: "宏观",
     other: "其他",

@@ -444,7 +444,14 @@ class InsightStore:
             result.append(RawNoteRecord.model_validate(payload))
         return result
 
-    def get_analysis_map(self, *, platform: str | None = None) -> dict[str, NoteExtractRecord]:
+    def get_analysis_map(
+        self,
+        *,
+        platform: str | None = None,
+        analysis_domain: str = "stock",
+    ) -> dict[str, NoteExtractRecord]:
+        if analysis_domain == "crypto":
+            return {}
         sql = """
             SELECT
               c.id AS content_id,
@@ -599,7 +606,11 @@ class InsightStore:
         self,
         extract: NoteExtractRecord,
         aliases: dict[str, SecurityIdentity] | None = None,
+        crypto_aliases: dict[str, Any] | None = None,
+        analysis_domain: str = "stock",
     ) -> None:
+        if analysis_domain == "crypto":
+            return
         content_id_row = self.conn.execute(
             "SELECT id FROM content_items WHERE platform = ? AND external_content_id = ?",
             (extract.platform, extract.note_id),
@@ -762,7 +773,9 @@ class InsightStore:
         )
         return int(cursor.rowcount or 0)
 
-    def clear_analysis_outputs(self) -> None:
+    def clear_analysis_outputs(self, analysis_domain: str = "stock") -> None:
+        if analysis_domain == "crypto":
+            return
         self.conn.execute("DELETE FROM author_daily_summaries")
         self.conn.execute("DELETE FROM security_daily_views")
         self.conn.execute("DELETE FROM theme_daily_views")
@@ -776,7 +789,10 @@ class InsightStore:
         platform: str,
         account_name: str,
         date_key: str,
+        analysis_domain: str = "stock",
     ) -> AuthorDayRecord | None:
+        if analysis_domain == "crypto":
+            return None
         row = self.conn.execute(
             """
             SELECT
@@ -1063,6 +1079,7 @@ class InsightStore:
         errors: list[str],
         snapshot_path: str,
         crawl_results: list[CrawlAccountResult],
+        analysis_domain: str = "stock",
     ) -> None:
         self.conn.execute(
             """

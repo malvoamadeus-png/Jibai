@@ -8,19 +8,21 @@ Public web uses Supabase as the primary database. Vercel only serves `public-web
 - Enqueues scheduled crawl jobs at `04:00,10:00,16:00,22:00` Asia/Shanghai.
 - Processes only one crawl job at a time with a Postgres advisory lock.
 - Crawls X accounts serially with a 5 second account delay.
-- Runs stock-only AI signal analysis and writes author summaries, stock viewpoints, and stock timelines back to Supabase.
+- Runs stock or crypto AI signal analysis by job domain and writes author summaries, viewpoints, and materialized timelines back to Supabase.
+- Reuses `content_items` for raw X content so one X post is fetched once, while `content_analyses.analysis_domain` can store separate stock and crypto results for the same post.
 - Initial backfills refresh the 180-day market-data cache. Scheduled crawls use
   a lightweight refresh for the most recent stock signals in the analysis
   window, so older-but-visible stock pages still receive latest candles. Plain
   tickers such as `NVDA`, `AAPL`, and `TSLA` use Yahoo Finance. A-share markets
   `SSE`, `SZSE`, and `BJSE` still use EastMoney.
+- Crypto jobs do not write market data or K-line cache in the first version.
 
 Approval flow:
 
 - Admin approves a pending account in `public-web`.
-- Supabase creates one `initial_backfill` job for that account.
+- Supabase creates one `initial_backfill` job for that account and domain.
 - Worker backfills up to 30 posts from the last 30 days, skipping pinned posts older than 30 days.
-- Later scheduled/manual jobs crawl approved accounts that have at least one subscriber.
+- Later scheduled/manual jobs crawl approved accounts in that domain that have at least one subscriber.
 
 ## Environment
 
@@ -39,6 +41,7 @@ PUBLIC_WORKER_MARKET_DATA_DAYS=180
 PUBLIC_WORKER_LIGHT_MARKET_DATA_MAX_SECURITIES=10
 PUBLIC_WORKER_LIGHT_MARKET_DATA_DAYS=7
 PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS=30
+PUBLIC_WORKER_DOMAINS=stock,crypto
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
 
 AI_PROVIDER=openai-compatible
@@ -54,9 +57,9 @@ AI settings use the same OpenAI-compatible configuration as the local backend.
 If local development uses an OpenAI relay endpoint, copy the same endpoint into
 `AI_BASE_URL` and the same relay key into `AI_API_KEY`. Without an AI key, the
 worker can still crawl X content and write daily fallback summaries, but it
-cannot generate structured stock viewpoints or stock pages from new
-content. `public-worker-doctor` prints `api_key_configured=yes/no` so this is
-visible during diagnosis.
+cannot generate structured stock viewpoints, crypto signals, or stock/crypto
+pages from new content. `public-worker-doctor` prints `api_key_configured=yes/no`
+so this is visible during diagnosis.
 
 The X crawler discovers user timelines through FxTwitter's statuses endpoint
 first. Nitter is now only a fallback for cases where that API is unavailable.
@@ -81,6 +84,12 @@ analysis tables are cleared and rebuilt, the public timelines should be
 rebuilt from this 30-day window rather than only the latest scheduled crawl
 window.
 
+Scheduled enqueue uses `PUBLIC_WORKER_DOMAINS`, defaulting to `stock,crypto`.
+Each queued job carries `crawl_jobs.domain`. Stock and crypto account approval,
+subscription, analysis output, author timelines, and admin lists are isolated
+by this domain. The same X account can be approved in both domains; raw content
+is shared, but analysis and materialized results are not.
+
 Public stock browsing has two RPC-backed surfaces. `/stocks` uses
 `list_visible_entities` and `get_visible_entity_timeline` for the detail view;
 the stock list supports sorting by latest date or total visible mentions and
@@ -90,6 +99,15 @@ at the latest visible stock-signal date unless a specific `end` date is passed.
 For logged-in users the matrix is scoped to subscribed authors, including admin
 users; anonymous users keep the public preview scope. Matrix cells keep every
 valid positive/negative stock signal as an individual point.
+
+Public crypto browsing has three RPC-backed surfaces. `/crypto/feed` uses the
+domain-aware author RPC and suppresses the author daily summary sentence; cards
+only show crypto entity signals. `/crypto/assets` uses
+`list_visible_crypto_entities` and `get_visible_crypto_entity_timeline` for the
+detail view and never renders K-line data. `/crypto/assets/overview` uses
+`get_visible_crypto_matrix`; green dots are positive, red dots are negative,
+and gray dots are weak informational or mention signals such as reposts,
+announcements, data broadcasts, or plain mentions.
 
 ## Commands
 
@@ -105,6 +123,9 @@ python backend/src/main.py public-worker
 python backend/src/main.py public-worker-doctor
 python backend/src/main.py public-enqueue-scheduled
 python backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
+python backend/src/main.py public-reanalyze-recent --domain crypto --days 30 --clear-analysis
+python backend/src/main.py public-rebuild-timelines --domain crypto
+python backend/src/main.py normalize-crypto-assets --days 30
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-import-sqlite
 ```
@@ -119,10 +140,17 @@ without waiting for the next configured wall-clock time.
 clears analysis/materialized outputs, and force-runs the current stock-only
 signal extraction over the latest thirty Asia/Shanghai natural days.
 
+`public-reanalyze-recent --domain crypto --days 30 --clear-analysis` does the
+same for crypto analysis only. It does not clear or rewrite stock analysis
+outputs. `public-rebuild-timelines --domain crypto` rebuilds crypto author and
+asset timelines from existing crypto analyses. `normalize-crypto-assets` reloads
+`data/config/crypto_aliases.json`, rewrites existing crypto analysis identities,
+and rebuilds the crypto materialized views.
+
 `public-worker-doctor` is read-only. Run it on the server with the same
 environment file as the worker to print queue counts, due pending jobs, running
-job age, latest scheduled job, account/subscription counts, and whether a job is
-holding the Postgres worker lock at that instant.
+job age, latest scheduled job, global plus per-domain account/subscription
+counts, and whether a job is holding the Postgres worker lock at that instant.
 
 The long-running `public-worker` validates the database connection before it
 starts APScheduler. If the service exits immediately, inspect the service

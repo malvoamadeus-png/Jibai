@@ -81,6 +81,20 @@ def _analysis_window_days() -> int:
     return max(1, _env_int("PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS", 30))
 
 
+def _worker_domains() -> list[str]:
+    raw = os.getenv("PUBLIC_WORKER_DOMAINS", "stock,crypto")
+    domains = []
+    for item in raw.split(","):
+        value = item.strip().lower()
+        if value in {"stock", "crypto"} and value not in domains:
+            domains.append(value)
+    return domains or ["stock"]
+
+
+def _normalize_domain(value: str | None) -> str:
+    return "crypto" if value == "crypto" else "stock"
+
+
 def _recent_window(days: int) -> tuple[str, str]:
     safe_days = max(1, int(days))
     end_date = today_date_key()
@@ -99,6 +113,37 @@ def _filter_recent_notes(notes: list[RawNoteRecord], *, days: int) -> tuple[list
         start_date,
         end_date,
     )
+
+
+def _list_domain_account_names(conn: Any, domain: str) -> set[str]:
+    safe_domain = _normalize_domain(domain)
+    rows = conn.execute(
+        """
+        SELECT lower(a.username::text) AS username
+        FROM x_accounts a
+        JOIN account_domains ad ON ad.account_id = a.id
+        WHERE ad.domain = %s
+          AND ad.status = 'approved'
+        """,
+        (safe_domain,),
+    ).fetchall()
+    return {str(row["username"]).strip().lower() for row in rows if str(row["username"]).strip()}
+
+
+def _filter_notes_for_domain(
+    conn: Any,
+    notes: list[RawNoteRecord],
+    *,
+    domain: str,
+) -> list[RawNoteRecord]:
+    account_names = _list_domain_account_names(conn, domain)
+    if not account_names:
+        return []
+    return [
+        note
+        for note in notes
+        if note.platform == "x" and note.account_name.strip().lower().lstrip("@") in account_names
+    ]
 
 
 def _nitter_instances() -> list[str] | None:
@@ -178,8 +223,11 @@ def _build_job_summary(
     market_errors: list[str],
     total_errors: int,
     analysis_errors: list[str] | None = None,
+    domain: str = "stock",
 ) -> str:
+    safe_domain = _normalize_domain(domain)
     parts = [
+        f"{'加密' if safe_domain == 'crypto' else '股票'}分析",
         f"抓取 {account_count} 个账号",
         f"新增 {new_note_count} 条内容",
     ]
@@ -187,9 +235,9 @@ def _build_job_summary(
         parts.append(f"{len(crawl_errors)} 个账号抓取失败")
     if crawl_warnings:
         parts.append(f"{len(crawl_warnings)} 个账号有部分内容详情异常，已跳过")
-    if market_prices:
+    if safe_domain == "stock" and market_prices:
         parts.append(f"写入 {market_prices} 条行情")
-    if market_errors:
+    if safe_domain == "stock" and market_errors:
         sample = _market_error_sample(market_errors)
         suffix = f"（{sample}）" if sample else ""
         parts.append(f"{len(market_errors)} 个股票行情暂不可用{suffix}")
@@ -291,15 +339,16 @@ def _process_job(job: CrawlJob) -> None:
             elif result.error:
                 crawl_warnings.append(f"[x {account.username}] {result.error}")
             if job.kind == "initial_backfill" and result.status == "success":
-                mark_backfill_completed(conn, account.id)
+                mark_backfill_completed(conn, account.id, job.domain)
             if index < len(accounts) - 1:
                 time.sleep(_account_pause_seconds())
 
         all_notes = store.list_all_content_items(platform="x")
-        notes, _start_date, _end_date = _filter_recent_notes(
+        recent_notes, _start_date, _end_date = _filter_recent_notes(
             all_notes,
             days=_analysis_window_days(),
         )
+        notes = _filter_notes_for_domain(conn, recent_notes, domain=job.domain)
         is_backfill = job.kind == "initial_backfill"
         summary = run_analysis_with_store(
             store=store,
@@ -307,8 +356,9 @@ def _process_job(job: CrawlJob) -> None:
             notes=notes,
             crawl_results=crawl_results,
             crawl_errors=crawl_errors,
-            market_data_days=None if is_backfill else _light_market_data_days(),
-            market_data_max_securities=None if is_backfill else _light_market_data_max_securities(),
+            market_data_days=None if is_backfill or job.domain == "crypto" else _light_market_data_days(),
+            market_data_max_securities=None if is_backfill or job.domain == "crypto" else _light_market_data_max_securities(),
+            analysis_domain=job.domain,
         )
         mark_job_succeeded(
             conn,
@@ -322,6 +372,7 @@ def _process_job(job: CrawlJob) -> None:
                 market_errors=summary.market_errors,
                 total_errors=len(summary.snapshot.errors),
                 analysis_errors=summary.snapshot.errors,
+                domain=job.domain,
             ),
         )
 
@@ -352,16 +403,17 @@ def process_pending_jobs(*, max_jobs: int | None = None) -> int:
     return processed
 
 
-def enqueue_scheduled_crawl_job() -> str:
-    dedupe_key = "scheduled_crawl:" + datetime.now(SHANGHAI_TZ).strftime("%Y%m%d%H%M")
+def enqueue_scheduled_crawl_job(domain: str = "stock") -> str:
+    safe_domain = _normalize_domain(domain)
+    dedupe_key = f"scheduled_crawl:{safe_domain}:" + datetime.now(SHANGHAI_TZ).strftime("%Y%m%d%H%M")
     with postgres_connection() as conn:
-        job_id = insert_scheduled_crawl_job(conn, dedupe_key)
+        job_id = insert_scheduled_crawl_job(conn, dedupe_key, domain=safe_domain)
     return job_id
 
 
 def enqueue_scheduled_crawl() -> int:
-    job_id = enqueue_scheduled_crawl_job()
-    print(f"[public-worker] enqueued scheduled crawl job {job_id}")
+    job_ids = [enqueue_scheduled_crawl_job(domain) for domain in _worker_domains()]
+    print(f"[public-worker] enqueued scheduled crawl jobs {','.join(job_ids)}")
     return 0
 
 
@@ -384,6 +436,7 @@ def diagnose_worker_once() -> int:
     print(
         "[public-worker] doctor "
         f"crawl_times={','.join(_crawl_times())} "
+        f"domains={','.join(_worker_domains())} "
         f"top_risk_sync_time={_top_risk_sync_time()} "
         f"poll={_poll_seconds()}s "
         f"stale_job_minutes={_stale_running_job_minutes()} "
@@ -429,6 +482,41 @@ def diagnose_worker_once() -> int:
                 f"subscribed={subscription_row['subscribed_accounts'] if subscription_row else 0} "
                 f"approved_subscribed={subscription_row['approved_subscribed_accounts'] if subscription_row else 0}"
             )
+            domain_rows = conn.execute(
+                """
+                WITH domains(domain) AS (
+                  VALUES ('stock'), ('crypto')
+                )
+                SELECT
+                  d.domain,
+                  count(DISTINCT ad.account_id) FILTER (
+                    WHERE ad.status = 'approved'
+                  )::int AS approved_accounts,
+                  count(DISTINCT ad.account_id) FILTER (
+                    WHERE ad.status = 'approved' AND ad.backfill_completed_at IS NULL
+                  )::int AS approved_without_backfill,
+                  count(DISTINCT s.account_id)::int AS subscribed_accounts,
+                  count(DISTINCT s.account_id) FILTER (
+                    WHERE ad.status = 'approved'
+                  )::int AS approved_subscribed_accounts
+                FROM domains d
+                LEFT JOIN account_domains ad ON ad.domain = d.domain
+                LEFT JOIN user_subscriptions s
+                  ON s.account_id = ad.account_id
+                 AND s.domain = d.domain
+                GROUP BY d.domain
+                ORDER BY d.domain
+                """
+            ).fetchall()
+            for row in domain_rows:
+                print(
+                    "[public-worker] domain_accounts "
+                    f"domain={row['domain']} "
+                    f"approved={row['approved_accounts']} "
+                    f"approved_without_backfill={row['approved_without_backfill']} "
+                    f"subscribed={row['subscribed_accounts']} "
+                    f"approved_subscribed={row['approved_subscribed_accounts']}"
+                )
 
             count_rows = conn.execute(
                 """
@@ -666,20 +754,23 @@ def _synthetic_crawl_results(notes: list[RawNoteRecord]) -> list[CrawlAccountRes
     return sorted(account_map.values(), key=lambda item: (item.platform, item.account_name))
 
 
-def rebuild_public_timelines_once() -> int:
+def rebuild_public_timelines_once(domain: str = "stock", days: int | None = None) -> int:
+    safe_domain = _normalize_domain(domain)
+    window_days = max(1, int(days if days is not None else _analysis_window_days()))
     paths = get_paths()
     ensure_runtime_dirs(paths)
     with postgres_connection() as conn:
         store = PostgresInsightStore(conn)
         all_notes = store.list_all_content_items(platform="x")
-        notes, start_date, end_date = _filter_recent_notes(
+        recent_notes, start_date, end_date = _filter_recent_notes(
             all_notes,
-            days=_analysis_window_days(),
+            days=window_days,
         )
+        notes = _filter_notes_for_domain(conn, recent_notes, domain=safe_domain)
         if not notes:
             print(
                 "[public-worker] no public X content found in analysis window "
-                f"start={start_date} end={end_date}"
+                f"domain={safe_domain} start={start_date} end={end_date}"
             )
             return 1
         summary = run_analysis_with_store(
@@ -688,15 +779,20 @@ def rebuild_public_timelines_once() -> int:
             notes=notes,
             crawl_results=_synthetic_crawl_results(notes),
             crawl_errors=[],
+            market_data_days=None if safe_domain == "crypto" else _light_market_data_days(),
+            market_data_max_securities=None if safe_domain == "crypto" else _light_market_data_max_securities(),
+            analysis_domain=safe_domain,
         )
 
     print(
         "[public-worker] rebuilt_timelines "
+        f"domain={safe_domain} "
         f"start={start_date} "
         f"end={end_date} "
         f"notes={len(notes)} "
         f"author_days={len(summary.snapshot.author_summaries)} "
         f"stock_days={len(summary.snapshot.stock_views)} "
+        f"crypto_days={len(summary.snapshot.crypto_views)} "
         f"market_prices={summary.market_prices} "
         f"market_errors={len(summary.market_errors)}"
     )
@@ -705,7 +801,13 @@ def rebuild_public_timelines_once() -> int:
     return 1 if summary.exit_code else 0
 
 
-def reanalyze_recent_public_content_once(*, days: int = 3, clear_analysis: bool = True) -> int:
+def reanalyze_recent_public_content_once(
+    *,
+    days: int = 3,
+    clear_analysis: bool = True,
+    domain: str = "stock",
+) -> int:
+    safe_domain = _normalize_domain(domain)
     safe_days = max(1, int(days))
     paths = get_paths()
     ensure_runtime_dirs(paths)
@@ -713,13 +815,14 @@ def reanalyze_recent_public_content_once(*, days: int = 3, clear_analysis: bool 
     with postgres_connection() as conn:
         store = PostgresInsightStore(conn)
         all_notes = store.list_all_content_items(platform="x")
-        notes, start_date, end_date = _filter_recent_notes(all_notes, days=safe_days)
+        recent_notes, start_date, end_date = _filter_recent_notes(all_notes, days=safe_days)
+        notes = _filter_notes_for_domain(conn, recent_notes, domain=safe_domain)
         if not notes:
             if clear_analysis:
-                store.clear_analysis_outputs()
+                store.clear_analysis_outputs(analysis_domain=safe_domain)
             print(
                 "[public-worker] no public X content in date window "
-                f"start={start_date} end={end_date}"
+                f"domain={safe_domain} start={start_date} end={end_date}"
             )
             return 1
         summary = run_analysis_with_store(
@@ -730,18 +833,21 @@ def reanalyze_recent_public_content_once(*, days: int = 3, clear_analysis: bool 
             crawl_errors=[],
             force_reanalysis=True,
             clear_analysis_outputs=clear_analysis,
-            market_data_days=_light_market_data_days(),
-            market_data_max_securities=_light_market_data_max_securities(),
+            market_data_days=None if safe_domain == "crypto" else _light_market_data_days(),
+            market_data_max_securities=None if safe_domain == "crypto" else _light_market_data_max_securities(),
+            analysis_domain=safe_domain,
         )
 
     print(
         "[public-worker] reanalyzed_recent "
+        f"domain={safe_domain} "
         f"start={start_date} "
         f"end={end_date} "
         f"notes={len(notes)} "
         f"reanalyzed_notes={len(summary.snapshot.note_extracts)} "
         f"author_days={len(summary.snapshot.author_summaries)} "
         f"stock_days={len(summary.snapshot.stock_views)} "
+        f"crypto_days={len(summary.snapshot.crypto_views)} "
         f"market_prices={summary.market_prices} "
         f"market_errors={len(summary.market_errors)} "
         f"errors={len(summary.snapshot.errors)}"
@@ -763,7 +869,7 @@ def run_worker(*, once: bool = False) -> int:
     for value in _crawl_times():
         hour_text, minute_text = value.split(":", 1)
         scheduler.add_job(
-            enqueue_scheduled_crawl_job,
+            enqueue_scheduled_crawl,
             CronTrigger(hour=int(hour_text), minute=int(minute_text), timezone=SHANGHAI_TZ),
             id=f"public-x-{hour_text}{minute_text}",
             replace_existing=True,
@@ -785,6 +891,7 @@ def run_worker(*, once: bool = False) -> int:
     print(
         "[public-worker] started. crawl_times="
         + ", ".join(_crawl_times())
+        + f"; domains={','.join(_worker_domains())}"
         + f"; poll={_poll_seconds()}s; account_delay={_account_pause_seconds()}s"
         + f"; light_market_data_days={_light_market_data_days()}"
         + f"; light_market_data_max={_light_market_data_max_securities()}"

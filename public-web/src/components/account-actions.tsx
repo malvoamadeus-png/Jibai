@@ -11,10 +11,12 @@ export function AccountSubscriptionButton({
   accountId,
   subscribed,
   onChanged,
+  domain = "stock",
 }: {
   accountId: string;
   subscribed: boolean;
   onChanged?: () => void;
+  domain?: "stock" | "crypto";
 }) {
   const router = useRouter();
   const { loading, profile, signIn, supabase } = useAuth();
@@ -29,7 +31,7 @@ export function AccountSubscriptionButton({
     }
     startTransition(async () => {
       try {
-        await setSubscription(supabase, profile, accountId, !subscribed);
+        await setSubscription(supabase, profile, accountId, !subscribed, domain);
         onChanged?.();
         router.refresh();
       } catch (err) {

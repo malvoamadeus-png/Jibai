@@ -16,6 +16,7 @@ from packages.common.models import (
     AuthorDayRecord,
     AuthorDayViewpoint,
     AuthorTimelineNote,
+    CryptoDayRecord,
     CrawlAccountResult,
     EntityAuthorView,
     NoteExtractRecord,
@@ -32,6 +33,11 @@ from packages.common.models import (
     ViewStance,
 )
 from packages.common.paths import AppPaths
+from packages.common.crypto_aliases import (
+    CryptoIdentity,
+    load_crypto_aliases,
+    resolve_crypto_identity,
+)
 from packages.common.security_aliases import (
     SecurityIdentity,
     load_security_aliases,
@@ -43,13 +49,16 @@ from packages.common.time_utils import note_date_key, now_iso, today_date_key
 from .client import LLMJsonClient
 from .prompts import (
     AUTHOR_SUMMARY_REQUIRED_KEYS,
+    CRYPTO_NOTE_EXTRACT_REQUIRED_KEYS,
     NOTE_EXTRACT_REQUIRED_KEYS,
     build_author_day_summary_messages,
+    build_crypto_note_extract_messages,
     build_note_extract_messages,
 )
 
 
 ANALYSIS_VERSION = "stock_signals_v1"
+CRYPTO_ANALYSIS_VERSION = "crypto_signals_v1"
 MARKET_DATA_WINDOW_DAYS = 180
 LIGHT_MARKET_DATA_WINDOW_DAYS = 7
 LIGHT_MARKET_DATA_MAX_SECURITIES = 10
@@ -65,7 +74,13 @@ STANCE_PRIORITY: dict[ViewStance, int] = {
 }
 VALID_STANCES = set(STANCE_PRIORITY)
 VALID_DIRECTIONS: set[ViewDirection] = {"positive", "negative", "neutral", "mixed", "unknown"}
-VALID_SIGNAL_TYPES: set[ViewSignalType] = {"explicit_stance", "logic_based", "unknown"}
+VALID_SIGNAL_TYPES: set[ViewSignalType] = {
+    "explicit_stance",
+    "logic_based",
+    "informational",
+    "mention_signal",
+    "unknown",
+}
 INVALID_SIGNAL_JUDGMENT_TYPES: set[ViewJudgmentType] = {
     "factual_only",
     "quoted",
@@ -92,6 +107,17 @@ VALID_EVIDENCE_TYPES: set[ViewEvidenceType] = {
     "capital_flow",
     "technical",
     "macro",
+    "onchain",
+    "tokenomics",
+    "unlock",
+    "ecosystem",
+    "protocol_revenue",
+    "catalyst",
+    "listing",
+    "liquidity",
+    "funding_rate",
+    "security_incident",
+    "regulation",
     "other",
     "unknown",
 }
@@ -182,6 +208,23 @@ def _direction_from_stance(stance: ViewStance) -> ViewDirection:
     return "unknown"
 
 
+def _analysis_version_for_domain(analysis_domain: str) -> str:
+    return CRYPTO_ANALYSIS_VERSION if analysis_domain == "crypto" else ANALYSIS_VERSION
+
+
+def _source_signal_level(
+    *,
+    signal_type: ViewSignalType,
+    direction: ViewDirection,
+    judgment_type: ViewJudgmentType,
+) -> str:
+    if signal_type in {"informational", "mention_signal"}:
+        return "weak"
+    if direction == "unknown" or judgment_type in {"factual_only", "quoted", "mention_only"}:
+        return "weak"
+    return "strong"
+
+
 def _derive_compatible_stance(
     *,
     direction: ViewDirection,
@@ -219,6 +262,8 @@ def _combine_signal_types(left: ViewSignalType, right: ViewSignalType) -> ViewSi
     priority: dict[ViewSignalType, int] = {
         "logic_based": 2,
         "explicit_stance": 1,
+        "informational": 1,
+        "mention_signal": 0,
         "unknown": 0,
     }
     return left if priority[left] >= priority[right] else right
@@ -419,6 +464,127 @@ def _parse_viewpoint(
     )
 
 
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _parse_crypto_viewpoint(
+    raw: dict[str, object],
+    *,
+    order: int,
+    aliases: dict[str, CryptoIdentity],
+) -> ViewpointRecord | None:
+    entity_type_raw = str(raw.get("entity_type") or "").strip().casefold()
+    if entity_type_raw not in {"crypto_entity", "crypto", "asset", "token", "project"}:
+        return None
+
+    entity_name = str(raw.get("entity_name") or raw.get("project_name") or raw.get("asset_name") or "").strip()
+    entity_code_or_name = str(
+        raw.get("entity_code_or_name")
+        or raw.get("symbol")
+        or raw.get("contract_address")
+        or raw.get("project_account")
+        or entity_name
+    ).strip()
+    raw_identifiers = _dedupe_preserve(
+        [
+            *_string_list(raw.get("raw_identifiers") or []),
+            entity_code_or_name,
+            entity_name,
+        ]
+    )
+    if not entity_name and raw_identifiers:
+        entity_name = raw_identifiers[0]
+    if not entity_name:
+        return None
+
+    identifier_type = str(raw.get("entity_identifier_type") or "").strip() or "unknown"
+    identity = resolve_crypto_identity(
+        entity_name=entity_name,
+        entity_code_or_name=entity_code_or_name or None,
+        entity_identifier_type=identifier_type,
+        raw_identifiers=raw_identifiers,
+        aliases=aliases,
+    )
+    if identity is None:
+        return None
+
+    stance_raw = str(raw.get("stance") or "unknown").strip()
+    legacy_stance = stance_raw if stance_raw in VALID_STANCES else "unknown"
+    direction_raw = str(raw.get("direction") or "").strip()
+    direction = (
+        direction_raw
+        if direction_raw in VALID_DIRECTIONS
+        else _direction_from_stance(legacy_stance)  # type: ignore[arg-type]
+    )
+    signal_type_raw = str(raw.get("signal_type") or "").strip()
+    signal_type = signal_type_raw if signal_type_raw in VALID_SIGNAL_TYPES else "mention_signal"
+    if signal_type == "unknown":
+        signal_type = "mention_signal"
+    judgment_type_raw = str(raw.get("judgment_type") or "").strip()
+    judgment_type = judgment_type_raw if judgment_type_raw in VALID_JUDGMENT_TYPES else "unknown"
+    if judgment_type == "unknown" and signal_type == "mention_signal":
+        judgment_type = "mention_only"
+    if judgment_type == "unknown" and signal_type == "informational":
+        judgment_type = "factual_only"
+
+    conviction_raw = str(raw.get("conviction") or "").strip()
+    conviction = conviction_raw if conviction_raw in VALID_CONVICTIONS else "unknown"
+    if conviction == "unknown" and signal_type in {"informational", "mention_signal"}:
+        conviction = "none"
+    evidence_type_raw = str(raw.get("evidence_type") or "").strip()
+    evidence_type = evidence_type_raw if evidence_type_raw in VALID_EVIDENCE_TYPES else "unknown"
+    stance = _derive_compatible_stance(
+        direction=direction,  # type: ignore[arg-type]
+        judgment_type=judgment_type,  # type: ignore[arg-type]
+        conviction=conviction,  # type: ignore[arg-type]
+        legacy_stance=legacy_stance,  # type: ignore[arg-type]
+    )
+    if direction == "unknown" and signal_type in {"informational", "mention_signal"}:
+        stance = "mention_only"
+
+    horizon_raw = str(raw.get("time_horizon") or "unspecified").strip()
+    time_horizon = horizon_raw if horizon_raw in VALID_HORIZONS else "unspecified"
+    source_level_raw = str(raw.get("source_signal_level") or "").strip()
+    source_signal_level = source_level_raw if source_level_raw in {"strong", "weak"} else _source_signal_level(
+        signal_type=signal_type,  # type: ignore[arg-type]
+        direction=direction,  # type: ignore[arg-type]
+        judgment_type=judgment_type,  # type: ignore[arg-type]
+    )
+    metadata = {
+        "raw_identifiers": list(identity.raw_identifiers),
+        "contract_addresses": list(identity.contract_addresses),
+        "x_accounts": list(identity.x_accounts),
+        "chain": identity.chain,
+    }
+
+    return ViewpointRecord(
+        entity_type="crypto_entity",
+        entity_key=identity.asset_key,
+        entity_name=identity.display_name,
+        entity_code_or_name=identity.symbol or entity_code_or_name or identity.display_name,
+        entity_identifier_type=identity.identifier_type,
+        raw_identifiers=list(identity.raw_identifiers),
+        normalized_status=identity.normalized_status,
+        source_signal_level=source_signal_level,
+        stance=stance,  # type: ignore[arg-type]
+        direction=direction,  # type: ignore[arg-type]
+        signal_type=signal_type,  # type: ignore[arg-type]
+        judgment_type=judgment_type,  # type: ignore[arg-type]
+        conviction=conviction,  # type: ignore[arg-type]
+        evidence_type=evidence_type,  # type: ignore[arg-type]
+        logic=str(raw.get("logic") or raw.get("view_summary") or "").strip(),
+        evidence=str(raw.get("evidence") or "").strip(),
+        time_horizon=time_horizon,  # type: ignore[arg-type]
+        sort_order=order,
+        metadata=metadata,
+    )
+
+
 def _normalize_viewpoint(
     viewpoint: ViewpointRecord,
     *,
@@ -453,6 +619,49 @@ def _normalize_viewpoint(
     )
 
 
+def _normalize_crypto_viewpoint(
+    viewpoint: ViewpointRecord,
+    *,
+    order: int,
+    aliases: dict[str, CryptoIdentity],
+) -> ViewpointRecord | None:
+    if viewpoint.entity_type != "crypto_entity":
+        return None
+
+    identity = resolve_crypto_identity(
+        entity_name=viewpoint.entity_name,
+        entity_code_or_name=viewpoint.entity_code_or_name,
+        entity_identifier_type=viewpoint.entity_identifier_type,
+        raw_identifiers=viewpoint.raw_identifiers,
+        aliases=aliases,
+    )
+    if identity is None:
+        return None
+
+    metadata = dict(viewpoint.metadata)
+    metadata.update(
+        {
+            "raw_identifiers": list(identity.raw_identifiers),
+            "contract_addresses": list(identity.contract_addresses),
+            "x_accounts": list(identity.x_accounts),
+            "chain": identity.chain,
+        }
+    )
+
+    return viewpoint.model_copy(
+        update={
+            "entity_key": identity.asset_key,
+            "entity_name": identity.display_name,
+            "entity_code_or_name": identity.symbol or viewpoint.entity_code_or_name or identity.display_name,
+            "entity_identifier_type": identity.identifier_type,
+            "raw_identifiers": list(identity.raw_identifiers),
+            "normalized_status": identity.normalized_status,
+            "sort_order": order,
+            "metadata": metadata,
+        }
+    )
+
+
 def _normalize_extract(
     extract: NoteExtractRecord,
     aliases: dict[str, SecurityIdentity],
@@ -462,6 +671,32 @@ def _normalize_extract(
 
     for index, viewpoint in enumerate(extract.viewpoints):
         normalized = _normalize_viewpoint(viewpoint, order=len(normalized_viewpoints), aliases=aliases)
+        if normalized is None:
+            changed = True
+            continue
+        if normalized.model_dump(mode="json") != viewpoint.model_dump(mode="json"):
+            changed = True
+        normalized_viewpoints.append(normalized)
+
+    if not changed:
+        return extract, False
+
+    return extract.model_copy(update={"viewpoints": normalized_viewpoints}), True
+
+
+def _normalize_crypto_extract(
+    extract: NoteExtractRecord,
+    aliases: dict[str, CryptoIdentity],
+) -> tuple[NoteExtractRecord, bool]:
+    normalized_viewpoints: list[ViewpointRecord] = []
+    changed = False
+
+    for viewpoint in extract.viewpoints:
+        normalized = _normalize_crypto_viewpoint(
+            viewpoint,
+            order=len(normalized_viewpoints),
+            aliases=aliases,
+        )
         if normalized is None:
             changed = True
             continue
@@ -517,13 +752,19 @@ def _refresh_security_entities(
         store.ensure_security(identity)
 
 
-def _needs_reanalysis(note: RawNoteRecord, existing: dict[str, NoteExtractRecord]) -> bool:
+def _needs_reanalysis(
+    note: RawNoteRecord,
+    existing: dict[str, NoteExtractRecord],
+    *,
+    analysis_domain: str = "stock",
+) -> bool:
+    version = _analysis_version_for_domain(analysis_domain)
     current = existing.get(_note_key(note.platform, note.note_id))
     if current is None:
         return True
-    if current.analysis_version != ANALYSIS_VERSION:
+    if current.analysis_version != version:
         return True
-    if current.raw_response.get("analysis_version") != ANALYSIS_VERSION:
+    if current.raw_response.get("analysis_version") != version:
         return True
     return False
 
@@ -569,10 +810,16 @@ def _analyze_missing_notes(
     force: bool = False,
     progress_label: str | None = None,
     commit_each: bool = False,
+    analysis_domain: str = "stock",
 ) -> tuple[dict[str, NoteExtractRecord], list[NoteExtractRecord], list[str]]:
+    safe_domain = "crypto" if analysis_domain == "crypto" else "stock"
+    analysis_version = _analysis_version_for_domain(safe_domain)
     aliases = load_security_aliases(paths)
-    existing = store.get_analysis_map()
-    missing = notes if force else [note for note in notes if _needs_reanalysis(note, existing)]
+    crypto_aliases = load_crypto_aliases(paths) if safe_domain == "crypto" else {}
+    existing = store.get_analysis_map(analysis_domain=safe_domain)
+    missing = notes if force else [
+        note for note in notes if _needs_reanalysis(note, existing, analysis_domain=safe_domain)
+    ]
     created: list[NoteExtractRecord] = []
     errors: list[str] = []
     if not missing:
@@ -594,19 +841,23 @@ def _analyze_missing_notes(
             )
         try:
             result = client.generate_json(
-                build_note_extract_messages(note),
-                required_keys=NOTE_EXTRACT_REQUIRED_KEYS,
+                build_crypto_note_extract_messages(note) if safe_domain == "crypto" else build_note_extract_messages(note),
+                required_keys=CRYPTO_NOTE_EXTRACT_REQUIRED_KEYS if safe_domain == "crypto" else NOTE_EXTRACT_REQUIRED_KEYS,
                 max_tokens=4000,
             )
             payload = dict(result.parsed)
             viewpoints = []
             for viewpoint_index, raw_view in enumerate(_coerce_viewpoint_payloads(payload)):
-                parsed = _parse_viewpoint(raw_view, order=viewpoint_index, aliases=aliases)
+                parsed = (
+                    _parse_crypto_viewpoint(raw_view, order=viewpoint_index, aliases=crypto_aliases)
+                    if safe_domain == "crypto"
+                    else _parse_viewpoint(raw_view, order=viewpoint_index, aliases=aliases)
+                )
                 if parsed is not None:
                     viewpoints.append(parsed)
             summary_text = str(payload.get("summary_text") or "").strip() or _fallback_note_summary(note)
             raw_response = dict(payload)
-            raw_response["analysis_version"] = ANALYSIS_VERSION
+            raw_response["analysis_version"] = analysis_version
             extract = NoteExtractRecord(
                 platform=note.platform,
                 note_id=note.note_id,
@@ -620,7 +871,8 @@ def _analyze_missing_notes(
                 publish_time=note.publish_time,
                 date=note_date_key(note.publish_time, note.fetched_at),
                 extracted_at=now_iso(),
-                analysis_version=ANALYSIS_VERSION,
+                analysis_version=analysis_version,
+                analysis_domain=safe_domain,  # type: ignore[arg-type]
                 summary_text=summary_text,
                 key_points=_dedupe_preserve(
                     [str(item).strip() for item in (payload.get("key_points") or []) if str(item).strip()]
@@ -631,8 +883,14 @@ def _analyze_missing_notes(
                 usage=result.usage,
                 raw_response=raw_response,
             )
-            extract, _ = _normalize_extract(extract, aliases)
-            store.replace_content_analysis(extract, aliases=aliases)
+            if safe_domain == "stock":
+                extract, _ = _normalize_extract(extract, aliases)
+            store.replace_content_analysis(
+                extract,
+                aliases=aliases,
+                crypto_aliases=crypto_aliases,
+                analysis_domain=safe_domain,
+            )
             if commit_each and hasattr(store, "conn"):
                 store.conn.commit()
             existing[_note_key(extract.platform, extract.note_id)] = extract
@@ -653,7 +911,7 @@ def _analyze_missing_notes(
                     f"note_id={note.note_id} error={exc}",
                     flush=True,
                 )
-    refreshed = store.get_analysis_map()
+    refreshed = store.get_analysis_map(analysis_domain=safe_domain)
     return refreshed, created, errors
 
 
@@ -662,30 +920,55 @@ def _normalize_analysis_map_with_aliases(
     store: Any,
     extracts: dict[str, NoteExtractRecord],
     aliases: dict[str, SecurityIdentity],
+    crypto_aliases: dict[str, CryptoIdentity] | None = None,
+    analysis_domain: str = "stock",
 ) -> tuple[dict[str, NoteExtractRecord], int]:
+    if analysis_domain == "crypto":
+        normalized_extracts: dict[str, NoteExtractRecord] = {}
+        normalized_count = 0
+        alias_map = crypto_aliases or {}
+        for key, extract in extracts.items():
+            normalized, changed = _normalize_crypto_extract(extract, alias_map)
+            if changed:
+                store.replace_content_analysis(
+                    normalized,
+                    crypto_aliases=alias_map,
+                    analysis_domain=analysis_domain,
+                )
+                normalized_count += 1
+            normalized_extracts[key] = normalized
+        return normalized_extracts, normalized_count
     normalized_extracts: dict[str, NoteExtractRecord] = {}
     normalized_count = 0
     for key, extract in extracts.items():
         normalized, changed = _normalize_extract(extract, aliases)
         if changed:
-            store.replace_content_analysis(normalized, aliases=aliases)
+            store.replace_content_analysis(normalized, aliases=aliases, analysis_domain=analysis_domain)
             normalized_count += 1
         normalized_extracts[key] = normalized
     return normalized_extracts, normalized_count
 
 
-def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[AuthorDayViewpoint]:
+def _aggregate_author_day_viewpoints(
+    extracts: list[NoteExtractRecord],
+    *,
+    analysis_domain: str = "stock",
+) -> list[AuthorDayViewpoint]:
     aggregated: dict[tuple[str, str], AuthorDayViewpoint] = {}
     for extract in extracts:
         for viewpoint in extract.viewpoints:
-            if viewpoint.entity_type != "stock":
+            if analysis_domain == "crypto":
+                if viewpoint.entity_type != "crypto_entity":
+                    continue
+            elif viewpoint.entity_type != "stock":
                 continue
-            if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
-                continue
-            if viewpoint.direction not in {"positive", "negative"}:
-                continue
-            if viewpoint.judgment_type in INVALID_SIGNAL_JUDGMENT_TYPES:
-                continue
+            if analysis_domain != "crypto":
+                if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+                    continue
+                if viewpoint.direction not in {"positive", "negative"}:
+                    continue
+                if viewpoint.judgment_type in INVALID_SIGNAL_JUDGMENT_TYPES:
+                    continue
             key = (viewpoint.entity_type, viewpoint.entity_key)
             current = aggregated.get(key)
             if current is None:
@@ -693,6 +976,10 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
                     entity_type=viewpoint.entity_type,
                     entity_key=viewpoint.entity_key,
                     entity_name=viewpoint.entity_name,
+                    entity_identifier_type=viewpoint.entity_identifier_type,
+                    raw_identifiers=list(viewpoint.raw_identifiers),
+                    normalized_status=viewpoint.normalized_status,
+                    source_signal_level=viewpoint.source_signal_level,
                     stance=viewpoint.stance,
                     direction=viewpoint.direction,
                     signal_type=viewpoint.signal_type,
@@ -704,6 +991,7 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
                     note_ids=[],
                     note_urls=[],
                     time_horizons=[],
+                    metadata=dict(viewpoint.metadata),
                 )
                 aggregated[key] = current
             else:
@@ -732,6 +1020,10 @@ def _aggregate_author_day_viewpoints(extracts: list[NoteExtractRecord]) -> list[
                 current.note_urls.append(extract.note_url)
             if viewpoint.time_horizon not in current.time_horizons:
                 current.time_horizons.append(viewpoint.time_horizon)
+            if analysis_domain == "crypto":
+                current.raw_identifiers = _dedupe_preserve([*current.raw_identifiers, *viewpoint.raw_identifiers])
+                current.source_signal_level = "strong" if "strong" in {current.source_signal_level, viewpoint.source_signal_level} else "weak"
+                current.metadata = {**current.metadata, **viewpoint.metadata}
 
     return sorted(
         aggregated.values(),
@@ -755,9 +1047,12 @@ def _build_author_day_record(
     extracts: list[NoteExtractRecord],
     existing: AuthorDayRecord | None,
     crawl_error: str | None,
+    analysis_domain: str = "stock",
 ) -> AuthorDayRecord:
-    day_viewpoints = _aggregate_author_day_viewpoints(extracts)
+    safe_domain = "crypto" if analysis_domain == "crypto" else "stock"
+    day_viewpoints = _aggregate_author_day_viewpoints(extracts, analysis_domain=safe_domain)
     mentioned_stocks = [item.entity_name for item in day_viewpoints if item.entity_type == "stock"]
+    mentioned_crypto = [item.entity_name for item in day_viewpoints if item.entity_type == "crypto_entity"]
     mentioned_themes: list[str] = []
     notes_payload = [
         AuthorTimelineNote(
@@ -781,7 +1076,9 @@ def _build_author_day_record(
         }
     )
 
-    if status == "no_update_today":
+    if safe_domain == "crypto":
+        summary_text = ""
+    elif status == "no_update_today":
         summary_text = "当天无新内容。"
     elif status == "crawl_failed":
         summary_text = f"本次抓取失败：{crawl_error or 'unknown error'}"
@@ -813,6 +1110,7 @@ def _build_author_day_record(
 
     return AuthorDayRecord(
         platform=platform,
+        analysis_domain=safe_domain,  # type: ignore[arg-type]
         date=date,
         account_name=account_name,
         profile_url=profile_url,
@@ -826,6 +1124,7 @@ def _build_author_day_record(
         viewpoints=day_viewpoints,
         mentioned_stocks=mentioned_stocks,
         mentioned_themes=mentioned_themes,
+        mentioned_crypto=mentioned_crypto,
         content_hash=content_hash,
         updated_at=now_iso(),
     )
@@ -838,6 +1137,7 @@ def _materialize_author_timelines(
     extracts: dict[str, NoteExtractRecord],
     crawl_results: list[CrawlAccountResult],
     progress_label: str | None = None,
+    analysis_domain: str = "stock",
 ) -> tuple[list[AuthorDayRecord], list[str]]:
     errors: list[str] = []
     updated_records: list[AuthorDayRecord] = []
@@ -870,6 +1170,7 @@ def _materialize_author_timelines(
                 platform=crawl_result.platform,
                 account_name=crawl_result.account_name,
                 date_key=date,
+                analysis_domain=analysis_domain,
             )
 
             if date == today and crawl_result.status == "failed":
@@ -895,6 +1196,7 @@ def _materialize_author_timelines(
                     extracts=day_extracts,
                     existing=existing,
                     crawl_error=crawl_error,
+                    analysis_domain=analysis_domain,
                 )
                 store.upsert_author_daily_summary(record, error_text=crawl_error)
                 if existing is None or existing.model_dump(mode="json") != record.model_dump(mode="json") or date == today:
@@ -1004,6 +1306,92 @@ def _materialize_stock_timelines(
                 updated_at=now_iso(),
             )
             store.upsert_security_daily_view(security_key, record)
+            updated_records.append(record)
+    return updated_records
+
+
+def _materialize_crypto_timelines(
+    *,
+    store: InsightStore,
+    extracts: dict[str, NoteExtractRecord],
+    progress_label: str | None = None,
+) -> list[CryptoDayRecord]:
+    grouped: dict[str, dict[str, list[tuple[NoteExtractRecord, ViewpointRecord]]]] = {}
+    display_names: dict[str, str] = {}
+    symbols: dict[str, str | None] = {}
+    for extract in extracts.values():
+        for viewpoint in extract.viewpoints:
+            if viewpoint.entity_type != "crypto_entity":
+                continue
+            display_names[viewpoint.entity_key] = viewpoint.entity_name
+            symbols[viewpoint.entity_key] = viewpoint.entity_code_or_name
+            grouped.setdefault(viewpoint.entity_key, {}).setdefault(extract.date, []).append((extract, viewpoint))
+
+    if hasattr(store, "clear_crypto_entity_daily_views"):
+        store.clear_crypto_entity_daily_views()
+    updated_records: list[CryptoDayRecord] = []
+    total_days = sum(len(date_map) for date_map in grouped.values())
+    processed_days = 0
+    for asset_key, date_map in grouped.items():
+        for date, items in date_map.items():
+            processed_days += 1
+            if progress_label:
+                print(
+                    f"{progress_label} materializing_crypto_day={processed_days}/{total_days} "
+                    f"asset={asset_key} date={date}",
+                    flush=True,
+                )
+            author_views: list[EntityAuthorView] = []
+            for extract, viewpoint in sorted(
+                items,
+                key=lambda item: (
+                    item[0].account_name,
+                    item[0].publish_time or "",
+                    item[0].note_id,
+                    item[1].sort_order,
+                ),
+            ):
+                author_views.append(
+                    EntityAuthorView(
+                        platform=extract.platform,
+                        account_name=extract.account_name,
+                        author_nickname=extract.author_nickname,
+                        entity_identifier_type=viewpoint.entity_identifier_type,
+                        raw_identifiers=list(viewpoint.raw_identifiers),
+                        normalized_status=viewpoint.normalized_status,
+                        source_signal_level=viewpoint.source_signal_level,
+                        stance=viewpoint.stance,
+                        direction=viewpoint.direction,
+                        signal_type=viewpoint.signal_type,
+                        judgment_type=viewpoint.judgment_type,
+                        conviction=viewpoint.conviction,
+                        evidence_type=viewpoint.evidence_type,
+                        logic=viewpoint.logic,
+                        note_ids=[extract.note_id],
+                        note_urls=[extract.note_url] if extract.note_url else [],
+                        evidence=[viewpoint.evidence] if viewpoint.evidence else [],
+                        time_horizons=[viewpoint.time_horizon],
+                        metadata=dict(viewpoint.metadata),
+                    )
+                )
+            record = CryptoDayRecord(
+                date=date,
+                asset_key=asset_key,
+                display_name=display_names.get(asset_key) or asset_key,
+                symbol=symbols.get(asset_key),
+                mention_count=len(items),
+                author_views=author_views,
+                content_hash=_hash_payload(
+                    {
+                        "asset_key": asset_key,
+                        "date": date,
+                        "author_views": [item.model_dump(mode="json") for item in author_views],
+                    }
+                ),
+                updated_at=now_iso(),
+            )
+            if hasattr(store, "upsert_crypto_entity_daily_view"):
+                store.upsert_crypto_entity_daily_view(asset_key, record)
             updated_records.append(record)
     return updated_records
 
@@ -1292,14 +1680,17 @@ def run_analysis_with_store(
     market_data_stock_keys: list[str] | None = None,
     market_data_days: int | None = None,
     market_data_max_securities: int | None = None,
+    analysis_domain: str = "stock",
 ) -> AnalysisRunSummary:
+    safe_domain = "crypto" if analysis_domain == "crypto" else "stock"
     run_at = now_iso()
-    run_id = run_at.replace(":", "").replace("+08:00", "").replace("-", "")
+    run_id = f"{safe_domain}-" + run_at.replace(":", "").replace("+08:00", "").replace("-", "")
     aliases = load_security_aliases(paths)
+    crypto_aliases = load_crypto_aliases(paths) if safe_domain == "crypto" else {}
     progress_label = "[public-reanalyze]" if force_reanalysis else None
 
     if clear_analysis_outputs and hasattr(store, "clear_analysis_outputs"):
-        store.clear_analysis_outputs()
+        store.clear_analysis_outputs(analysis_domain=safe_domain)
         if hasattr(store, "conn"):
             store.conn.commit()
         if progress_label:
@@ -1312,6 +1703,7 @@ def run_analysis_with_store(
         force=force_reanalysis,
         progress_label=progress_label,
         commit_each=force_reanalysis,
+        analysis_domain=safe_domain,
     )
     note_scope = {_note_key(note.platform, note.note_id) for note in notes}
     extracts = {
@@ -1323,22 +1715,35 @@ def run_analysis_with_store(
         store=store,
         extracts=extracts,
         aliases=aliases,
+        crypto_aliases=crypto_aliases,
+        analysis_domain=safe_domain,
     )
-    _refresh_security_entities(store=store, extracts=extracts, aliases=aliases)
+    if safe_domain == "stock":
+        _refresh_security_entities(store=store, extracts=extracts, aliases=aliases)
     author_records, author_errors = _materialize_author_timelines(
         store=store,
         notes=notes,
         extracts=extracts,
         crawl_results=crawl_results,
         progress_label=progress_label,
+        analysis_domain=safe_domain,
     )
     if force_reanalysis and hasattr(store, "conn"):
         store.conn.commit()
-    stock_records = _materialize_stock_timelines(
-        store=store,
-        extracts=extracts,
-        progress_label=progress_label,
-    )
+    stock_records: list[StockDayRecord] = []
+    crypto_records: list[CryptoDayRecord] = []
+    if safe_domain == "crypto":
+        crypto_records = _materialize_crypto_timelines(
+            store=store,
+            extracts=extracts,
+            progress_label=progress_label,
+        )
+    else:
+        stock_records = _materialize_stock_timelines(
+            store=store,
+            extracts=extracts,
+            progress_label=progress_label,
+        )
     if force_reanalysis and hasattr(store, "conn"):
         store.conn.commit()
     selected_market_data_stock_keys = (
@@ -1346,34 +1751,40 @@ def run_analysis_with_store(
             stock_records,
             days=market_data_days or LIGHT_MARKET_DATA_WINDOW_DAYS,
         )
-        if market_data_stock_keys is None and market_data_days is not None
+        if safe_domain == "stock" and market_data_stock_keys is None and market_data_days is not None
         else market_data_stock_keys
     )
-    market_prices, market_errors = _refresh_stock_market_data(
-        store=store,
-        stock_records=stock_records,
-        market_data_stock_keys=selected_market_data_stock_keys,
-        market_data_days=market_data_days,
-        market_data_max_securities=market_data_max_securities,
-        progress_label=progress_label,
-    )
-    theme_records = _materialize_theme_timelines(
-        store=store,
-        extracts=extracts,
-    )
-    store.prune_orphan_securities()
+    if safe_domain == "crypto":
+        market_prices, market_errors = 0, []
+        theme_records: list[ThemeDayRecord] = []
+    else:
+        market_prices, market_errors = _refresh_stock_market_data(
+            store=store,
+            stock_records=stock_records,
+            market_data_stock_keys=selected_market_data_stock_keys,
+            market_data_days=market_data_days,
+            market_data_max_securities=market_data_max_securities,
+            progress_label=progress_label,
+        )
+        theme_records = _materialize_theme_timelines(
+            store=store,
+            extracts=extracts,
+        )
+        store.prune_orphan_securities()
     if force_reanalysis and hasattr(store, "conn"):
         store.conn.commit()
 
     snapshot = AnalysisSnapshot(
         run_id=run_id,
         run_at=run_at,
+        analysis_domain=safe_domain,  # type: ignore[arg-type]
         processed_note_ids=[_note_key(note.platform, note.note_id) for note in notes],
         crawl_results=crawl_results,
         note_extracts=created_extracts,
         author_summaries=author_records,
         stock_views=stock_records,
         theme_views=theme_records,
+        crypto_views=crypto_records,
         errors=[*crawl_errors, *extract_errors, *author_errors],
     )
     snapshot_path = paths.ai_snapshots_dir / f"{run_id}.json"
@@ -1386,6 +1797,7 @@ def run_analysis_with_store(
         errors=snapshot.errors,
         snapshot_path=str(snapshot_path),
         crawl_results=crawl_results,
+        analysis_domain=safe_domain,
     )
 
     exit_code = 0 if not snapshot.errors else 1

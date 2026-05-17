@@ -9,6 +9,9 @@ import type {
   AuthorDetailData,
   AuthorListItem,
   AuthorTimelineDay,
+  CryptoMatrixAsset,
+  CryptoMatrixCell,
+  CryptoMatrixData,
   EntityAuthorView,
   EntityDetailData,
   EntityListItem,
@@ -42,6 +45,7 @@ import { makeAccountKey } from "@/lib/utils";
 import { normalizeXUsername } from "@/lib/x";
 
 type JsonRecord = Record<string, unknown>;
+type Domain = "stock" | "crypto";
 const STOCK_KLINE_WINDOW_DAYS = 180;
 
 function assertNoError(error: unknown) {
@@ -99,12 +103,15 @@ function normalizeStringArray(value: unknown) {
 function normalizeViewpoint(rawValue: unknown): AuthorDayViewpoint | null {
   const raw = asRecord(rawValue);
   const stance = asString(raw.stance, "unknown") as ViewStance;
-  if (stance === "mention_only") return null;
 
   return {
     entityType: asString(raw.entity_type ?? raw.entityType, "other") as ViewEntityType,
     entityKey: asString(raw.entity_key ?? raw.entityKey),
     entityName: asString(raw.entity_name ?? raw.entityName),
+    entityIdentifierType: asString(raw.entity_identifier_type ?? raw.entityIdentifierType),
+    rawIdentifiers: normalizeStringArray(raw.raw_identifiers ?? raw.rawIdentifiers),
+    normalizedStatus: asString(raw.normalized_status ?? raw.normalizedStatus),
+    sourceSignalLevel: asString(raw.source_signal_level ?? raw.sourceSignalLevel),
     stance,
     direction: asString(raw.direction, "unknown") as ViewDirection,
     signalType: asString(raw.signal_type ?? raw.signalType, "unknown") as ViewSignalType,
@@ -116,6 +123,7 @@ function normalizeViewpoint(rawValue: unknown): AuthorDayViewpoint | null {
     noteIds: normalizeStringArray(raw.note_ids ?? raw.noteIds),
     noteUrls: normalizeStringArray(raw.note_urls ?? raw.noteUrls),
     timeHorizons: normalizeStringArray(raw.time_horizons ?? raw.timeHorizons),
+    metadata: asRecord(raw.metadata),
   };
 }
 
@@ -127,6 +135,10 @@ function normalizeEntityAuthorView(rawValue: unknown): EntityAuthorView {
     platform: asString(raw.platform, "x"),
     account_name: accountName,
     author_nickname: asString(raw.author_nickname ?? raw.display_name),
+    entity_identifier_type: asString(raw.entity_identifier_type),
+    raw_identifiers: normalizeStringArray(raw.raw_identifiers),
+    normalized_status: asString(raw.normalized_status),
+    source_signal_level: asString(raw.source_signal_level),
     stance: asString(raw.stance, "unknown") as ViewStance,
     direction: asString(raw.direction, "unknown") as ViewDirection,
     signal_type: asString(raw.signal_type, "unknown") as ViewSignalType,
@@ -138,6 +150,7 @@ function normalizeEntityAuthorView(rawValue: unknown): EntityAuthorView {
     note_urls: normalizeStringArray(raw.note_urls),
     evidence: normalizeStringArray(raw.evidence),
     time_horizons: normalizeStringArray(raw.time_horizons),
+    metadata: asRecord(raw.metadata),
   };
 }
 
@@ -183,6 +196,29 @@ function normalizeStockMatrixCell(rawValue: unknown): StockMatrixCell {
   };
 }
 
+function normalizeCryptoMatrixAsset(rawValue: unknown): CryptoMatrixAsset {
+  const raw = asRecord(rawValue);
+  return {
+    assetKey: asString(raw.asset_key ?? raw.assetKey),
+    displayName: asString(raw.display_name ?? raw.displayName ?? raw.asset_key ?? raw.assetKey),
+    ticker: asNullableString(raw.ticker),
+    market: asNullableString(raw.market),
+    mentionCount: asNumber(raw.mention_count ?? raw.mentionCount),
+    latestDate: raw.latest_date || raw.latestDate ? String(raw.latest_date || raw.latestDate) : null,
+  };
+}
+
+function normalizeCryptoMatrixCell(rawValue: unknown): CryptoMatrixCell {
+  const raw = asRecord(rawValue);
+  const accountName = asString(raw.account_name ?? raw.accountName).trim().replace(/^@/, "").toLowerCase();
+  return {
+    assetKey: asString(raw.asset_key ?? raw.assetKey),
+    accountName,
+    authorNickname: asString(raw.author_nickname ?? raw.authorNickname, accountName),
+    views: asArray(raw.views).map(normalizeStockMatrixView),
+  };
+}
+
 function normalizeAuthorDay(rawValue: unknown): AuthorTimelineDay {
   const raw = asRecord(rawValue);
   const viewpoints = asArray(raw.viewpoints)
@@ -207,6 +243,7 @@ function normalizeAuthorDay(rawValue: unknown): AuthorTimelineDay {
     viewpoints,
     mentionedStocks: normalizeStringArray(raw.mentionedStocks ?? raw.mentioned_stocks),
     mentionedThemes: normalizeStringArray(raw.mentionedThemes ?? raw.mentioned_themes),
+    mentionedCrypto: normalizeStringArray(raw.mentionedCrypto ?? raw.mentioned_crypto),
     updatedAt: asString(raw.updatedAt ?? raw.updated_at),
   };
 }
@@ -397,10 +434,12 @@ export async function listAccounts(
   supabase: SupabaseClient,
   profile: UserProfile | null,
   query = "",
+  domain: Domain = "stock",
 ): Promise<AccountListItem[]> {
   const { data, error } = await supabase.rpc("list_public_accounts", {
     query_arg: query,
     limit_arg: 100,
+    domain_arg: domain,
   });
   assertNoError(error);
 
@@ -414,10 +453,12 @@ export async function listVisibleAuthors(
   profile: UserProfile | null,
   query = "",
   limit = 100,
+  domain: Domain = "stock",
 ): Promise<AuthorListItem[]> {
   const { data, error } = await supabase.rpc("list_visible_authors", {
     query_arg: query,
     limit_arg: profile ? limit : 1,
+    domain_arg: domain,
   });
   assertNoError(error);
   return (data || []).map(mapAuthorRow);
@@ -428,12 +469,14 @@ export async function getVisibleAuthorTimeline(
   profile: UserProfile | null,
   accountId: string,
   page = 1,
+  domain: Domain = "stock",
 ): Promise<AuthorDetailData | null> {
   if (!accountId) return null;
   const { data, error } = await supabase.rpc("get_visible_author_timeline", {
     account_id_arg: accountId,
     page_arg: page,
     page_size_arg: profile ? 20 : 3,
+    domain_arg: domain,
   });
   assertNoError(error);
 
@@ -457,12 +500,21 @@ export async function getVisibleAuthorTimeline(
 
 export async function listEntities(
   supabase: SupabaseClient,
-  type: "stock",
+  type: "stock" | "crypto",
   profile: UserProfile | null,
   query = "",
   limit = 100,
   sort: EntitySortKey = "date_desc",
 ): Promise<EntityListItem[]> {
+  if (type === "crypto") {
+    const { data, error } = await supabase.rpc("list_visible_crypto_entities", {
+      query_arg: query,
+      limit_arg: profile ? limit : 1,
+      sort_arg: sort,
+    });
+    assertNoError(error);
+    return (data || []).map(mapEntityRow);
+  }
   const { data, error } = await supabase.rpc("list_visible_entities", {
     entity_type_arg: type,
     query_arg: query,
@@ -476,11 +528,31 @@ export async function listEntities(
 export async function getVisibleEntityTimeline(
   supabase: SupabaseClient,
   profile: UserProfile | null,
-  type: "stock",
+  type: "stock" | "crypto",
   entityKey: string,
   page = 1,
 ): Promise<EntityDetailData | null> {
   if (!entityKey) return null;
+  if (type === "crypto") {
+    const { data, error } = await supabase.rpc("get_visible_crypto_entity_timeline", {
+      entity_key_arg: entityKey,
+      page_arg: page,
+      page_size_arg: profile ? 20 : 3,
+    });
+    assertNoError(error);
+
+    const payload = asRecord(data);
+    if (!payload.meta) return null;
+    const meta = asRecord(payload.meta);
+    return {
+      key: asString(meta.key ?? meta.entityKey ?? meta.entity_key, entityKey),
+      displayName: asString(meta.displayName ?? meta.display_name, entityKey),
+      ticker: asNullableString(meta.ticker),
+      market: asNullableString(meta.market),
+      timeline: normalizePaged(payload.timeline, normalizeEntityDay),
+      chart: null,
+    } satisfies EntityDetailData;
+  }
   const { data, error } = await supabase.rpc("get_visible_entity_timeline", {
     entity_type_arg: type,
     entity_key_arg: entityKey,
@@ -501,6 +573,26 @@ export async function getVisibleEntityTimeline(
     timeline: normalizePaged(payload.timeline, normalizeEntityDay),
     chart: type === "stock" ? normalizeStockChart(payload.chart) : null,
   } satisfies EntityDetailData;
+}
+
+export async function getVisibleCryptoMatrix(
+  supabase: SupabaseClient,
+  endDate: string | null = null,
+): Promise<CryptoMatrixData> {
+  const { data, error } = await supabase.rpc("get_visible_crypto_matrix", {
+    end_date_arg: endDate || null,
+  });
+  assertNoError(error);
+  const payload = asRecord(data);
+  return {
+    startDate: asNullableString(payload.start_date ?? payload.startDate),
+    endDate: asNullableString(payload.end_date ?? payload.endDate),
+    previousEndDate: asNullableString(payload.previous_end_date ?? payload.previousEndDate),
+    nextEndDate: asNullableString(payload.next_end_date ?? payload.nextEndDate),
+    authors: asArray(payload.authors).map(normalizeStockMatrixAuthor),
+    assets: asArray(payload.assets).map(normalizeCryptoMatrixAsset),
+    cells: asArray(payload.cells).map(normalizeCryptoMatrixCell),
+  };
 }
 
 export async function getVisibleStockMatrix(
@@ -549,12 +641,14 @@ export async function getMarketTopRisk(
 export async function listMyRequests(
   supabase: SupabaseClient,
   profile: UserProfile | null,
+  domain: Domain = "stock",
 ): Promise<RequestListItem[]> {
   if (!profile) return [];
   const { data, error } = await supabase
     .from("account_requests")
     .select("id, status, raw_input, normalized_username, created_at")
     .eq("requester_id", profile.id)
+    .eq("domain", domain)
     .order("created_at", { ascending: false })
     .limit(20);
   assertNoError(error);
@@ -569,11 +663,12 @@ export async function listMyRequests(
   );
 }
 
-export async function submitAccount(supabase: SupabaseClient, rawInput: string) {
+export async function submitAccount(supabase: SupabaseClient, rawInput: string, domain: Domain = "stock") {
   const username = normalizeXUsername(rawInput);
   const { error } = await supabase.rpc("submit_x_account", {
     raw_input_arg: rawInput,
     username_arg: username,
+    domain_arg: domain,
   });
   assertNoError(error);
 }
@@ -583,20 +678,27 @@ export async function setSubscription(
   profile: UserProfile,
   accountId: string,
   subscribed: boolean,
+  domain: Domain = "stock",
 ) {
   if (subscribed) {
     const { error } = await supabase.from("user_subscriptions").upsert(
       {
         account_id: accountId,
         user_id: profile.id,
+        domain,
       },
-      { onConflict: "user_id,account_id" },
+      { onConflict: "user_id,account_id,domain" },
     );
     assertNoError(error);
     return;
   }
 
-  const { error } = await supabase.from("user_subscriptions").delete().eq("user_id", profile.id).eq("account_id", accountId);
+  const { error } = await supabase
+    .from("user_subscriptions")
+    .delete()
+    .eq("user_id", profile.id)
+    .eq("account_id", accountId)
+    .eq("domain", domain);
   assertNoError(error);
 }
 
@@ -604,11 +706,12 @@ export async function listFeed(
   supabase: SupabaseClient,
   profile: UserProfile | null,
   limit = 40,
+  domain: Domain = "stock",
 ): Promise<FeedDay[]> {
-  const authors = await listVisibleAuthors(supabase, profile, "", limit);
+  const authors = await listVisibleAuthors(supabase, profile, "", limit, domain);
   const items = await Promise.all(
     authors.slice(0, Math.min(authors.length, limit)).map(async (author) => {
-      const detail = await getVisibleAuthorTimeline(supabase, profile, author.accountId, 1);
+      const detail = await getVisibleAuthorTimeline(supabase, profile, author.accountId, 1, domain);
       return { author, detail };
     }),
   );
@@ -632,24 +735,32 @@ export async function listFeed(
   );
 }
 
-export async function listAdminDashboard(supabase: SupabaseClient) {
+export async function listAdminDashboard(supabase: SupabaseClient, domain: Domain = "stock") {
   const [requests, accountCount, approvedAccounts, jobs] = await Promise.all([
     supabase
       .from("account_requests")
       .select("id, raw_input, normalized_username, created_at, requester_id, x_accounts(id, username, display_name, profile_url, status)")
       .eq("status", "pending")
+      .eq("domain", domain)
       .order("created_at", { ascending: true })
       .limit(50),
-    supabase.from("x_accounts").select("id", { count: "exact" }).eq("status", "approved"),
     supabase
-      .from("x_accounts")
-      .select("id, username, display_name, profile_url, backfill_completed_at")
+      .from("account_domains")
+      .select("account_id", { count: "exact" })
+      .eq("domain", domain)
+      .eq("status", "approved")
+      .limit(1),
+    supabase
+      .from("account_domains")
+      .select("backfill_completed_at, x_accounts(id, username, display_name, profile_url)")
+      .eq("domain", domain)
       .eq("status", "approved")
       .order("approved_at", { ascending: false, nullsFirst: false })
       .limit(100),
     supabase
       .from("crawl_jobs")
       .select("id, kind, status, summary, error_text, created_at, finished_at")
+      .eq("domain", domain)
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
@@ -667,15 +778,16 @@ export async function listAdminDashboard(supabase: SupabaseClient) {
 
   return {
     approvedCount: accountCount.count || 0,
-    approvedAccounts: (approvedAccounts.data || []).map(
-      (item: any): AdminAccountItem => ({
-        id: String(item.id),
-        username: String(item.username),
-        displayName: String(item.display_name || item.username),
-        profileUrl: String(item.profile_url || ""),
+    approvedAccounts: (approvedAccounts.data || []).map((item: any): AdminAccountItem => {
+      const account = Array.isArray(item.x_accounts) ? item.x_accounts[0] : item.x_accounts;
+      return {
+        id: String(account?.id || item.account_id || ""),
+        username: String(account?.username || ""),
+        displayName: String(account?.display_name || account?.username || ""),
+        profileUrl: String(account?.profile_url || ""),
         backfillCompletedAt: item.backfill_completed_at ? String(item.backfill_completed_at) : null,
-      }),
-    ),
+      };
+    }),
     jobs: (jobs.data || []).map(
       (item: any): AdminJobItem => ({
         id: String(item.id),
@@ -717,12 +829,12 @@ export async function rejectRequest(supabase: SupabaseClient, requestId: string)
   assertNoError(error);
 }
 
-export async function disableAccount(supabase: SupabaseClient, accountId: string) {
-  const { error } = await supabase.rpc("disable_x_account", { account_id_arg: accountId });
+export async function disableAccount(supabase: SupabaseClient, accountId: string, domain: Domain = "stock") {
+  const { error } = await supabase.rpc("disable_x_account", { account_id_arg: accountId, domain_arg: domain });
   assertNoError(error);
 }
 
-export async function enqueueManualCrawl(supabase: SupabaseClient) {
-  const { error } = await supabase.rpc("enqueue_manual_crawl");
+export async function enqueueManualCrawl(supabase: SupabaseClient, domain: Domain = "stock") {
+  const { error } = await supabase.rpc("enqueue_manual_crawl", { domain_arg: domain });
   assertNoError(error);
 }

@@ -7,13 +7,16 @@ import { viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 
 export function EntityDayCard({
   day,
+  domain = "stock",
 }: {
   day: {
     date: string;
     mentionCount: number;
     authorViews: EntityAuthorView[];
   };
+  domain?: "stock" | "crypto";
 }) {
+  const authorBase = domain === "crypto" ? "/crypto/feed" : "/feed";
   return (
     <Card>
       <CardHeader className="gap-4">
@@ -34,14 +37,14 @@ export function EntityDayCard({
             <span>逻辑</span>
             <span>来源</span>
           </div>
-          {day.authorViews.map((view) => (
+          {day.authorViews.map((view, index) => (
             <div
-              key={`${day.date}-${view.platform}-${view.account_name}`}
+              key={`${day.date}-${view.platform}-${view.account_name}-${view.note_ids.join(",")}-${index}`}
               className="grid gap-3 border-t border-[color:var(--border)] bg-[color:var(--panel)] px-4 py-4 first:border-t-0 md:grid-cols-[180px_128px_minmax(0,1fr)_112px] md:gap-4"
             >
               <div className="space-y-2">
                 <Link
-                  href={`/feed?q=${encodeURIComponent(view.account_name || view.author_nickname)}`}
+                  href={`${authorBase}?q=${encodeURIComponent(view.account_name || view.author_nickname)}`}
                   className="text-base font-semibold underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
                 >
                   {view.account_name || view.author_nickname}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -13,6 +14,8 @@ from psycopg.types.json import Jsonb
 from .database import json_loads
 from .models import (
     AuthorDayRecord,
+    CryptoDayRecord,
+    CryptoEntityIdentity,
     CrawlAccountResult,
     MarketTopRiskSnapshot,
     NoteExtractRecord,
@@ -22,6 +25,7 @@ from .models import (
     ThemeDayRecord,
     ViewpointRecord,
 )
+from .crypto_aliases import CryptoIdentity
 from .security_aliases import SecurityIdentity, resolve_security_identity
 
 
@@ -61,6 +65,22 @@ def _normalize_username(value: str) -> str:
 
 def _json(value: Any) -> Jsonb:
     return Jsonb(value)
+
+
+def _normalize_domain(value: str | None) -> str:
+    return "crypto" if value == "crypto" else "stock"
+
+
+_CRYPTO_SYMBOL_RE = re.compile(r"^\$?[A-Za-z][A-Za-z0-9_]{1,20}$")
+
+
+def _crypto_symbol(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip()
+    if not _CRYPTO_SYMBOL_RE.fullmatch(cleaned):
+        return None
+    return cleaned.lstrip("$").upper()
 
 
 @dataclass(slots=True)
@@ -212,7 +232,13 @@ class PostgresInsightStore:
             result.append(RawNoteRecord.model_validate(payload))
         return result
 
-    def get_analysis_map(self, *, platform: str | None = None) -> dict[str, NoteExtractRecord]:
+    def get_analysis_map(
+        self,
+        *,
+        platform: str | None = None,
+        analysis_domain: str = "stock",
+    ) -> dict[str, NoteExtractRecord]:
+        safe_domain = _normalize_domain(analysis_domain)
         sql = """
             SELECT
               c.id AS content_id,
@@ -228,6 +254,7 @@ class PostgresInsightStore:
               c.publish_time,
               ca.date_key AS date,
               ca.extracted_at,
+              ca.analysis_domain,
               ca.summary_text,
               ca.key_points_json,
               ca.model_name,
@@ -238,9 +265,10 @@ class PostgresInsightStore:
             JOIN content_items c ON c.id = ca.content_id
             JOIN x_accounts a ON a.id = c.account_id
         """
-        params: list[Any] = []
+        params: list[Any] = [safe_domain]
+        sql += " WHERE ca.analysis_domain = %s"
         if platform:
-            sql += " WHERE c.platform = %s"
+            sql += " AND c.platform = %s"
             params.append(platform)
         rows = self.conn.execute(sql, params).fetchall()
         result: dict[str, NoteExtractRecord] = {}
@@ -261,12 +289,18 @@ class PostgresInsightStore:
                   logic,
                   evidence,
                   time_horizon,
-                  sort_order
+                  sort_order,
+                  metadata_json,
+                  COALESCE(metadata_json ->> 'entity_identifier_type', 'unknown') AS entity_identifier_type,
+                  COALESCE(metadata_json -> 'raw_identifiers', '[]'::jsonb) AS raw_identifiers,
+                  COALESCE(metadata_json ->> 'normalized_status', 'canonical') AS normalized_status,
+                  COALESCE(metadata_json ->> 'source_signal_level', 'strong') AS source_signal_level
                 FROM content_viewpoints
                 WHERE content_id = %s
+                  AND analysis_domain = %s
                 ORDER BY sort_order ASC, id ASC
                 """,
-                (row["content_id"],),
+                (row["content_id"], safe_domain),
             ).fetchall()
             payload = row["raw_response_json"] or {}
             result[f"{row['platform']}::{row['note_id']}"] = NoteExtractRecord(
@@ -283,9 +317,18 @@ class PostgresInsightStore:
                 date=str(row["date"]),
                 extracted_at=str(row["extracted_at"]),
                 analysis_version=str(payload.get("analysis_version") or "legacy"),
+                analysis_domain=safe_domain,  # type: ignore[arg-type]
                 summary_text=str(row["summary_text"] or ""),
                 key_points=row["key_points_json"] or [],
-                viewpoints=[ViewpointRecord.model_validate(dict(item)) for item in viewpoint_rows],
+                viewpoints=[
+                    ViewpointRecord.model_validate(
+                        {
+                            **dict(item),
+                            "metadata": dict(item).get("metadata_json") or {},
+                        }
+                    )
+                    for item in viewpoint_rows
+                ],
                 model_name=row["model_name"],
                 request_id=row["request_id"],
                 usage=row["usage_json"] or {},
@@ -357,11 +400,82 @@ class PostgresInsightStore:
             raise RuntimeError(f"Failed to upsert theme: {theme_key}")
         return str(row["id"])
 
+    def ensure_crypto_entity(self, identity: CryptoIdentity | CryptoEntityIdentity, alias_name: str | None = None) -> str:
+        row = self.conn.execute(
+            "SELECT id, aliases_json, raw_identifiers_json, contract_addresses_json, x_accounts_json FROM crypto_entities WHERE asset_key = %s",
+            (identity.asset_key,),
+        ).fetchone()
+        aliases = [] if row is None else list(row["aliases_json"] or [])
+        raw_identifiers = [] if row is None else list(row["raw_identifiers_json"] or [])
+        contract_addresses = [] if row is None else list(row["contract_addresses_json"] or [])
+        x_accounts = [] if row is None else list(row["x_accounts_json"] or [])
+
+        def extend_unique(target: list[str], values: Any) -> None:
+            for raw in values or []:
+                cleaned = str(raw).strip()
+                if cleaned and cleaned not in target:
+                    target.append(cleaned)
+
+        if alias_name:
+            extend_unique(aliases, [alias_name])
+        extend_unique(raw_identifiers, getattr(identity, "raw_identifiers", []))
+        extend_unique(contract_addresses, getattr(identity, "contract_addresses", []))
+        extend_unique(x_accounts, getattr(identity, "x_accounts", []))
+        extend_unique(aliases, getattr(identity, "aliases", []))
+
+        row = self.conn.execute(
+            """
+            INSERT INTO crypto_entities (
+              asset_key, display_name, symbol, identifier_type, raw_identifiers_json,
+              contract_addresses_json, x_accounts_json, aliases_json, chain,
+              normalized_status, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT(asset_key) DO UPDATE SET
+              display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), crypto_entities.display_name),
+              symbol = COALESCE(NULLIF(EXCLUDED.symbol, ''), crypto_entities.symbol),
+              identifier_type = CASE
+                WHEN EXCLUDED.identifier_type IS NULL OR EXCLUDED.identifier_type IN ('', 'unknown')
+                  THEN crypto_entities.identifier_type
+                ELSE EXCLUDED.identifier_type
+              END,
+              raw_identifiers_json = EXCLUDED.raw_identifiers_json,
+              contract_addresses_json = EXCLUDED.contract_addresses_json,
+              x_accounts_json = EXCLUDED.x_accounts_json,
+              aliases_json = EXCLUDED.aliases_json,
+              chain = COALESCE(NULLIF(EXCLUDED.chain, ''), crypto_entities.chain),
+              normalized_status = CASE
+                WHEN crypto_entities.normalized_status = 'canonical' THEN crypto_entities.normalized_status
+                ELSE EXCLUDED.normalized_status
+              END,
+              updated_at = now()
+            RETURNING id
+            """,
+            (
+                identity.asset_key,
+                identity.display_name,
+                identity.symbol,
+                identity.identifier_type,
+                _json(raw_identifiers),
+                _json(contract_addresses),
+                _json(x_accounts),
+                _json(aliases),
+                identity.chain,
+                identity.normalized_status,
+            ),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"Failed to upsert crypto entity: {identity.asset_key}")
+        return str(row["id"])
+
     def replace_content_analysis(
         self,
         extract: NoteExtractRecord,
         aliases: dict[str, SecurityIdentity] | None = None,
+        crypto_aliases: dict[str, CryptoIdentity] | None = None,
+        analysis_domain: str = "stock",
     ) -> None:
+        safe_domain = _normalize_domain(analysis_domain)
         content_row = self.conn.execute(
             "SELECT id FROM content_items WHERE platform = %s AND external_content_id = %s",
             (extract.platform, extract.note_id),
@@ -372,11 +486,11 @@ class PostgresInsightStore:
         self.conn.execute(
             """
             INSERT INTO content_analyses (
-              content_id, date_key, extracted_at, summary_text, key_points_json,
+              content_id, analysis_domain, date_key, extracted_at, summary_text, key_points_json,
               raw_response_json, model_name, request_id, usage_json, updated_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-            ON CONFLICT(content_id) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT(content_id, analysis_domain) DO UPDATE SET
               date_key = EXCLUDED.date_key,
               extracted_at = EXCLUDED.extracted_at,
               summary_text = EXCLUDED.summary_text,
@@ -389,6 +503,7 @@ class PostgresInsightStore:
             """,
             (
                 content_id,
+                safe_domain,
                 extract.date,
                 extract.extracted_at,
                 extract.summary_text,
@@ -399,23 +514,31 @@ class PostgresInsightStore:
                 _json(extract.usage),
             ),
         )
-        self.conn.execute("DELETE FROM content_viewpoints WHERE content_id = %s", (content_id,))
-        self.conn.execute("DELETE FROM security_mentions WHERE content_id = %s", (content_id,))
+        self.conn.execute(
+            "DELETE FROM content_viewpoints WHERE content_id = %s AND analysis_domain = %s",
+            (content_id, safe_domain),
+        )
+        if safe_domain == "stock":
+            self.conn.execute("DELETE FROM security_mentions WHERE content_id = %s", (content_id,))
         alias_map = aliases or {}
 
         for index, viewpoint in enumerate(extract.viewpoints):
-            if viewpoint.entity_type != "stock":
+            if safe_domain == "stock" and viewpoint.entity_type != "stock":
                 continue
-            if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+            if safe_domain == "crypto" and viewpoint.entity_type != "crypto_entity":
                 continue
-            if viewpoint.direction not in {"positive", "negative"}:
-                continue
-            if viewpoint.judgment_type in {"factual_only", "quoted", "mention_only"}:
-                continue
+            if safe_domain == "stock":
+                if viewpoint.signal_type not in {"explicit_stance", "logic_based"}:
+                    continue
+                if viewpoint.direction not in {"positive", "negative"}:
+                    continue
+                if viewpoint.judgment_type in {"factual_only", "quoted", "mention_only"}:
+                    continue
             security_id: str | None = None
             theme_id: str | None = None
+            crypto_entity_id: str | None = None
             raw_name = (viewpoint.entity_code_or_name or viewpoint.entity_name).strip()
-            if viewpoint.entity_type == "stock":
+            if safe_domain == "stock" and viewpoint.entity_type == "stock":
                 identity = resolve_security_identity(
                     raw_name=raw_name,
                     stock_name=viewpoint.entity_name,
@@ -461,15 +584,54 @@ class PostgresInsightStore:
                         index,
                     ),
                 )
+            elif safe_domain == "crypto":
+                symbol = (
+                    _crypto_symbol(viewpoint.entity_code_or_name)
+                    if viewpoint.entity_identifier_type in {"symbol", "meme_ticker"}
+                    else None
+                )
+                contract_addresses = tuple(
+                    str(item).strip()
+                    for item in (viewpoint.metadata.get("contract_addresses") or [])
+                    if str(item).strip()
+                )
+                x_accounts = tuple(
+                    str(item).strip()
+                    for item in (viewpoint.metadata.get("x_accounts") or [])
+                    if str(item).strip()
+                )
+                chain = str(viewpoint.metadata.get("chain") or "").strip() or None
+                crypto_identity = CryptoIdentity(
+                    asset_key=viewpoint.entity_key,
+                    display_name=viewpoint.entity_name,
+                    symbol=symbol,
+                    identifier_type=viewpoint.entity_identifier_type,
+                    raw_identifiers=tuple(viewpoint.raw_identifiers),
+                    contract_addresses=contract_addresses,
+                    x_accounts=x_accounts,
+                    chain=chain,
+                    normalized_status=viewpoint.normalized_status,
+                )
+                crypto_entity_id = self.ensure_crypto_entity(crypto_identity, raw_name)
+            metadata = dict(viewpoint.metadata)
+            metadata.update(
+                {
+                    "entity_identifier_type": viewpoint.entity_identifier_type,
+                    "raw_identifiers": viewpoint.raw_identifiers,
+                    "normalized_status": viewpoint.normalized_status,
+                    "source_signal_level": viewpoint.source_signal_level,
+                }
+            )
             self.conn.execute(
                 """
                 INSERT INTO content_viewpoints (
-                  content_id, entity_type, entity_key, entity_name, entity_code_or_name,
+                  content_id, analysis_domain, entity_type, entity_key, entity_name, entity_code_or_name,
                   stance, direction, signal_type, judgment_type, conviction, evidence_type,
-                  logic, evidence, time_horizon, sort_order, security_id, theme_id, updated_at
+                  logic, evidence, time_horizon, sort_order, security_id, theme_id, crypto_entity_id,
+                  metadata_json, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-                ON CONFLICT(content_id, entity_type, entity_key, sort_order) DO UPDATE SET
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT(content_id, analysis_domain, entity_type, entity_key, sort_order) DO UPDATE SET
                   entity_name = EXCLUDED.entity_name,
                   entity_code_or_name = EXCLUDED.entity_code_or_name,
                   stance = EXCLUDED.stance,
@@ -483,10 +645,13 @@ class PostgresInsightStore:
                   time_horizon = EXCLUDED.time_horizon,
                   security_id = EXCLUDED.security_id,
                   theme_id = EXCLUDED.theme_id,
+                  crypto_entity_id = EXCLUDED.crypto_entity_id,
+                  metadata_json = EXCLUDED.metadata_json,
                   updated_at = now()
                 """,
                 (
                     content_id,
+                    safe_domain,
                     viewpoint.entity_type,
                     viewpoint.entity_key,
                     viewpoint.entity_name,
@@ -503,6 +668,8 @@ class PostgresInsightStore:
                     index,
                     security_id,
                     theme_id,
+                    crypto_entity_id,
+                    _json(metadata),
                 ),
             )
 
@@ -521,13 +688,17 @@ class PostgresInsightStore:
         )
         return int(cursor.rowcount or 0)
 
-    def clear_analysis_outputs(self) -> None:
-        self.conn.execute("DELETE FROM author_daily_summaries")
+    def clear_analysis_outputs(self, analysis_domain: str = "stock") -> None:
+        safe_domain = _normalize_domain(analysis_domain)
+        self.conn.execute("DELETE FROM author_daily_summaries WHERE analysis_domain = %s", (safe_domain,))
+        self.conn.execute("DELETE FROM content_viewpoints WHERE analysis_domain = %s", (safe_domain,))
+        self.conn.execute("DELETE FROM content_analyses WHERE analysis_domain = %s", (safe_domain,))
+        if safe_domain == "crypto":
+            self.conn.execute("DELETE FROM crypto_entity_daily_views")
+            return
         self.conn.execute("DELETE FROM security_daily_views")
         self.conn.execute("DELETE FROM theme_daily_views")
         self.conn.execute("DELETE FROM security_mentions")
-        self.conn.execute("DELETE FROM content_viewpoints")
-        self.conn.execute("DELETE FROM content_analyses")
 
     def get_author_daily_summary(
         self,
@@ -535,13 +706,16 @@ class PostgresInsightStore:
         platform: str,
         account_name: str,
         date_key: str,
+        analysis_domain: str = "stock",
     ) -> AuthorDayRecord | None:
         if platform != "x":
             return None
+        safe_domain = _normalize_domain(analysis_domain)
         row = self.conn.execute(
             """
             SELECT
               'x' AS platform,
+              ads.analysis_domain,
               a.username AS account_name,
               a.profile_url,
               COALESCE(a.x_user_id, '') AS author_id,
@@ -555,13 +729,14 @@ class PostgresInsightStore:
               ads.viewpoints_json,
               ads.mentioned_stocks_json,
               ads.mentioned_themes_json,
+              ads.mentioned_crypto_json,
               ads.content_hash,
               ads.updated_at
             FROM author_daily_summaries ads
             JOIN x_accounts a ON a.id = ads.account_id
-            WHERE a.username = %s AND ads.date_key = %s
+            WHERE a.username = %s AND ads.date_key = %s AND ads.analysis_domain = %s
             """,
-            (_normalize_username(account_name), date_key),
+            (_normalize_username(account_name), date_key, safe_domain),
         ).fetchone()
         if row is None:
             return None
@@ -571,6 +746,7 @@ class PostgresInsightStore:
         payload["viewpoints"] = payload.pop("viewpoints_json") or []
         payload["mentioned_stocks"] = payload.pop("mentioned_stocks_json") or []
         payload["mentioned_themes"] = payload.pop("mentioned_themes_json") or []
+        payload["mentioned_crypto"] = payload.pop("mentioned_crypto_json") or []
         payload["updated_at"] = str(payload["updated_at"])
         return AuthorDayRecord.model_validate(payload)
 
@@ -585,12 +761,12 @@ class PostgresInsightStore:
         self.conn.execute(
             """
             INSERT INTO author_daily_summaries (
-              account_id, date_key, status, note_count_today, summary_text, note_ids_json,
+              account_id, analysis_domain, date_key, status, note_count_today, summary_text, note_ids_json,
               notes_json, viewpoints_json, mentioned_stocks_json, mentioned_themes_json,
-              content_hash, error_text, updated_at
+              mentioned_crypto_json, content_hash, error_text, updated_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT(account_id, date_key) DO UPDATE SET
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT(account_id, date_key, analysis_domain) DO UPDATE SET
               status = EXCLUDED.status,
               note_count_today = EXCLUDED.note_count_today,
               summary_text = EXCLUDED.summary_text,
@@ -599,12 +775,14 @@ class PostgresInsightStore:
               viewpoints_json = EXCLUDED.viewpoints_json,
               mentioned_stocks_json = EXCLUDED.mentioned_stocks_json,
               mentioned_themes_json = EXCLUDED.mentioned_themes_json,
+              mentioned_crypto_json = EXCLUDED.mentioned_crypto_json,
               content_hash = EXCLUDED.content_hash,
               error_text = EXCLUDED.error_text,
               updated_at = EXCLUDED.updated_at
             """,
             (
                 account_id,
+                record.analysis_domain,
                 record.date,
                 record.status,
                 record.note_count_today,
@@ -614,6 +792,7 @@ class PostgresInsightStore:
                 _json([item.model_dump(mode="json") for item in record.viewpoints]),
                 _json(record.mentioned_stocks),
                 _json(record.mentioned_themes),
+                _json(record.mentioned_crypto),
                 record.content_hash,
                 error_text,
                 record.updated_at,
@@ -622,6 +801,40 @@ class PostgresInsightStore:
 
     def clear_security_daily_views(self) -> None:
         self.conn.execute("DELETE FROM security_daily_views")
+
+    def clear_crypto_entity_daily_views(self) -> None:
+        self.conn.execute("DELETE FROM crypto_entity_daily_views")
+
+    def upsert_crypto_entity_daily_view(self, asset_key: str, record: CryptoDayRecord) -> None:
+        identity = CryptoIdentity(
+            asset_key=asset_key,
+            display_name=record.display_name or asset_key,
+            symbol=record.symbol,
+            identifier_type="unknown",
+            normalized_status="temporary",
+        )
+        crypto_entity_id = self.ensure_crypto_entity(identity)
+        self.conn.execute(
+            """
+            INSERT INTO crypto_entity_daily_views (
+              crypto_entity_id, date_key, mention_count, author_views_json, content_hash, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT(crypto_entity_id, date_key) DO UPDATE SET
+              mention_count = EXCLUDED.mention_count,
+              author_views_json = EXCLUDED.author_views_json,
+              content_hash = EXCLUDED.content_hash,
+              updated_at = EXCLUDED.updated_at
+            """,
+            (
+                crypto_entity_id,
+                record.date,
+                record.mention_count,
+                _json([item.model_dump(mode="json") for item in record.author_views]),
+                record.content_hash,
+                record.updated_at,
+            ),
+        )
 
     def upsert_security_daily_view(self, security_key: str, record: StockDayRecord) -> None:
         security_id = self.ensure_security(
@@ -859,14 +1072,17 @@ class PostgresInsightStore:
         errors: list[str],
         snapshot_path: str,
         crawl_results: list[CrawlAccountResult],
+        analysis_domain: str = "stock",
     ) -> None:
+        safe_domain = _normalize_domain(analysis_domain)
         row = self.conn.execute(
             """
             INSERT INTO crawl_runs (
-              run_id, run_at, processed_note_count, error_count, errors_json, snapshot_path
+              run_id, analysis_domain, run_at, processed_note_count, error_count, errors_json, snapshot_path
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(run_id) DO UPDATE SET
+              analysis_domain = EXCLUDED.analysis_domain,
               run_at = EXCLUDED.run_at,
               processed_note_count = EXCLUDED.processed_note_count,
               error_count = EXCLUDED.error_count,
@@ -876,6 +1092,7 @@ class PostgresInsightStore:
             """,
             (
                 run_id,
+                safe_domain,
                 run_at,
                 processed_note_count,
                 error_count,

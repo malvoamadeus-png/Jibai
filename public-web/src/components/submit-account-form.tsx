@@ -7,7 +7,13 @@ import { Send } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { submitAccount } from "@/lib/direct-data";
 
-export function SubmitAccountForm({ onSubmitted }: { onSubmitted?: () => void }) {
+export function SubmitAccountForm({
+  onSubmitted,
+  domain = "stock",
+}: {
+  onSubmitted?: () => void;
+  domain?: "stock" | "crypto";
+}) {
   const router = useRouter();
   const { supabase } = useAuth();
   const [account, setAccount] = useState("");
@@ -19,7 +25,7 @@ export function SubmitAccountForm({ onSubmitted }: { onSubmitted?: () => void })
     setMessage(null);
     startTransition(async () => {
       try {
-        await submitAccount(supabase, account);
+        await submitAccount(supabase, account, domain);
         setAccount("");
         setMessage("已提交");
         onSubmitted?.();

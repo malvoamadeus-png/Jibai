@@ -10,14 +10,23 @@ import { cn } from "@/lib/utils";
 export function Nav() {
   const pathname = usePathname();
   const { loading, profile, signIn, signOut } = useAuth();
-  const links = [
-    { href: "/", label: "总览", icon: Home },
-    { href: "/accounts", label: "账号库", icon: BookText },
-    { href: "/feed", label: "我的订阅", icon: Bell },
-    { href: "/stocks", label: "按股票（详情）", icon: CircleDollarSign, exact: true },
-    { href: "/stocks/overview", label: "按股票（一览表）", icon: Grid3X3 },
-    { href: "/risk", label: "顶部风险", icon: Activity },
-  ];
+  const isCrypto = pathname.startsWith("/crypto");
+  const links = isCrypto
+    ? [
+        { href: "/crypto", label: "总览", icon: Home, exact: true },
+        { href: "/crypto/accounts", label: "账号库", icon: BookText },
+        { href: "/crypto/feed", label: "我的订阅", icon: Bell },
+        { href: "/crypto/assets", label: "按标的（详情）", icon: CircleDollarSign, exact: true },
+        { href: "/crypto/assets/overview", label: "按标的（一览表）", icon: Grid3X3 },
+      ]
+    : [
+        { href: "/", label: "总览", icon: Home, exact: true },
+        { href: "/accounts", label: "账号库", icon: BookText },
+        { href: "/feed", label: "我的订阅", icon: Bell },
+        { href: "/stocks", label: "按股票（详情）", icon: CircleDollarSign, exact: true },
+        { href: "/stocks/overview", label: "按股票（一览表）", icon: Grid3X3 },
+        { href: "/risk", label: "顶部风险", icon: Activity },
+      ];
 
   return (
     <aside className="sidebar">
@@ -29,14 +38,23 @@ export function Nav() {
           <div>
             <p className="eyebrow">一把抓住、顷刻炼化</p>
             <h1 className="brand-title">集百</h1>
-            <p>订阅已审批 X 账号，按作者和股票回看观点变化。</p>
+            <p>{isCrypto ? "订阅已审批 X 账号，按作者和 crypto 标的回看信号变化。" : "订阅已审批 X 账号，按作者和股票回看观点变化。"}</p>
           </div>
+        </div>
+
+        <div className="domain-switch" aria-label="板块切换">
+          <Link href="/" className={cn("domain-switch-item", !isCrypto && "domain-switch-active")}>
+            股票
+          </Link>
+          <Link href="/crypto" className={cn("domain-switch-item", isCrypto && "domain-switch-active")}>
+            加密
+          </Link>
         </div>
 
         <nav className="nav-links">
           {links.map((item) => {
             const Icon = item.icon;
-            const active = item.href === "/" || item.exact ? pathname === item.href : pathname.startsWith(item.href);
+            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href} className={cn("nav-item", active && "nav-item-active")}>
                 <Icon size={16} />
@@ -45,7 +63,7 @@ export function Nav() {
             );
           })}
           {profile?.isAdmin ? (
-            <Link href="/admin" className="nav-item admin-link">
+            <Link href={isCrypto ? "/crypto/admin" : "/admin"} className="nav-item admin-link">
               <Shield size={16} />
               <span>管理</span>
             </Link>

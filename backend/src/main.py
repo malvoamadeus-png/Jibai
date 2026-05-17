@@ -89,9 +89,15 @@ def parse_args() -> argparse.Namespace:
         "public-import-sqlite",
         help="Import local SQLite X data into the public Supabase database.",
     )
-    subparsers.add_parser(
+    public_rebuild_parser = subparsers.add_parser(
         "public-rebuild-timelines",
-        help="Normalize public Supabase stock identities, rebuild timelines, and refresh market data.",
+        help="Rebuild public Supabase timelines for stock or crypto.",
+    )
+    public_rebuild_parser.add_argument(
+        "--domain",
+        choices=("stock", "crypto"),
+        default="stock",
+        help="Analysis domain to rebuild. Defaults to stock.",
     )
     public_refresh_market_parser = subparsers.add_parser(
         "public-refresh-market-data",
@@ -133,10 +139,26 @@ def parse_args() -> argparse.Namespace:
         help="Number of Shanghai natural days to reanalyze, including today. Defaults to 3.",
     )
     public_reanalyze_recent_parser.add_argument(
+        "--domain",
+        choices=("stock", "crypto"),
+        default="stock",
+        help="Analysis domain to reanalyze. Defaults to stock.",
+    )
+    public_reanalyze_recent_parser.add_argument(
         "--clear-analysis",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Clear existing public analysis and materialized timeline outputs before reanalysis.",
+    )
+    normalize_crypto_parser = subparsers.add_parser(
+        "normalize-crypto-assets",
+        help="Rebuild crypto asset materialized timelines from existing crypto analyses.",
+    )
+    normalize_crypto_parser.add_argument(
+        "--days",
+        type=int,
+        default=30,
+        help="Recent Shanghai natural days to rebuild. Defaults to 30.",
     )
     public_market_top_risk_parser = subparsers.add_parser(
         "public-sync-market-top-risk",
@@ -186,7 +208,7 @@ def main() -> int:
     if args.command == "public-rebuild-timelines":
         from packages.public_app.worker import rebuild_public_timelines_once  # noqa: PLC0415
 
-        return rebuild_public_timelines_once()
+        return rebuild_public_timelines_once(domain=args.domain)
     if args.command == "public-refresh-market-data":
         from packages.public_app.worker import refresh_market_data_once  # noqa: PLC0415
 
@@ -203,7 +225,12 @@ def main() -> int:
         return reanalyze_recent_public_content_once(
             days=args.days,
             clear_analysis=args.clear_analysis,
+            domain=args.domain,
         )
+    if args.command == "normalize-crypto-assets":
+        from packages.public_app.worker import rebuild_public_timelines_once  # noqa: PLC0415
+
+        return rebuild_public_timelines_once(domain="crypto", days=args.days)
     if args.command == "public-sync-market-top-risk":
         from packages.public_app.market_top_risk import sync_market_top_risk_once  # noqa: PLC0415
 

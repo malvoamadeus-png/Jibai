@@ -6,6 +6,8 @@ export type UserProfile = {
   isAdmin: boolean;
 };
 
+export type Domain = "stock" | "crypto";
+
 export type PagedResult<T> = {
   rows: T[];
   total: number;
@@ -25,7 +27,7 @@ export type ViewStance =
   | "unknown";
 
 export type ViewDirection = "positive" | "negative" | "neutral" | "mixed" | "unknown";
-export type ViewSignalType = "explicit_stance" | "logic_based" | "unknown";
+export type ViewSignalType = "explicit_stance" | "logic_based" | "informational" | "mention_signal" | "unknown";
 export type ViewJudgmentType =
   | "direct"
   | "implied"
@@ -46,10 +48,21 @@ export type ViewEvidenceType =
   | "capital_flow"
   | "technical"
   | "macro"
+  | "onchain"
+  | "tokenomics"
+  | "unlock"
+  | "ecosystem"
+  | "protocol_revenue"
+  | "catalyst"
+  | "listing"
+  | "liquidity"
+  | "funding_rate"
+  | "security_incident"
+  | "regulation"
   | "other"
   | "unknown";
 
-export type ViewEntityType = "stock" | "theme" | "macro" | "other";
+export type ViewEntityType = "stock" | "theme" | "macro" | "other" | "crypto_entity";
 
 export type AccountListItem = {
   id: string;
@@ -107,6 +120,10 @@ export type AuthorDayViewpoint = {
   entityType: ViewEntityType;
   entityKey: string;
   entityName: string;
+  entityIdentifierType: string;
+  rawIdentifiers: string[];
+  normalizedStatus: string;
+  sourceSignalLevel: string;
   stance: ViewStance;
   direction: ViewDirection;
   signalType: ViewSignalType;
@@ -118,6 +135,7 @@ export type AuthorDayViewpoint = {
   noteIds: string[];
   noteUrls: string[];
   timeHorizons: string[];
+  metadata: Record<string, unknown>;
 };
 
 export type AuthorTimelineDay = {
@@ -130,6 +148,7 @@ export type AuthorTimelineDay = {
   viewpoints: AuthorDayViewpoint[];
   mentionedStocks: string[];
   mentionedThemes: string[];
+  mentionedCrypto: string[];
   updatedAt: string;
 };
 
@@ -161,6 +180,10 @@ export type EntityAuthorView = {
   platform: string;
   account_name: string;
   author_nickname: string;
+  entity_identifier_type?: string;
+  raw_identifiers?: string[];
+  normalized_status?: string;
+  source_signal_level?: string;
   stance: ViewStance;
   direction: ViewDirection;
   signal_type: ViewSignalType;
@@ -172,6 +195,7 @@ export type EntityAuthorView = {
   note_urls: string[];
   evidence: string[];
   time_horizons: string[];
+  metadata?: Record<string, unknown>;
 };
 
 export type StockMatrixAuthor = {
@@ -209,6 +233,34 @@ export type StockMatrixData = {
   authors: StockMatrixAuthor[];
   stocks: StockMatrixStock[];
   cells: StockMatrixCell[];
+};
+
+export type CryptoMatrixAsset = {
+  assetKey: string;
+  displayName: string;
+  ticker: string | null;
+  market: string | null;
+  mentionCount: number;
+  latestDate: string | null;
+};
+
+export type CryptoMatrixView = StockMatrixView;
+
+export type CryptoMatrixCell = {
+  assetKey: string;
+  accountName: string;
+  authorNickname: string;
+  views: CryptoMatrixView[];
+};
+
+export type CryptoMatrixData = {
+  startDate: string | null;
+  endDate: string | null;
+  previousEndDate: string | null;
+  nextEndDate: string | null;
+  authors: StockMatrixAuthor[];
+  assets: CryptoMatrixAsset[];
+  cells: CryptoMatrixCell[];
 };
 
 export type StockTimelineDay = {

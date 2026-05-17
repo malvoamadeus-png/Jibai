@@ -125,6 +125,12 @@ print(f"migration=applied file={sql_path}")
 PY
 ```
 
+For the stock/crypto domain split, use:
+
+```python
+sql_path = Path("supabase/migrations/015_crypto_domain.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -132,11 +138,18 @@ For another migration, change only `sql_path`.
 The public reanalysis command now runs locally as long as `.env` has
 `SUPABASE_DB_URL` and AI credentials.
 
-For the current 30-day public history window:
+For the current 30-day public stock history window:
 
 ```bash
 AI_API_TIMEOUT_SECONDS=90 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
+```
+
+For crypto, keep the domain explicit:
+
+```bash
+AI_API_TIMEOUT_SECONDS=90 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --domain crypto --days 30 --clear-analysis
 ```
 
 What it does:
@@ -144,8 +157,9 @@ What it does:
 - keeps raw `content_items`
 - clears analysis/materialized outputs
 - reanalyzes recent X content using current prompt and parser logic
-- rebuilds author daily summaries and stock daily views
-- leaves `theme_daily_views` empty for the stock-signal-only product
+- rebuilds author daily summaries and stock or crypto daily views for the selected domain
+- for stock, refreshes lightweight stock market data and leaves `theme_daily_views` empty for the stock-signal-only product
+- for crypto, writes no market data or K-line cache
 
 If only a few notes failed or timed out, do not clear again. Rebuild timelines
 and fill missing analyses:
@@ -153,6 +167,16 @@ and fill missing analyses:
 ```bash
 AI_API_TIMEOUT_SECONDS=180 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-rebuild-timelines
+```
+
+Crypto timeline rebuild and alias normalization:
+
+```bash
+AI_API_TIMEOUT_SECONDS=180 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-rebuild-timelines --domain crypto
+
+AI_API_TIMEOUT_SECONDS=180 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py normalize-crypto-assets --days 30
 ```
 
 ## Verify Database State Locally
@@ -179,25 +203,30 @@ with psycopg.connect(dsn, autocommit=True) as conn:
             "security_mentions",
             "author_daily_summaries",
             "security_daily_views",
+            "crypto_entities",
+            "crypto_entity_daily_views",
             "theme_daily_views",
         ]:
             cur.execute(f"select count(*) from {table}")
             print(f"{table}={cur.fetchone()[0]}")
 
         cur.execute("""
-            select entity_type, signal_type, direction, judgment_type, count(*)
+            select analysis_domain, entity_type, signal_type, direction, judgment_type, count(*)
             from content_viewpoints
-            group by 1,2,3,4
-            order by 5 desc
+            group by 1,2,3,4,5
+            order by 6 desc
         """)
         print("viewpoint_distribution=" + repr(cur.fetchall()))
 
         cur.execute("""
             select count(*)
             from content_viewpoints
-            where entity_type <> 'stock'
-               or signal_type not in ('explicit_stance', 'logic_based')
-               or direction not in ('positive', 'negative')
+            where analysis_domain = 'stock'
+              and (
+                entity_type <> 'stock'
+                or signal_type not in ('explicit_stance', 'logic_based')
+                or direction not in ('positive', 'negative')
+              )
         """)
         print("invalid_viewpoints=" + str(cur.fetchone()[0]))
 
@@ -214,6 +243,9 @@ with psycopg.connect(dsn, autocommit=True) as conn:
 
         cur.execute("select min(date_key), max(date_key), count(*) from security_daily_views")
         print("stock_dates=" + repr(cur.fetchone()))
+
+        cur.execute("select min(date_key), max(date_key), count(*) from crypto_entity_daily_views")
+        print("crypto_dates=" + repr(cur.fetchone()))
 PY
 ```
 
@@ -226,6 +258,13 @@ Expected stock-signal-only state:
 - `invalid_mentions=0`
 - `theme_daily_views=0`
 - date range matches the intended Asia/Shanghai natural-day window
+
+Expected crypto state after a crypto run:
+
+- `content_analyses` can contain both `analysis_domain='stock'` and `analysis_domain='crypto'` for the same `content_id`
+- crypto rows in `content_viewpoints` use `analysis_domain='crypto'` and `entity_type='crypto_entity'`
+- weak signals may have `signal_type in ('informational','mention_signal')` and `direction='unknown'`
+- `crypto_entity_daily_views` is populated when crypto signals exist
 
 ## Verify RPC Behavior Locally
 
@@ -249,6 +288,10 @@ with psycopg.connect(dsn, autocommit=True) as conn:
         print("rpc_theme_count=" + str(cur.fetchone()[0]))
         cur.execute("select public.get_visible_entity_timeline('theme','anything',1,20) is null")
         print("rpc_theme_timeline_is_null=" + str(cur.fetchone()[0]))
+        cur.execute("select count(*) from public.list_visible_crypto_entities('',100,'date_desc')")
+        print("rpc_crypto_count=" + str(cur.fetchone()[0]))
+        cur.execute("select jsonb_typeof(public.get_visible_crypto_matrix(null))")
+        print("rpc_crypto_matrix_type=" + str(cur.fetchone()[0]))
 PY
 ```
 
@@ -258,6 +301,7 @@ important checks are:
 - stock RPC returns successfully
 - theme entity list is empty
 - theme timeline is `null`
+- crypto RPCs return successfully after migration 015, even if there is no crypto data yet
 
 ## Restore Author Timeline History Window
 

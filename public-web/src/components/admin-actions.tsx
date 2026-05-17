@@ -76,11 +76,19 @@ export function RejectButton({ requestId, onChanged }: { requestId: string; onCh
   );
 }
 
-export function DisableButton({ accountId, onChanged }: { accountId: string; onChanged?: () => void }) {
+export function DisableButton({
+  accountId,
+  onChanged,
+  domain = "stock",
+}: {
+  accountId: string;
+  onChanged?: () => void;
+  domain?: "stock" | "crypto";
+}) {
   const { supabase } = useAuth();
   return (
     <AdminButton
-      action={() => disableAccount(supabase, accountId)}
+      action={() => disableAccount(supabase, accountId, domain)}
       label="禁用"
       kind="danger"
       icon={<Ban size={16} />}
@@ -89,11 +97,17 @@ export function DisableButton({ accountId, onChanged }: { accountId: string; onC
   );
 }
 
-export function ManualRunButton({ onChanged }: { onChanged?: () => void }) {
+export function ManualRunButton({
+  onChanged,
+  domain = "stock",
+}: {
+  onChanged?: () => void;
+  domain?: "stock" | "crypto";
+}) {
   const { supabase } = useAuth();
   return (
     <AdminButton
-      action={() => enqueueManualCrawl(supabase)}
+      action={() => enqueueManualCrawl(supabase, domain)}
       label="手动抓取"
       kind="primary"
       icon={<Play size={16} />}
