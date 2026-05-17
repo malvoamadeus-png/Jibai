@@ -920,6 +920,38 @@ class InsightStore:
             for row in rows
         }
 
+    def list_recent_security_keys(self, *, limit: int = 30, query: str | None = None) -> list[str]:
+        safe_limit = max(1, min(int(limit), 500))
+        query_text = (query or "").strip().lower()
+        params: list[Any] = []
+        where_sql = ""
+        if query_text:
+            where_sql = """
+            WHERE lower(se.security_key) LIKE ?
+               OR lower(coalesce(se.display_name, '')) LIKE ?
+               OR lower(coalesce(se.ticker, '')) LIKE ?
+               OR lower(coalesce(se.market, '')) LIKE ?
+               OR lower(coalesce(se.aliases_json, '')) LIKE ?
+            """
+            like_value = f"%{query_text}%"
+            params.extend([like_value, like_value, like_value, like_value, like_value])
+        params.append(safe_limit)
+        rows = self.conn.execute(
+            f"""
+            SELECT se.security_key
+            FROM security_entities se
+            LEFT JOIN security_daily_views sdv ON sdv.security_id = se.id
+            {where_sql}
+            GROUP BY se.id, se.security_key
+            ORDER BY max(sdv.date_key) DESC,
+                     coalesce(sum(sdv.mention_count), 0) DESC,
+                     se.security_key ASC
+            LIMIT ?
+            """,
+            tuple(params),
+        ).fetchall()
+        return [str(row["security_key"]) for row in rows]
+
     def upsert_security_daily_prices(
         self,
         *,

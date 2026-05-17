@@ -1046,6 +1046,16 @@ def _ordered_stock_keys_for_market_data(stock_records: list[StockDayRecord]) -> 
     ]
 
 
+def _stock_keys_from_recent_records(stock_records: list[StockDayRecord], *, days: int) -> list[str]:
+    if not stock_records:
+        return []
+
+    latest_date = max(record.date for record in stock_records)
+    cutoff_date = (date_class.fromisoformat(latest_date) - timedelta(days=max(1, int(days)) - 1)).isoformat()
+    recent_records = [record for record in stock_records if record.date >= cutoff_date]
+    return _ordered_stock_keys_for_market_data(recent_records)
+
+
 def _market_error_label(security_key: str, identity: SecurityIdentity) -> str:
     display_name = identity.display_name.strip()
     if display_name and display_name.casefold() != security_key.casefold():
@@ -1053,15 +1063,6 @@ def _market_error_label(security_key: str, identity: SecurityIdentity) -> str:
     if identity.ticker:
         return identity.ticker
     return security_key
-
-
-def _stock_keys_from_extracts(extracts: list[NoteExtractRecord]) -> list[str]:
-    keys: list[str] = []
-    for extract in extracts:
-        for viewpoint in extract.viewpoints:
-            if viewpoint.entity_type == "stock" and viewpoint.entity_key:
-                keys.append(viewpoint.entity_key)
-    return list(dict.fromkeys(keys))
 
 
 def refresh_security_market_data(
@@ -1072,6 +1073,7 @@ def refresh_security_market_data(
     days: int | None = None,
     retain_days: int | None = None,
     delay_seconds: float | None = None,
+    progress_label: str | None = None,
 ) -> tuple[int, list[str]]:
     ordered_keys = list(dict.fromkeys(key.strip() for key in security_keys if key and key.strip()))
     if not ordered_keys:
@@ -1120,6 +1122,12 @@ def refresh_security_market_data(
             security_key,
             SecurityIdentity(security_key=security_key, display_name=security_key),
         )
+        if progress_label:
+            print(
+                f"{progress_label} market_data={index + 1}/{min(len(ordered_keys), effective_max)} "
+                f"stock={security_key}",
+                flush=True,
+            )
         try:
             payload = fetch_security_daily(
                 ticker=identity.ticker,
@@ -1162,6 +1170,7 @@ def _refresh_stock_market_data(
     market_data_stock_keys: list[str] | None = None,
     market_data_days: int | None = None,
     market_data_max_securities: int | None = None,
+    progress_label: str | None = None,
 ) -> tuple[int, list[str]]:
     security_keys = market_data_stock_keys
     if security_keys is None:
@@ -1171,6 +1180,7 @@ def _refresh_stock_market_data(
         security_keys=security_keys,
         max_securities=market_data_max_securities,
         days=market_data_days,
+        progress_label=progress_label,
     )
 
 
@@ -1332,7 +1342,10 @@ def run_analysis_with_store(
     if force_reanalysis and hasattr(store, "conn"):
         store.conn.commit()
     selected_market_data_stock_keys = (
-        _stock_keys_from_extracts(created_extracts)
+        _stock_keys_from_recent_records(
+            stock_records,
+            days=market_data_days or LIGHT_MARKET_DATA_WINDOW_DAYS,
+        )
         if market_data_stock_keys is None and market_data_days is not None
         else market_data_stock_keys
     )
@@ -1342,6 +1355,7 @@ def run_analysis_with_store(
         market_data_stock_keys=selected_market_data_stock_keys,
         market_data_days=market_data_days,
         market_data_max_securities=market_data_max_securities,
+        progress_label=progress_label,
     )
     theme_records = _materialize_theme_timelines(
         store=store,

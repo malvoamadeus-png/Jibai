@@ -10,7 +10,8 @@ Public web uses Supabase as the primary database. Vercel only serves `public-web
 - Crawls X accounts serially with a 5 second account delay.
 - Runs stock-only AI signal analysis and writes author summaries, stock viewpoints, and stock timelines back to Supabase.
 - Initial backfills refresh the 180-day market-data cache. Scheduled crawls use
-  a lightweight refresh for stocks newly analyzed in that run. Plain
+  a lightweight refresh for the most recent stock signals in the analysis
+  window, so older-but-visible stock pages still receive latest candles. Plain
   tickers such as `NVDA`, `AAPL`, and `TSLA` use Yahoo Finance. A-share markets
   `SSE`, `SZSE`, and `BJSE` still use EastMoney.
 
@@ -66,12 +67,12 @@ instead of relying on the code defaults. Use comma-separated host names without
 
 Market-data settings are optional. Backfill and manual market refresh default
 to at most 30 stocks and 180 days of daily candles. Scheduled crawls default to
-at most 10 newly analyzed stocks and only fetch the latest 7 days of daily
+at most 10 recently visible stocks and only fetch the latest 7 days of daily
 candles, but the K-line cache is still retained for the 180-day
 `PUBLIC_WORKER_MARKET_DATA_DAYS` window. Do not use the light refresh window as
-the delete/prune window. Scheduled crawls skip market data when the run produced
-no new stock analysis. Market-data failures are isolated from the crawl and AI
-pipeline; the job result records `market_errors=N`.
+the delete/prune window. Scheduled crawls skip market data only when the
+analysis window has no stock signals. Market-data failures are isolated from
+the crawl and AI pipeline; the job result records `market_errors=N`.
 
 Analysis output is intentionally windowed. `PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS`
 defaults to `30`, matching the initial backfill lookback and using

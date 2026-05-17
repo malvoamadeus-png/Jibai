@@ -636,6 +636,7 @@ def refresh_market_data_once(
             max_securities=safe_limit,
             days=safe_days,
             delay_seconds=safe_delay,
+            progress_label="[public-worker]",
         )
 
     print(f"[public-worker] market_prices={written} market_errors={len(errors)}")
