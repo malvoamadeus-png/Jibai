@@ -86,8 +86,9 @@ the stock list supports sorting by latest date or total visible mentions and
 must not apply a fixed recent-day cutoff. `/stocks/overview` uses
 `get_visible_stock_matrix`, which returns a 7-day stock x author matrix ending
 at the latest visible stock-signal date unless a specific `end` date is passed.
-Matrix cells keep every valid positive/negative stock signal as an individual
-point.
+For logged-in users the matrix is scoped to subscribed authors, including admin
+users; anonymous users keep the public preview scope. Matrix cells keep every
+valid positive/negative stock signal as an individual point.
 
 ## Commands
 

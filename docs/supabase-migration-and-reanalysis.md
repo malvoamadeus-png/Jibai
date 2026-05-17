@@ -293,7 +293,8 @@ The migration:
 - adds server-side sort support for `date_desc`, `date_asc`, `count_desc`, and
   `count_asc`
 - adds `get_visible_stock_matrix(end_date_arg text)` for the 7-day stock x
-  author overview table
+  author overview table; authenticated users are scoped to subscribed authors,
+  while anonymous users keep the public preview scope
 
 Verification after applying it:
 

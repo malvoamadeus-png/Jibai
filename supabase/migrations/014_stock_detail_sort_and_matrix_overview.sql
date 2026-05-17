@@ -381,7 +381,6 @@ set search_path = public
 as $$
 declare
   current_uid uuid := auth.uid();
-  current_is_admin boolean := public.is_current_user_admin();
   requested_end date;
   latest_visible_date date;
   effective_end date;
@@ -445,7 +444,6 @@ begin
     )
     and (
       current_uid is null
-      or current_is_admin
       or e.author_name in (select va.author_name from visible_authors va)
     );
 
@@ -509,7 +507,6 @@ begin
       )
       and (
         current_uid is null
-        or current_is_admin
         or e.author_name in (select va.author_name from visible_authors va)
       )
   ),
@@ -572,7 +569,6 @@ begin
       )
       and (
         current_uid is null
-        or current_is_admin
         or e.author_name in (select va.author_name from visible_authors va)
       )
   ),
@@ -638,7 +634,6 @@ begin
       )
       and (
         current_uid is null
-        or current_is_admin
         or e.author_name in (select va.author_name from visible_authors va)
       )
   ),
