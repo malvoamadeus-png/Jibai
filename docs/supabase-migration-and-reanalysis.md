@@ -135,7 +135,7 @@ If account submission fails with
 `column reference "account_id" is ambiguous` after the domain split, apply:
 
 ```python
-sql_path = Path("supabase/migrations/016_fix_submit_x_account_ambiguity.sql")
+sql_path = Path("supabase/migrations/017_fix_submit_x_account_conflict_target.sql")
 ```
 
 For another migration, change only `sql_path`.
@@ -309,7 +309,7 @@ important checks are:
 - theme entity list is empty
 - theme timeline is `null`
 - crypto RPCs return successfully after migration 015, even if there is no crypto data yet
-- `submit_x_account(..., domain_arg)` can insert or update a domain-scoped request after migration 016
+- `submit_x_account(..., domain_arg)` can insert or update a domain-scoped request after migration 017
 
 ## Restore Author Timeline History Window
 
