@@ -155,6 +155,8 @@ export type EntityListItem = {
   updatedAt: string | null;
 };
 
+export type EntitySortKey = "date_desc" | "date_asc" | "count_desc" | "count_asc";
+
 export type EntityAuthorView = {
   platform: string;
   account_name: string;
@@ -170,6 +172,43 @@ export type EntityAuthorView = {
   note_urls: string[];
   evidence: string[];
   time_horizons: string[];
+};
+
+export type StockMatrixAuthor = {
+  accountName: string;
+  authorNickname: string;
+  mentionCount: number;
+  latestDate: string | null;
+};
+
+export type StockMatrixStock = {
+  securityKey: string;
+  displayName: string;
+  ticker: string | null;
+  market: string | null;
+  mentionCount: number;
+  latestDate: string | null;
+};
+
+export type StockMatrixView = EntityAuthorView & {
+  date: string;
+};
+
+export type StockMatrixCell = {
+  securityKey: string;
+  accountName: string;
+  authorNickname: string;
+  views: StockMatrixView[];
+};
+
+export type StockMatrixData = {
+  startDate: string | null;
+  endDate: string | null;
+  previousEndDate: string | null;
+  nextEndDate: string | null;
+  authors: StockMatrixAuthor[];
+  stocks: StockMatrixStock[];
+  cells: StockMatrixCell[];
 };
 
 export type StockTimelineDay = {

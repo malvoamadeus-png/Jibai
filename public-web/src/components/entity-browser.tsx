@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, Hash, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 
 import { InsightListCard } from "@/components/insight-list-card";
 import { LoadingPanel } from "@/components/page-states";
@@ -15,11 +15,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { getVisibleEntityTimeline, listEntities } from "@/lib/direct-data";
-import type { EntityDetailData, EntityListItem, StockKlineData } from "@/lib/types";
+import type { EntityDetailData, EntityListItem, EntitySortKey, StockKlineData } from "@/lib/types";
 
 function parsePage(value: string | null) {
   const parsed = Number.parseInt(value || "1", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+const SORT_OPTIONS: Array<{
+  key: EntitySortKey;
+  label: string;
+  icon: "date" | "count";
+  direction: "desc" | "asc";
+}> = [
+  { key: "date_desc", label: "最近日期", icon: "date", direction: "desc" },
+  { key: "date_asc", label: "最近日期", icon: "date", direction: "asc" },
+  { key: "count_desc", label: "累计提及", icon: "count", direction: "desc" },
+  { key: "count_asc", label: "累计提及", icon: "count", direction: "asc" },
+];
+
+function parseSort(value: string | null): EntitySortKey {
+  return SORT_OPTIONS.some((item) => item.key === value) ? (value as EntitySortKey) : "date_desc";
 }
 
 function buildChart(detail: EntityDetailData): StockKlineData {
@@ -62,13 +78,15 @@ export function EntityBrowser({
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const page = parsePage(searchParams.get("page"));
+  const sort = parseSort(searchParams.get("sort"));
+  const activeSort = SORT_OPTIONS.find((item) => item.key === sort) || SORT_OPTIONS[0];
   const paramName = "stock";
   const requestedKey = searchParams.get(paramName);
   const activeKey = useMemo(() => {
     if (requestedKey && items.some((item) => item.key === requestedKey)) return requestedKey;
     return items[0]?.key || "";
   }, [items, requestedKey]);
-  const title = "按股票看观点时间线";
+  const title = "按股票（详情）";
   const description = "左侧快速切换股票，右侧查看日线标记和按日作者观点。";
 
   useEffect(() => {
@@ -77,7 +95,7 @@ export function EntityBrowser({
     Promise.resolve().then(() => {
       if (!cancelled) setListLoading(true);
     });
-    listEntities(supabase, type, profile, searchParams.get("q") || "")
+    listEntities(supabase, type, profile, searchParams.get("q") || "", 100, sort)
       .then((rows) => {
         if (cancelled) return;
         setItems(rows);
@@ -94,7 +112,7 @@ export function EntityBrowser({
     return () => {
       cancelled = true;
     };
-  }, [loading, profile, searchParams, supabase, type]);
+  }, [loading, profile, searchParams, sort, supabase, type]);
 
   useEffect(() => {
     if (loading || !activeKey) {
@@ -137,6 +155,14 @@ export function EntityBrowser({
     setPanelOpen(false);
   }
 
+  function selectSort(nextSort: EntitySortKey) {
+    const next = new URLSearchParams(searchParams);
+    if (nextSort === "date_desc") next.delete("sort");
+    else next.set("sort", nextSort);
+    next.delete("page");
+    router.push(`/stocks?${next.toString()}`);
+  }
+
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const next = new URLSearchParams(searchParams);
@@ -151,11 +177,11 @@ export function EntityBrowser({
   if (loading) return <LoadingPanel />;
 
   return (
-    <main className="page space-y-6">
-      <Card>
-        <CardHeader>
+    <main className="page space-y-6 lg:flex lg:h-[calc(100vh-40px)] lg:flex-col lg:overflow-hidden lg:pb-0">
+      <Card className="lg:shrink-0">
+        <CardHeader className="lg:py-5">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="warm">按股票</Badge>
+            <Badge variant="warm">按股票（详情）</Badge>
             {!profile ? <Badge variant="neutral">公开预览 · 仅 1 条</Badge> : null}
           </div>
           <CardTitle className="text-3xl">{title}</CardTitle>
@@ -172,10 +198,10 @@ export function EntityBrowser({
         </Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[336px_minmax(0,1fr)]">
-        <aside className={panelOpen ? "block" : "hidden lg:block"}>
-          <Card className="overflow-hidden lg:sticky lg:top-4">
-            <CardHeader className="space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
+      <div className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[336px_minmax(0,1fr)]">
+        <aside className={panelOpen ? "block lg:min-h-0" : "hidden lg:block lg:min-h-0"}>
+          <Card className="h-full overflow-hidden lg:flex lg:flex-col">
+            <CardHeader className="shrink-0 space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
               <div>
                 <CardTitle className="text-xl">快速切换</CardTitle>
                 <CardDescription>{profile ? "按你的订阅过滤" : "公开轻量预览"}</CardDescription>
@@ -187,8 +213,29 @@ export function EntityBrowser({
                   更新列表
                 </Button>
               </form>
+              <div className="grid grid-cols-2 gap-2">
+                {SORT_OPTIONS.map((option) => {
+                  const SortIcon = option.icon === "date" ? CalendarDays : Hash;
+                  const DirectionIcon = option.direction === "desc" ? ArrowDown : ArrowUp;
+                  return (
+                    <Button
+                      key={option.key}
+                      type="button"
+                      variant={option.key === activeSort.key ? "primary" : "secondary"}
+                      className="min-w-0 justify-center px-2 text-xs"
+                      aria-pressed={option.key === activeSort.key}
+                      title={`${option.label}${option.direction === "desc" ? "倒序" : "正序"}`}
+                      onClick={() => selectSort(option.key)}
+                    >
+                      <SortIcon className="h-3.5 w-3.5" />
+                      <span className="truncate">{option.label}</span>
+                      <DirectionIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  );
+                })}
+              </div>
             </CardHeader>
-            <CardContent className="space-y-3 p-4">
+            <CardContent className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4 lg:flex-1">
               {listLoading ? <div className="empty">列表加载中</div> : null}
               {!listLoading && items.map((item) => (
                 <InsightListCard
@@ -206,7 +253,7 @@ export function EntityBrowser({
           </Card>
         </aside>
 
-        <section className="min-w-0 space-y-4">
+        <section className="min-w-0 space-y-4 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
           {error ? <div className="empty field-error">{error}</div> : null}
           {detailLoading ? <div className="empty">时间线加载中</div> : null}
           {!detailLoading && detail ? (

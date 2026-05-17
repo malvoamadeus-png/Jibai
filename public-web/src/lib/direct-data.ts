@@ -12,6 +12,7 @@ import type {
   EntityAuthorView,
   EntityDetailData,
   EntityListItem,
+  EntitySortKey,
   FeedDay,
   MarketTopRiskData,
   MarketTopRiskHistoryPoint,
@@ -22,6 +23,11 @@ import type {
   StockKlineCandle,
   StockKlineData,
   StockKlineMarker,
+  StockMatrixAuthor,
+  StockMatrixCell,
+  StockMatrixData,
+  StockMatrixStock,
+  StockMatrixView,
   TimelineNote,
   UserProfile,
   ViewConviction,
@@ -132,6 +138,48 @@ function normalizeEntityAuthorView(rawValue: unknown): EntityAuthorView {
     note_urls: normalizeStringArray(raw.note_urls),
     evidence: normalizeStringArray(raw.evidence),
     time_horizons: normalizeStringArray(raw.time_horizons),
+  };
+}
+
+function normalizeStockMatrixView(rawValue: unknown): StockMatrixView {
+  const raw = asRecord(rawValue);
+  return {
+    ...normalizeEntityAuthorView(rawValue),
+    date: asString(raw.date),
+  };
+}
+
+function normalizeStockMatrixAuthor(rawValue: unknown): StockMatrixAuthor {
+  const raw = asRecord(rawValue);
+  const accountName = asString(raw.account_name ?? raw.accountName).trim().replace(/^@/, "").toLowerCase();
+  return {
+    accountName,
+    authorNickname: asString(raw.author_nickname ?? raw.authorNickname, accountName),
+    mentionCount: asNumber(raw.mention_count ?? raw.mentionCount),
+    latestDate: raw.latest_date || raw.latestDate ? String(raw.latest_date || raw.latestDate) : null,
+  };
+}
+
+function normalizeStockMatrixStock(rawValue: unknown): StockMatrixStock {
+  const raw = asRecord(rawValue);
+  return {
+    securityKey: asString(raw.security_key ?? raw.securityKey),
+    displayName: asString(raw.display_name ?? raw.displayName ?? raw.security_key ?? raw.securityKey),
+    ticker: asNullableString(raw.ticker),
+    market: asNullableString(raw.market),
+    mentionCount: asNumber(raw.mention_count ?? raw.mentionCount),
+    latestDate: raw.latest_date || raw.latestDate ? String(raw.latest_date || raw.latestDate) : null,
+  };
+}
+
+function normalizeStockMatrixCell(rawValue: unknown): StockMatrixCell {
+  const raw = asRecord(rawValue);
+  const accountName = asString(raw.account_name ?? raw.accountName).trim().replace(/^@/, "").toLowerCase();
+  return {
+    securityKey: asString(raw.security_key ?? raw.securityKey),
+    accountName,
+    authorNickname: asString(raw.author_nickname ?? raw.authorNickname, accountName),
+    views: asArray(raw.views).map(normalizeStockMatrixView),
   };
 }
 
@@ -413,11 +461,13 @@ export async function listEntities(
   profile: UserProfile | null,
   query = "",
   limit = 100,
+  sort: EntitySortKey = "date_desc",
 ): Promise<EntityListItem[]> {
   const { data, error } = await supabase.rpc("list_visible_entities", {
     entity_type_arg: type,
     query_arg: query,
     limit_arg: profile ? limit : 1,
+    sort_arg: sort,
   });
   assertNoError(error);
   return (data || []).map(mapEntityRow);
@@ -451,6 +501,26 @@ export async function getVisibleEntityTimeline(
     timeline: normalizePaged(payload.timeline, normalizeEntityDay),
     chart: type === "stock" ? normalizeStockChart(payload.chart) : null,
   } satisfies EntityDetailData;
+}
+
+export async function getVisibleStockMatrix(
+  supabase: SupabaseClient,
+  endDate: string | null = null,
+): Promise<StockMatrixData> {
+  const { data, error } = await supabase.rpc("get_visible_stock_matrix", {
+    end_date_arg: endDate || null,
+  });
+  assertNoError(error);
+  const payload = asRecord(data);
+  return {
+    startDate: asNullableString(payload.start_date ?? payload.startDate),
+    endDate: asNullableString(payload.end_date ?? payload.endDate),
+    previousEndDate: asNullableString(payload.previous_end_date ?? payload.previousEndDate),
+    nextEndDate: asNullableString(payload.next_end_date ?? payload.nextEndDate),
+    authors: asArray(payload.authors).map(normalizeStockMatrixAuthor),
+    stocks: asArray(payload.stocks).map(normalizeStockMatrixStock),
+    cells: asArray(payload.cells).map(normalizeStockMatrixCell),
+  };
 }
 
 export async function getMarketTopRisk(

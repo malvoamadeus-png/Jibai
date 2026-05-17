@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bell, BookText, CircleDollarSign, Home, LogOut, Orbit, Shield, UserRound } from "lucide-react";
+import { Activity, Bell, BookText, CircleDollarSign, Grid3X3, Home, LogOut, Orbit, Shield, UserRound } from "lucide-react";
 
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,8 @@ export function Nav() {
     { href: "/", label: "总览", icon: Home },
     { href: "/accounts", label: "账号库", icon: BookText },
     { href: "/feed", label: "我的订阅", icon: Bell },
-    { href: "/stocks", label: "按股票", icon: CircleDollarSign },
+    { href: "/stocks", label: "按股票（详情）", icon: CircleDollarSign, exact: true },
+    { href: "/stocks/overview", label: "按股票（一览表）", icon: Grid3X3 },
     { href: "/risk", label: "顶部风险", icon: Activity },
   ];
 
@@ -35,7 +36,7 @@ export function Nav() {
         <nav className="nav-links">
           {links.map((item) => {
             const Icon = item.icon;
-            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const active = item.href === "/" || item.exact ? pathname === item.href : pathname.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href} className={cn("nav-item", active && "nav-item-active")}>
                 <Icon size={16} />

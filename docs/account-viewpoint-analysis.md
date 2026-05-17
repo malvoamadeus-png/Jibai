@@ -97,6 +97,17 @@ AI 配置优先级：
 | `security_daily_prices` | 股票日线价格缓存，公开 K 线按 180 天窗口读取 |
 | `analysis_runs` | 每次分析运行记录 |
 
+## 公开股票视图
+
+公开前端有两个股票入口：
+
+- `/stocks` 为“按股票（详情）”，按单只股票展示 K 线、日线标记和按日作者观点。
+- `/stocks/overview` 为“按股票（一览表）”，按最近 7 个有数据自然日展示股票 × 作者矩阵。
+
+详情页的快速切换列表由 `list_visible_entities` 返回，支持按最近日期或累计提及排序，且不应再使用最近 2 到 3 天的硬编码截断。可见历史由 `security_daily_views` 中已物化的股票观点决定。
+
+一览表由 `get_visible_stock_matrix` 返回。默认结束日是当前用户可见范围里的最新 `date_key`，窗口为结束日往前 7 个自然日。同一作者在窗口内多次提及同一股票时，每条有效观点都作为独立红/绿点返回，不合并为单个观点。
+
 ## 股票归一化
 
 股票别名配置位于 `data/config/security_aliases.json`，示例文件为 `data/config/security_aliases.example.json`。

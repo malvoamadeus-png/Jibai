@@ -243,9 +243,9 @@ if not dsn:
 
 with psycopg.connect(dsn, autocommit=True) as conn:
     with conn.cursor() as cur:
-        cur.execute("select count(*) from public.list_visible_entities('stock','',100)")
+        cur.execute("select count(*) from public.list_visible_entities('stock','',100,'date_desc')")
         print("rpc_stock_count=" + str(cur.fetchone()[0]))
-        cur.execute("select count(*) from public.list_visible_entities('theme','',100)")
+        cur.execute("select count(*) from public.list_visible_entities('theme','',100,'date_desc')")
         print("rpc_theme_count=" + str(cur.fetchone()[0]))
         cur.execute("select public.get_visible_entity_timeline('theme','anything',1,20) is null")
         print("rpc_theme_timeline_is_null=" + str(cur.fetchone()[0]))
@@ -278,6 +278,63 @@ Rebuild with:
 Afterward, verify that `author_daily_summaries` spans the intended 30-day
 content window and `security_daily_prices` spans the intended 180-day K-line
 cache window.
+
+## Restore Stock Detail History And Add Matrix Overview
+
+`supabase/migrations/014_stock_detail_sort_and_matrix_overview.sql` updates the
+stock-side public RPCs after the same stock-signal-only migration left a hard
+three-day date filter in `list_visible_entities` and
+`get_visible_entity_timeline`.
+
+The migration:
+
+- keeps stock-only signal filtering
+- removes the fixed recent-day cutoff from stock list/detail RPCs
+- adds server-side sort support for `date_desc`, `date_asc`, `count_desc`, and
+  `count_asc`
+- adds `get_visible_stock_matrix(end_date_arg text)` for the 7-day stock x
+  author overview table
+
+Verification after applying it:
+
+```bash
+/mnt/d/Software/Code/Anaconda/python.exe - <<'PY'
+import os
+import psycopg
+from dotenv import load_dotenv
+
+load_dotenv(".env", override=False)
+dsn = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+if not dsn:
+    raise SystemExit("missing SUPABASE_DB_URL or DATABASE_URL")
+
+with psycopg.connect(dsn, autocommit=True) as conn:
+    with conn.cursor() as cur:
+        cur.execute("""
+        select
+          pg_get_functiondef('public.list_visible_entities(text,text,integer,text)'::regprocedure)
+            like '%date_key >= ((now() at time zone%' as list_has_cutoff,
+          pg_get_functiondef('public.get_visible_entity_timeline(text,text,integer,integer)'::regprocedure)
+            like '%date_key >= ((now() at time zone%' as detail_has_cutoff
+        """)
+        print("stock_rpc_cutoffs=" + repr(cur.fetchone()))
+
+        for sort in ["date_desc", "date_asc", "count_desc", "count_asc"]:
+            cur.execute(
+                "select array_agg(entity_key order by rn) from ("
+                "select entity_key, row_number() over () rn "
+                "from public.list_visible_entities('stock','',10,%s)"
+                ") s",
+                (sort,),
+            )
+            print(f"sort_{sort}=" + repr(cur.fetchone()[0]))
+
+        cur.execute("select public.get_visible_stock_matrix(null)")
+        payload = cur.fetchone()[0]
+        print("matrix_window=" + repr((payload.get("start_date"), payload.get("end_date"))))
+        print("matrix_counts=" + repr((len(payload.get("stocks") or []), len(payload.get("authors") or []), len(payload.get("cells") or []))))
+PY
+```
 
 ## Frontend Verification
 
