@@ -6,6 +6,8 @@ Public web uses Supabase as the primary database. Vercel only serves `public-web
 
 - Polls `crawl_jobs` every 30 seconds.
 - Enqueues scheduled crawl jobs at `04:00,10:00,16:00,22:00` Asia/Shanghai.
+- Fetches approved onchain wallet holdings at
+  `04:20,10:20,16:20,22:20` Asia/Shanghai by default.
 - Processes only one crawl job at a time with a Postgres advisory lock.
 - Crawls X accounts serially with a 5 second account delay.
 - Runs stock or crypto AI signal analysis by job domain and writes author summaries, viewpoints, and materialized timelines back to Supabase.
@@ -43,12 +45,19 @@ PUBLIC_WORKER_LIGHT_MARKET_DATA_DAYS=7
 PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS=30
 PUBLIC_WORKER_DOMAINS=stock,crypto
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
+PUBLIC_ONCHAIN_ENABLED=true
+PUBLIC_ONCHAIN_FETCH_TIMES=04:20,10:20,16:20,22:20
+PUBLIC_ONCHAIN_MIN_VALUE_USD=200
 
 AI_PROVIDER=openai-compatible
 AI_API_KEY='your-openai-compatible-api-key'
 AI_BASE_URL='https://your-openai-compatible-endpoint/v1'
 AI_MODEL='your-analysis-model'
 AI_FALLBACK_MODELS='optional-fallback-model-1,optional-fallback-model-2'
+
+OKX_API_KEY='your-okx-web3-api-key'
+OKX_SECRET_KEY='your-okx-web3-secret-key'
+OKX_PASSPHRASE='your-okx-web3-passphrase'
 ```
 
 Use the Supabase Postgres connection string, not the anon key. The anon key is for browser/database API access; this worker needs a server-side SQL connection so it can claim jobs, run locks, and write analysis tables.
@@ -109,6 +118,14 @@ detail view and never renders K-line data. `/crypto/assets/overview` uses
 and gray dots are weak informational or mention signals such as reposts,
 announcements, data broadcasts, or plain mentions.
 
+Public onchain browsing uses OKX Web3 from the backend only. The worker reads
+`OKX_API_KEY`, `OKX_SECRET_KEY`, and `OKX_PASSPHRASE`; these values must not be
+added to `public-web` env. `/onchain` shows overview data, `/onchain/tokens`
+shows the token x date matrix, `/onchain/wallets` shows the address library and
+single-wallet matrix, and `/onchain/admin` enqueues manual fetch runs. The
+long-running worker executes both scheduled fetches and pending manual onchain
+runs.
+
 ## Commands
 
 ```bash
@@ -122,6 +139,10 @@ python backend/src/main.py public-worker --once
 python backend/src/main.py public-worker
 python backend/src/main.py public-worker-doctor
 python backend/src/main.py public-enqueue-scheduled
+python backend/src/main.py public-onchain-doctor
+python backend/src/main.py public-onchain-fetch --once
+python backend/src/main.py public-onchain-process-pending --limit 1
+python backend/src/main.py public-onchain-rebuild-daily --days 30
 python backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
 python backend/src/main.py public-reanalyze-recent --domain crypto --days 30 --clear-analysis
 python backend/src/main.py public-rebuild-timelines --domain crypto
@@ -150,7 +171,8 @@ and rebuilds the crypto materialized views.
 `public-worker-doctor` is read-only. Run it on the server with the same
 environment file as the worker to print queue counts, due pending jobs, running
 job age, latest scheduled job, global plus per-domain account/subscription
-counts, and whether a job is holding the Postgres worker lock at that instant.
+counts, onchain OKX-key presence, onchain wallet counts, latest onchain run,
+and whether a job is holding the Postgres worker lock at that instant.
 
 The long-running `public-worker` validates the database connection before it
 starts APScheduler. If the service exits immediately, inspect the service

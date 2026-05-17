@@ -7,6 +7,13 @@ export type UserProfile = {
 };
 
 export type Domain = "stock" | "crypto";
+export type OnchainChainKey = "ethereum" | "base" | "bsc" | "solana";
+
+export type OnchainChain = {
+  key: OnchainChainKey;
+  chainIndex: string;
+  enabled?: boolean;
+};
 
 export type PagedResult<T> = {
   rows: T[];
@@ -342,6 +349,143 @@ export type MarketTopRiskData = {
     nearHighFwd26wDd10Probability: number | null;
     method: string;
   };
+};
+
+export type OnchainWalletListItem = {
+  id: string;
+  address: string;
+  addressShort: string;
+  displayName: string;
+  adminLabel: string;
+  userNote: string;
+  subscribed: boolean;
+  enabledChains: OnchainChain[];
+  lastSnapshotAt: string | null;
+  status: string;
+};
+
+export type OnchainRequestItem = {
+  id: string;
+  status: string;
+  rawInput: string;
+  normalizedAddress: string;
+  createdAt: string;
+};
+
+export type OnchainHolder = {
+  walletId: string;
+  address: string;
+  addressShort: string;
+  displayName: string;
+  balance: number;
+  valueUsd: number;
+};
+
+export type OnchainTokenMatrixToken = {
+  tokenId: string;
+  tokenKey: string;
+  chainKey: OnchainChainKey;
+  chainIndex: string;
+  contractAddress: string;
+  symbol: string;
+  displayName: string;
+  latestDate: string | null;
+  latestHolderCount: number;
+  latestValueUsd: number;
+};
+
+export type OnchainTokenMatrixCell = {
+  date: string;
+  tokenId: string;
+  holderCount: number;
+  balanceSum: number;
+  valueUsdSum: number;
+  holderCountDelta: number | null;
+  balanceDelta: number | null;
+  valueUsdDelta: number | null;
+  holders: OnchainHolder[];
+};
+
+export type OnchainTokenMatrixData = {
+  dates: string[];
+  tokens: OnchainTokenMatrixToken[];
+  cells: OnchainTokenMatrixCell[];
+};
+
+export type OnchainWalletMatrixToken = {
+  tokenId: string;
+  tokenKey: string;
+  chainKey: OnchainChainKey;
+  chainIndex: string;
+  contractAddress: string;
+  symbol: string;
+  displayName: string;
+};
+
+export type OnchainWalletMatrixCell = {
+  date: string;
+  tokenId: string;
+  balance: number;
+  valueUsd: number;
+  balanceDelta: number | null;
+  valueUsdDelta: number | null;
+  state: string;
+};
+
+export type OnchainWalletMatrixData = {
+  meta: OnchainWalletListItem | null;
+  dates: string[];
+  tokens: OnchainWalletMatrixToken[];
+  cells: OnchainWalletMatrixCell[];
+};
+
+export type OnchainRunItem = {
+  id: string;
+  kind: string;
+  status: string;
+  summary: string;
+  errorText: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type OnchainOverviewData = {
+  latestDate: string | null;
+  walletCount: number;
+  tokenCount: number;
+  topTokens: Array<Record<string, unknown>>;
+  newTokens: Array<Record<string, unknown>>;
+  increasedTokens: Array<Record<string, unknown>>;
+  activeWallets: Array<Record<string, unknown>>;
+  recentRuns: OnchainRunItem[];
+};
+
+export type OnchainAdminWalletItem = {
+  id: string;
+  address: string;
+  addressShort: string;
+  adminLabel: string;
+  status: string;
+  lastSnapshotAt: string | null;
+  enabledChains: OnchainChain[];
+};
+
+export type OnchainAdminRequestItem = {
+  id: string;
+  rawInput: string;
+  normalizedAddress: string;
+  status: string;
+  requesterEmail: string;
+  createdAt: string;
+};
+
+export type OnchainAdminDashboard = {
+  approvedCount: number;
+  pendingCount: number;
+  wallets: OnchainAdminWalletItem[];
+  requests: OnchainAdminRequestItem[];
+  runs: OnchainRunItem[];
 };
 
 export type AdminRequestItem = {

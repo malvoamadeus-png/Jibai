@@ -5,6 +5,9 @@
 ## 模块文档
 
 - [X 账号内容抓取](x-account-capture.md)
+- [股票观点分析方案](stock-viewpoint-analysis.md)
+- [Crypto 观点分析方案](crypto-viewpoint-analysis.md)
+- [链上埋伏分析方案](onchain-ambush-analysis.md)
 - [账号内容观点分析](account-viewpoint-analysis.md)
 - [美股顶部风险预判](us-market-top-risk.md)
 

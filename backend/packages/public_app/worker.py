@@ -21,6 +21,8 @@ from packages.common.paths import ensure_runtime_dirs, get_paths
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
 from packages.common.settings import load_settings
 from packages.common.time_utils import SHANGHAI_TZ, note_date_key, now_iso, today_date_key
+from packages.onchain.service import doctor_once as onchain_doctor_once
+from packages.onchain.service import fetch_onchain_once, process_pending_onchain_fetches
 from packages.x.config import AccountTarget, WatchlistConfig
 from packages.x.service import crawl_account_once
 
@@ -40,6 +42,7 @@ from .market_top_risk import sync_market_top_risk_once
 
 
 DEFAULT_CRAWL_TIMES = ("04:00", "10:00", "16:00", "22:00")
+DEFAULT_ONCHAIN_FETCH_TIMES = ("04:20", "10:20", "16:20", "22:20")
 WORKER_LOCK_KEY = "jibai_public_x_worker"
 _MARKET_ERROR_RE = re.compile(r"^\[market ([^\]]+)\]\s*(.*)$")
 
@@ -48,6 +51,16 @@ def _crawl_times() -> list[str]:
     raw = os.getenv("PUBLIC_WORKER_CRAWL_TIMES", ",".join(DEFAULT_CRAWL_TIMES))
     values = [item.strip() for item in raw.split(",") if item.strip()]
     return values or list(DEFAULT_CRAWL_TIMES)
+
+
+def _onchain_fetch_times() -> list[str]:
+    raw = os.getenv("PUBLIC_ONCHAIN_FETCH_TIMES", ",".join(DEFAULT_ONCHAIN_FETCH_TIMES))
+    values = [item.strip() for item in raw.split(",") if item.strip()]
+    return values or list(DEFAULT_ONCHAIN_FETCH_TIMES)
+
+
+def _onchain_enabled() -> bool:
+    return os.getenv("PUBLIC_ONCHAIN_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
 
 
 def _top_risk_sync_time() -> str:
@@ -403,6 +416,16 @@ def process_pending_jobs(*, max_jobs: int | None = None) -> int:
     return processed
 
 
+def process_pending_onchain_jobs(*, max_runs: int | None = 1) -> int:
+    if not _onchain_enabled():
+        return 0
+    try:
+        return process_pending_onchain_fetches(max_runs=max_runs)
+    except Exception as exc:
+        print(f"[onchain] pending_error={_clean_error_text(str(exc))}")
+        return 0
+
+
 def enqueue_scheduled_crawl_job(domain: str = "stock") -> str:
     safe_domain = _normalize_domain(domain)
     dedupe_key = f"scheduled_crawl:{safe_domain}:" + datetime.now(SHANGHAI_TZ).strftime("%Y%m%d%H%M")
@@ -436,6 +459,7 @@ def diagnose_worker_once() -> int:
     print(
         "[public-worker] doctor "
         f"crawl_times={','.join(_crawl_times())} "
+        f"onchain_times={','.join(_onchain_fetch_times()) if _onchain_enabled() else 'disabled'} "
         f"domains={','.join(_worker_domains())} "
         f"top_risk_sync_time={_top_risk_sync_time()} "
         f"poll={_poll_seconds()}s "
@@ -452,6 +476,7 @@ def diagnose_worker_once() -> int:
     )
 
     try:
+        onchain_doctor_once()
         with postgres_connection() as conn:
             db_now = conn.execute("SELECT now() AS value").fetchone()
             print(f"[public-worker] db_now={_format_db_value(db_now['value'] if db_now else None)}")
@@ -874,6 +899,15 @@ def run_worker(*, once: bool = False) -> int:
             id=f"public-x-{hour_text}{minute_text}",
             replace_existing=True,
         )
+    if _onchain_enabled():
+        for value in _onchain_fetch_times():
+            hour_text, minute_text = value.split(":", 1)
+            scheduler.add_job(
+                lambda: fetch_onchain_once(kind="scheduled"),
+                CronTrigger(hour=int(hour_text), minute=int(minute_text), timezone=SHANGHAI_TZ),
+                id=f"public-onchain-{hour_text}{minute_text}",
+                replace_existing=True,
+            )
     scheduler.add_job(
         lambda: process_pending_jobs(max_jobs=None),
         "interval",
@@ -881,6 +915,14 @@ def run_worker(*, once: bool = False) -> int:
         id="public-worker-poll",
         replace_existing=True,
     )
+    if _onchain_enabled():
+        scheduler.add_job(
+            lambda: process_pending_onchain_jobs(max_runs=1),
+            "interval",
+            seconds=_poll_seconds(),
+            id="public-onchain-pending-poll",
+            replace_existing=True,
+        )
     top_risk_hour, top_risk_minute = _top_risk_sync_time().split(":", 1)
     scheduler.add_job(
         lambda: sync_market_top_risk_once(history_limit=_top_risk_history_limit()),
@@ -891,6 +933,7 @@ def run_worker(*, once: bool = False) -> int:
     print(
         "[public-worker] started. crawl_times="
         + ", ".join(_crawl_times())
+        + ("; onchain_times=" + ", ".join(_onchain_fetch_times()) if _onchain_enabled() else "; onchain=disabled")
         + f"; domains={','.join(_worker_domains())}"
         + f"; poll={_poll_seconds()}s; account_delay={_account_pause_seconds()}s"
         + f"; light_market_data_days={_light_market_data_days()}"

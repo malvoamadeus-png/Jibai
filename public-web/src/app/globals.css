@@ -56,7 +56,8 @@ a {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -134,7 +135,7 @@ input {
 
 .domain-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 18px;
   border: 1px solid var(--border);
@@ -248,7 +249,7 @@ input {
 }
 
 .table-panel {
-  overflow: hidden;
+  overflow: auto;
 }
 
 .section-head {
@@ -359,7 +360,8 @@ button:disabled {
   align-items: center;
 }
 
-input {
+input,
+select {
   min-height: 42px;
   min-width: min(360px, 100%);
   border: 1px solid var(--border-strong);
@@ -367,6 +369,10 @@ input {
   color: var(--ink);
   border-radius: 18px;
   padding: 0 14px;
+}
+
+select {
+  min-width: 130px;
 }
 
 .feed-filter-checkbox {
@@ -387,6 +393,15 @@ input {
 .field-error {
   color: var(--danger);
   font-size: 13px;
+}
+
+.link-button {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
 }
 
 table {
@@ -427,6 +442,105 @@ tr:last-child td {
   border: 1px solid var(--border-strong);
   padding: 4px 10px;
   color: var(--muted-ink);
+  font-size: 12px;
+}
+
+.chain-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chain-filter-item,
+.chain-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chain-filter-item {
+  min-height: 34px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted-ink);
+  padding: 0 11px;
+}
+
+.chain-filter-item.active,
+.chain-filter-item:hover {
+  background: var(--paper-strong);
+  color: var(--accent-strong);
+}
+
+.chain-badge {
+  margin-right: 6px;
+  padding: 2px 8px;
+  vertical-align: middle;
+}
+
+.chain-ethereum {
+  border-color: rgba(66, 100, 170, 0.26);
+  background: rgba(66, 100, 170, 0.1);
+  color: #3e5d9a;
+}
+
+.chain-base {
+  border-color: rgba(41, 105, 210, 0.28);
+  background: rgba(41, 105, 210, 0.1);
+  color: #225eb7;
+}
+
+.chain-bsc {
+  border-color: rgba(181, 139, 59, 0.34);
+  background: rgba(181, 139, 59, 0.13);
+  color: #8c6721;
+}
+
+.chain-solana {
+  border-color: rgba(72, 134, 96, 0.32);
+  background: rgba(72, 134, 96, 0.11);
+  color: #3d7b55;
+}
+
+.onchain-matrix {
+  overflow-x: auto;
+}
+
+.onchain-matrix table {
+  min-width: max-content;
+}
+
+.onchain-matrix th:first-child,
+.onchain-matrix td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 220px;
+  max-width: 260px;
+  background: var(--paper);
+}
+
+.onchain-matrix th {
+  background: var(--paper-strong);
+}
+
+.delta-up {
+  color: #2f7d4f;
+  font-weight: 700;
+}
+
+.delta-down {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.address-text {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
 }
 
