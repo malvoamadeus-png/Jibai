@@ -45,6 +45,7 @@ import type {
   StockMatrixAuthor,
   StockMatrixCell,
   StockMatrixData,
+  StockMatrixGranularity,
   StockMatrixStock,
   StockMatrixView,
   StockNarrativeBrief,
@@ -733,9 +734,11 @@ export async function getVisibleCryptoMatrix(
 export async function getVisibleStockMatrix(
   supabase: SupabaseClient,
   endDate: string | null = null,
+  granularity: StockMatrixGranularity = "week",
 ): Promise<StockMatrixData> {
   const { data, error } = await supabase.rpc("get_visible_stock_matrix", {
     end_date_arg: endDate || null,
+    granularity_arg: granularity,
   });
   assertNoError(error);
   const payload = asRecord(data);

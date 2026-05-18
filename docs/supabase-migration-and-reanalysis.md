@@ -370,7 +370,7 @@ The migration:
 - removes the fixed recent-day cutoff from stock list/detail RPCs
 - adds server-side sort support for `date_desc`, `date_asc`, `count_desc`, and
   `count_asc`
-- adds `get_visible_stock_matrix(end_date_arg text)` for the 7-day stock x
+- adds the initial `get_visible_stock_matrix(end_date_arg text)` weekly stock x
   author overview table; authenticated users are scoped to subscribed authors,
   while anonymous users keep the public preview scope
 
@@ -426,6 +426,49 @@ npm run build
 ```
 
 The production build route list should not include `/themes`.
+
+## Add Stock Matrix Day View
+
+`supabase/migrations/020_stock_matrix_day_granularity.sql` extends the stock
+overview matrix RPC so `/stocks/overview` can switch between weekly and daily
+windows without changing the visibility rules.
+
+The migration:
+
+- keeps the existing anonymous preview and authenticated subscription scoping
+- adds `get_visible_stock_matrix(end_date_arg text, granularity_arg text)` for
+  `day` and `week` windows
+- keeps the one-argument `get_visible_stock_matrix(end_date_arg text)` wrapper
+  so existing callers still get the weekly view
+- returns only authors, stocks, and cells that have valid viewpoints inside the
+  selected window
+
+Verification after applying it:
+
+```bash
+/mnt/d/Software/Code/Anaconda/python.exe - <<'PY'
+import os
+import psycopg
+from dotenv import load_dotenv
+
+load_dotenv(".env", override=False)
+dsn = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+if not dsn:
+    raise SystemExit("missing SUPABASE_DB_URL or DATABASE_URL")
+
+with psycopg.connect(dsn, autocommit=True) as conn:
+    with conn.cursor() as cur:
+        cur.execute("select public.get_visible_stock_matrix(null, 'week')")
+        weekly = cur.fetchone()[0]
+        print("weekly_window=" + repr((weekly.get("start_date"), weekly.get("end_date"))))
+        print("weekly_counts=" + repr((len(weekly.get("stocks") or []), len(weekly.get("authors") or []), len(weekly.get("cells") or []))))
+
+        cur.execute("select public.get_visible_stock_matrix(null, 'day')")
+        daily = cur.fetchone()[0]
+        print("daily_window=" + repr((daily.get("start_date"), daily.get("end_date"))))
+        print("daily_counts=" + repr((len(daily.get("stocks") or []), len(daily.get("authors") or []), len(daily.get("cells") or []))))
+PY
+```
 
 ## Apply Onchain Ambush Migration
 

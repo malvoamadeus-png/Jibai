@@ -235,6 +235,10 @@ journalctl -u jibai-public-worker.service -n 50 --no-pager
 
 ## 5. Vercel/前端验证
 
+当前这个仓库的公开前端采用 `GitHub -> Vercel` 部署链路。只在本地修改
+`public-web`、跑 `npm run build`，不会更新线上页面；要让用户真的看到改动，
+必须先把相关提交 push 到 GitHub，等待 Vercel 拉取新 commit 完成部署。
+
 如果 GitHub main 会触发 Vercel 部署，推送后至少检查：
 
 ```bash

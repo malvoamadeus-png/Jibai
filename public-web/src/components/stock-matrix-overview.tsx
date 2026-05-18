@@ -12,7 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth-context";
 import { getVisibleStockMatrix } from "@/lib/direct-data";
-import type { StockMatrixCell, StockMatrixData, StockMatrixStock, StockMatrixView } from "@/lib/types";
+import type {
+  StockMatrixAuthor,
+  StockMatrixCell,
+  StockMatrixData,
+  StockMatrixGranularity,
+  StockMatrixStock,
+  StockMatrixView,
+} from "@/lib/types";
 import { cn, formatCount, viewSignalLabel } from "@/lib/utils";
 
 function isDateKey(value: string | null) {
@@ -33,6 +40,31 @@ function buildCellMap(cells: StockMatrixCell[]) {
 
 function stockLabel(stock: StockMatrixStock) {
   return [stock.ticker, stock.market].filter(Boolean).join(" / ") || stock.securityKey;
+}
+
+function readGranularity(value: string | null): StockMatrixGranularity {
+  return value === "day" ? "day" : "week";
+}
+
+function formatWindowLabel(startDate: string | null, endDate: string | null) {
+  if (!startDate || !endDate) return "暂无";
+  return startDate === endDate ? startDate : `${startDate} 至 ${endDate}`;
+}
+
+function trimEmptyMatrix(data: StockMatrixData | null): {
+  authors: StockMatrixAuthor[];
+  stocks: StockMatrixStock[];
+  cells: StockMatrixCell[];
+} | null {
+  if (!data) return null;
+  const cells = data.cells.filter((cell) => cell.views.length > 0);
+  const visibleAuthors = new Set(cells.map((cell) => cell.accountName));
+  const visibleStocks = new Set(cells.map((cell) => cell.securityKey));
+  return {
+    authors: data.authors.filter((author) => visibleAuthors.has(author.accountName)),
+    stocks: data.stocks.filter((stock) => visibleStocks.has(stock.securityKey)),
+    cells,
+  };
 }
 
 function ViewTooltip({
@@ -115,6 +147,7 @@ export function StockMatrixOverview() {
   const { loading, profile, signIn, supabase } = useAuth();
   const endParam = searchParams.get("end");
   const endDate = isDateKey(endParam) ? endParam : null;
+  const granularity = readGranularity(searchParams.get("granularity"));
   const [data, setData] = useState<StockMatrixData | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +158,7 @@ export function StockMatrixOverview() {
     Promise.resolve().then(() => {
       if (!cancelled) setMatrixLoading(true);
     });
-    getVisibleStockMatrix(supabase, endDate)
+    getVisibleStockMatrix(supabase, endDate, granularity)
       .then((nextData) => {
         if (cancelled) return;
         setData(nextData);
@@ -142,18 +175,26 @@ export function StockMatrixOverview() {
     return () => {
       cancelled = true;
     };
-  }, [endDate, loading, supabase]);
+  }, [endDate, granularity, loading, supabase]);
 
-  const cellMap = useMemo(() => buildCellMap(data?.cells ?? []), [data]);
+  const matrix = useMemo(() => trimEmptyMatrix(data), [data]);
+  const cellMap = useMemo(() => buildCellMap(matrix?.cells ?? []), [matrix]);
   const totalViews = useMemo(
-    () => (data?.cells ?? []).reduce((sum, cell) => sum + cell.views.length, 0),
-    [data],
+    () => (matrix?.cells ?? []).reduce((sum, cell) => sum + cell.views.length, 0),
+    [matrix],
   );
+  const windowLabel = useMemo(() => formatWindowLabel(data?.startDate ?? null, data?.endDate ?? null), [data]);
+  const windowModeLabel = granularity === "day" ? "按日" : "按周";
+  const previousLabel = granularity === "day" ? "上一日" : "上一周";
+  const nextLabel = granularity === "day" ? "下一日" : "下一周";
+  const emptyLabel = granularity === "day" ? "这个日期没有有效股票观点" : "这个周窗口没有有效股票观点";
 
-  function navigate(nextEndDate: string | null) {
+  function navigate(nextEndDate: string | null, nextGranularity: StockMatrixGranularity = granularity) {
     const next = new URLSearchParams(searchParams);
     if (nextEndDate) next.set("end", nextEndDate);
     else next.delete("end");
+    if (nextGranularity === "day") next.set("granularity", "day");
+    else next.delete("granularity");
     router.push(next.toString() ? `/stocks/overview?${next.toString()}` : "/stocks/overview");
   }
 
@@ -171,10 +212,30 @@ export function StockMatrixOverview() {
             <div>
               <CardTitle className="text-3xl">股票 × 作者观点一览</CardTitle>
               <CardDescription>
-                纵向为股票，横向为作者；每个红绿点代表过去 7 天内的一条有效观点。
+                纵向为股票，横向为作者；每个红绿点代表当前{windowModeLabel}窗口内的一条有效观点。
               </CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="inline-flex items-center gap-1 rounded-full border border-[color:var(--border-strong)] bg-[color:var(--paper)] p-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={granularity === "week" ? "secondary" : "ghost"}
+                  className="min-w-[64px]"
+                  onClick={() => navigate(endDate, "week")}
+                >
+                  按周
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={granularity === "day" ? "secondary" : "ghost"}
+                  className="min-w-[64px]"
+                  onClick={() => navigate(endDate, "day")}
+                >
+                  按日
+                </Button>
+              </div>
               <Button
                 type="button"
                 variant="secondary"
@@ -182,7 +243,7 @@ export function StockMatrixOverview() {
                 onClick={() => navigate(data?.previousEndDate ?? null)}
               >
                 <ArrowLeft className="h-4 w-4" />
-                上一周
+                {previousLabel}
               </Button>
               <Button
                 type="button"
@@ -190,7 +251,7 @@ export function StockMatrixOverview() {
                 disabled={!data?.nextEndDate}
                 onClick={() => navigate(data?.nextEndDate ?? null)}
               >
-                下一周
+                {nextLabel}
                 <ArrowRight className="h-4 w-4" />
               </Button>
               <Button type="button" variant="secondary" onClick={() => navigate(null)}>
@@ -208,15 +269,15 @@ export function StockMatrixOverview() {
         <div className="grid gap-3 md:grid-cols-4">
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
             <p className="text-xs text-[color:var(--soft-ink)]">窗口</p>
-            <p className="mt-1 text-sm font-semibold">{data?.startDate && data.endDate ? `${data.startDate} 至 ${data.endDate}` : "暂无"}</p>
+            <p className="mt-1 text-sm font-semibold">{windowLabel}</p>
           </div>
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
             <p className="text-xs text-[color:var(--soft-ink)]">股票</p>
-            <p className="mt-1 text-sm font-semibold">{formatCount(data?.stocks.length ?? 0)}</p>
+            <p className="mt-1 text-sm font-semibold">{formatCount(matrix?.stocks.length ?? 0)}</p>
           </div>
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
             <p className="text-xs text-[color:var(--soft-ink)]">作者</p>
-            <p className="mt-1 text-sm font-semibold">{formatCount(data?.authors.length ?? 0)}</p>
+            <p className="mt-1 text-sm font-semibold">{formatCount(matrix?.authors.length ?? 0)}</p>
           </div>
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
             <p className="text-xs text-[color:var(--soft-ink)]">观点点位</p>
@@ -228,7 +289,7 @@ export function StockMatrixOverview() {
           <CardContent className="h-full p-0">
             {error ? <div className="m-4 empty field-error">{error}</div> : null}
             {matrixLoading ? <div className="m-4 empty">一览表加载中</div> : null}
-            {!matrixLoading && data && data.stocks.length && data.authors.length ? (
+            {!matrixLoading && matrix && matrix.stocks.length && matrix.authors.length ? (
               <div className="h-full overflow-auto overscroll-contain">
                 <table className="min-w-max border-separate border-spacing-0">
                   <thead>
@@ -236,7 +297,7 @@ export function StockMatrixOverview() {
                       <th className="sticky left-0 top-0 z-30 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3">
                         股票
                       </th>
-                      {data.authors.map((author) => (
+                      {matrix.authors.map((author) => (
                         <th
                           key={author.accountName}
                           className="sticky top-0 z-20 min-w-[148px] max-w-[148px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-3 py-3 align-bottom"
@@ -256,7 +317,7 @@ export function StockMatrixOverview() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.stocks.map((stock) => (
+                    {matrix.stocks.map((stock) => (
                       <tr key={stock.securityKey}>
                         <th className="sticky left-0 z-10 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 text-left align-top">
                           <Link
@@ -269,7 +330,7 @@ export function StockMatrixOverview() {
                             {stockLabel(stock)} · {formatCount(stock.mentionCount)}
                           </span>
                         </th>
-                        {data.authors.map((author) => {
+                        {matrix.authors.map((author) => {
                           const cell = cellMap.get(cellKey(stock.securityKey, author.accountName));
                           return (
                             <td
@@ -298,8 +359,8 @@ export function StockMatrixOverview() {
                 </table>
               </div>
             ) : null}
-            {!matrixLoading && data && (!data.stocks.length || !data.authors.length) ? (
-              <div className="m-4 empty">{profile ? "这个窗口没有有效股票观点" : "暂无公开预览数据"}</div>
+            {!matrixLoading && matrix && (!matrix.stocks.length || !matrix.authors.length) ? (
+              <div className="m-4 empty">{profile ? emptyLabel : "暂无公开预览数据"}</div>
             ) : null}
           </CardContent>
         </Card>
