@@ -47,6 +47,8 @@ import type {
   StockMatrixData,
   StockMatrixStock,
   StockMatrixView,
+  StockNarrativeBrief,
+  StockNarrativeSections,
   TimelineNote,
   UserProfile,
   ViewConviction,
@@ -209,6 +211,15 @@ function normalizeStockMatrixCell(rawValue: unknown): StockMatrixCell {
     accountName,
     authorNickname: asString(raw.author_nickname ?? raw.authorNickname, accountName),
     views: asArray(raw.views).map(normalizeStockMatrixView),
+  };
+}
+
+function normalizeNarrativeSections(rawValue: unknown): StockNarrativeSections {
+  const raw = asRecord(rawValue);
+  return {
+    mainstreamNarrative: normalizeStringArray(raw.mainstream_narrative ?? raw.mainstreamNarrative),
+    newDirections: normalizeStringArray(raw.new_directions ?? raw.newDirections),
+    rareNegativeSignals: normalizeStringArray(raw.rare_negative_signals ?? raw.rareNegativeSignals),
   };
 }
 
@@ -736,6 +747,35 @@ export async function getVisibleStockMatrix(
     authors: asArray(payload.authors).map(normalizeStockMatrixAuthor),
     stocks: asArray(payload.stocks).map(normalizeStockMatrixStock),
     cells: asArray(payload.cells).map(normalizeStockMatrixCell),
+  };
+}
+
+export async function getLatestStockNarrativeBrief(
+  supabase: SupabaseClient,
+): Promise<StockNarrativeBrief | null> {
+  const { data, error } = await supabase.rpc("get_latest_stock_narrative_brief");
+  assertNoError(error);
+  const payload = asRecord(data);
+  const id = asString(payload.id);
+  const briefText = asString(payload.brief_text ?? payload.briefText);
+  if (!id || !briefText) return null;
+  return {
+    id,
+    briefDate: asString(payload.brief_date ?? payload.briefDate),
+    windowStart: asNullableString(payload.window_start ?? payload.windowStart),
+    windowEnd: asNullableString(payload.window_end ?? payload.windowEnd),
+    previousWindowStart: asNullableString(payload.previous_window_start ?? payload.previousWindowStart),
+    previousWindowEnd: asNullableString(payload.previous_window_end ?? payload.previousWindowEnd),
+    baselineStart: asNullableString(payload.baseline_start ?? payload.baselineStart),
+    baselineEnd: asNullableString(payload.baseline_end ?? payload.baselineEnd),
+    inputDigest: asRecord(payload.input_digest ?? payload.inputDigest),
+    sections: normalizeNarrativeSections(payload.sections),
+    briefText,
+    modelName: asNullableString(payload.model_name ?? payload.modelName),
+    promptVersion: asString(payload.prompt_version ?? payload.promptVersion),
+    usage: asRecord(payload.usage),
+    createdAt: asNullableString(payload.created_at ?? payload.createdAt),
+    updatedAt: asNullableString(payload.updated_at ?? payload.updatedAt),
   };
 }
 

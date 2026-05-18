@@ -138,6 +138,12 @@ If account submission fails with
 sql_path = Path("supabase/migrations/017_fix_submit_x_account_conflict_target.sql")
 ```
 
+For the public stock narrative brief, use:
+
+```python
+sql_path = Path("supabase/migrations/019_stock_narrative_briefs.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -186,6 +192,16 @@ AI_API_TIMEOUT_SECONDS=180 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py normalize-crypto-assets --days 30
 ```
 
+Generate or refresh the public stock narrative brief after the migration:
+
+```bash
+AI_API_TIMEOUT_SECONDS=180 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-generate-stock-narrative
+```
+
+Use `--date YYYY-MM-DD --force` only when intentionally replacing an existing
+successful brief for that date.
+
 ## Verify Database State Locally
 
 Run this after migration or reanalysis:
@@ -213,6 +229,7 @@ with psycopg.connect(dsn, autocommit=True) as conn:
             "crypto_entities",
             "crypto_entity_daily_views",
             "theme_daily_views",
+            "stock_narrative_briefs",
         ]:
             cur.execute(f"select count(*) from {table}")
             print(f"{table}={cur.fetchone()[0]}")
@@ -224,6 +241,15 @@ with psycopg.connect(dsn, autocommit=True) as conn:
             order by 6 desc
         """)
         print("viewpoint_distribution=" + repr(cur.fetchall()))
+
+        cur.execute("select public.get_latest_stock_narrative_brief()")
+        brief = cur.fetchone()[0]
+        print("stock_narrative_latest=" + repr({
+            "brief_date": brief.get("brief_date"),
+            "window_start": brief.get("window_start"),
+            "window_end": brief.get("window_end"),
+            "has_text": bool(brief.get("brief_text")),
+        }))
 
         cur.execute("""
             select count(*)

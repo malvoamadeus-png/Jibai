@@ -39,6 +39,7 @@ from .jobs import (
     requeue_stale_running_jobs,
 )
 from .market_top_risk import sync_market_top_risk_once
+from .stock_narrative import generate_stock_narrative_once
 
 
 DEFAULT_CRAWL_TIMES = ("04:00", "10:00", "16:00", "22:00")
@@ -65,6 +66,10 @@ def _onchain_enabled() -> bool:
 
 def _top_risk_sync_time() -> str:
     return os.getenv("PUBLIC_WORKER_TOP_RISK_SYNC_TIME", "05:20").strip() or "05:20"
+
+
+def _stock_narrative_time() -> str:
+    return os.getenv("PUBLIC_WORKER_STOCK_NARRATIVE_TIME", "22:40").strip() or "22:40"
 
 
 def _top_risk_history_limit() -> int:
@@ -930,6 +935,13 @@ def run_worker(*, once: bool = False) -> int:
         id="public-market-top-risk-sync",
         replace_existing=True,
     )
+    narrative_hour, narrative_minute = _stock_narrative_time().split(":", 1)
+    scheduler.add_job(
+        lambda: generate_stock_narrative_once(),
+        CronTrigger(hour=int(narrative_hour), minute=int(narrative_minute), timezone=SHANGHAI_TZ),
+        id="public-stock-narrative",
+        replace_existing=True,
+    )
     print(
         "[public-worker] started. crawl_times="
         + ", ".join(_crawl_times())
@@ -939,6 +951,7 @@ def run_worker(*, once: bool = False) -> int:
         + f"; light_market_data_days={_light_market_data_days()}"
         + f"; light_market_data_max={_light_market_data_max_securities()}"
         + f"; top_risk_sync_time={_top_risk_sync_time()}"
+        + f"; stock_narrative_time={_stock_narrative_time()}"
     )
     scheduler.start()
     return 0

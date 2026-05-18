@@ -109,6 +109,12 @@ For logged-in users the matrix is scoped to subscribed authors, including admin
 users; anonymous users keep the public preview scope. Matrix cells keep every
 valid positive/negative stock signal as an individual point.
 
+`/stocks/narrative` uses `get_latest_stock_narrative_brief` and is visible to
+anonymous and logged-in users. The brief is generated from all approved stock
+domain accounts, not from the current user's subscriptions. The long-running
+worker runs this once per day at `PUBLIC_WORKER_STOCK_NARRATIVE_TIME`, default
+`22:40` Asia/Shanghai, after the last default scheduled X crawl time.
+
 Public crypto browsing has three RPC-backed surfaces. `/crypto/feed` uses the
 domain-aware author RPC and suppresses the author daily summary sentence; cards
 only show crypto entity signals. `/crypto/assets` uses
@@ -148,6 +154,8 @@ python backend/src/main.py public-reanalyze-recent --domain crypto --days 30 --c
 python backend/src/main.py public-rebuild-timelines --domain crypto
 python backend/src/main.py normalize-crypto-assets --days 30
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
+python backend/src/main.py public-generate-stock-narrative
+python backend/src/main.py public-generate-stock-narrative --date 2026-05-18 --force
 python backend/src/main.py public-import-sqlite
 ```
 
@@ -187,6 +195,12 @@ stock page says market data is unavailable:
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-refresh-market-data --key amd --limit 1
 ```
+
+`public-generate-stock-narrative` generates the public stock narrative brief
+from the materialized stock views. It reads the latest available stock viewpoint
+date by default, or a specific `--date`, and skips an already successful brief
+unless `--force` is passed. Logs include only status, window, counts, and token
+usage; they must not print the prompt payload, DSN, or AI key.
 
 The command prints the matched `security_key` values before fetching. If
 `--query AMD` does not match `amd`, inspect `security_entities` because the

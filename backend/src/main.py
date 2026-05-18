@@ -170,6 +170,19 @@ def parse_args() -> argparse.Namespace:
         default=90,
         help="Number of recent weekly snapshots to upsert. Defaults to 90.",
     )
+    public_stock_narrative_parser = subparsers.add_parser(
+        "public-generate-stock-narrative",
+        help="Generate the public stock narrative brief from approved stock accounts.",
+    )
+    public_stock_narrative_parser.add_argument(
+        "--date",
+        help="Brief date in YYYY-MM-DD. Defaults to the latest available stock viewpoint date.",
+    )
+    public_stock_narrative_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate even if a successful brief already exists for the date.",
+    )
     public_onchain_fetch_parser = subparsers.add_parser(
         "public-onchain-fetch",
         help="Fetch approved onchain wallet holdings from OKX and rebuild daily views.",
@@ -268,6 +281,10 @@ def main() -> int:
         from packages.public_app.market_top_risk import sync_market_top_risk_once  # noqa: PLC0415
 
         return sync_market_top_risk_once(history_limit=args.history_limit)
+    if args.command == "public-generate-stock-narrative":
+        from packages.public_app.stock_narrative import generate_stock_narrative_once  # noqa: PLC0415
+
+        return generate_stock_narrative_once(brief_date=args.date, force=args.force)
     if args.command == "public-onchain-fetch":
         from packages.onchain.service import fetch_onchain_once  # noqa: PLC0415
 

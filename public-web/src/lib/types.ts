@@ -242,6 +242,31 @@ export type StockMatrixData = {
   cells: StockMatrixCell[];
 };
 
+export type StockNarrativeSections = {
+  mainstreamNarrative: string[];
+  newDirections: string[];
+  rareNegativeSignals: string[];
+};
+
+export type StockNarrativeBrief = {
+  id: string;
+  briefDate: string;
+  windowStart: string | null;
+  windowEnd: string | null;
+  previousWindowStart: string | null;
+  previousWindowEnd: string | null;
+  baselineStart: string | null;
+  baselineEnd: string | null;
+  inputDigest: Record<string, unknown>;
+  sections: StockNarrativeSections;
+  briefText: string;
+  modelName: string | null;
+  promptVersion: string;
+  usage: Record<string, unknown>;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 export type CryptoMatrixAsset = {
   assetKey: string;
   displayName: string;

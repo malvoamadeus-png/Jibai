@@ -8,6 +8,12 @@ from packages.common.models import NoteExtractRecord, RawNoteRecord
 NOTE_EXTRACT_REQUIRED_KEYS = ["summary_text", "viewpoints"]
 CRYPTO_NOTE_EXTRACT_REQUIRED_KEYS = ["summary_text", "viewpoints"]
 AUTHOR_SUMMARY_REQUIRED_KEYS = ["summary_text"]
+STOCK_NARRATIVE_REQUIRED_KEYS = [
+    "brief_text",
+    "mainstream_narrative",
+    "new_directions",
+    "rare_negative_signals",
+]
 
 
 def build_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
@@ -156,5 +162,34 @@ def build_author_day_summary_messages(
                 "该作者当天的帖子结构化结果如下：\n"
                 + json.dumps(note_items, ensure_ascii=False)
             ),
+        },
+    ]
+
+
+def build_stock_narrative_messages(input_digest: dict) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是一个中文投研叙事编辑。"
+                "请只输出 JSON 对象，不要输出 markdown。"
+                "任务是基于一批已结构化的股票观点，写一篇偏中立的中文叙事简报。"
+                "必须输出字段：brief_text, mainstream_narrative, new_directions, rare_negative_signals。"
+                "brief_text 是完整小作文，语气中立，不给买卖指令、目标价或新股票推荐。"
+                "mainstream_narrative、new_directions、rare_negative_signals 都必须是中文句子数组。"
+                "主流叙事只能写多名作者或多条证据共同支持的东西，不要把单个作者的一条观点写成大家都认可。"
+                "新风向要优先比较当前 7 个有效观点日、上一非重叠周期简报和 14/30 日主题基线；"
+                "请区分真正新出现、明显升温、单点早期信号。"
+                "昨日或上一条简报只用于连续性，不要把它当成唯一历史事实。"
+                "少见负面声音要保留样本里的反向观点或风险提示，并说明它目前是少数声音还是正在增多。"
+                "不要为输入里没有证据的主题补行业背景。"
+                "输入中的 current_viewpoints 故意不单独提供股票对象字段；请从 logic 和 evidence 里自然归纳主题，"
+                "但不要臆造输入没有出现过的公司、题材或结论。"
+                "如果样本不足，就在 brief_text 和对应数组里直接说明不足，不要硬写结论。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": "请基于下面的输入生成股票叙事简报 JSON：\n\n" + json.dumps(input_digest, ensure_ascii=False),
         },
     ]
