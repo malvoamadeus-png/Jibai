@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
 import { Ban, Check, Play, X } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { approveRequest, disableAccount, enqueueManualCrawl, rejectRequest } from "@/lib/direct-data";
 
@@ -38,13 +39,13 @@ function AdminButton({
     });
   }
 
-  const className = kind === "primary" ? "primary-button" : kind === "danger" ? "danger-button" : "secondary-button";
+  const variant = kind === "primary" ? "primary" : kind === "danger" ? "destructive" : "secondary";
   return (
     <span className="inline-action">
-      <button className={className} type="button" disabled={pending} onClick={submit}>
+      <Button variant={variant} type="button" disabled={pending} onClick={submit}>
         {icon}
         {label}
-      </button>
+      </Button>
       {error ? <span className="field-error">{error}</span> : null}
     </span>
   );

@@ -7,8 +7,8 @@ import { Nav } from "@/components/nav";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Jibai Public",
-  description: "Public X account insight tracker",
+  title: "集百 | Jibai Public",
+  description: "公开账号洞察与主题信号浏览",
 };
 
 export default async function RootLayout({

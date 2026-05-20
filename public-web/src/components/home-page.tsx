@@ -5,6 +5,10 @@ import { ArrowRight, Library, Radio, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { SignInCta } from "@/components/signin-cta";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, StatCard, StatGrid } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
 import { listAccounts as listDirectAccounts, listFeed as listDirectFeed } from "@/lib/direct-data";
 import type { AccountListItem, Domain, FeedDay } from "@/lib/types";
@@ -45,76 +49,124 @@ export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
 
   const isCrypto = domain === "crypto";
   const basePath = isCrypto ? "/crypto" : "";
+  const title = isCrypto ? "加密信号浏览" : "股票观点浏览";
+  const description = isCrypto
+    ? "把已审批 X 账号里的加密项目、资产与信号重新整理成可浏览的时间线、矩阵和详情页。"
+    : "把已审批 X 账号里的股票观点整理成可浏览的时间线、矩阵、叙事简报与风险快照。";
 
   return (
     <main className="page">
-      <section className="hero-grid">
-        <div className="panel">
-          <h1 className="brand-title">集百</h1>
-          <p className="muted">
-            {isCrypto
-              ? "把已审批 X 账号的 crypto 项目和资产信号按人和标的重新整理。弱提及、转发、公告和数据播报也会保留。"
-              : "把已审批 X 账号的股票观点按人和股票重新整理。未登录可看账号库和一条轻量预览，登录后按你的订阅范围展开完整时间线。"}
-          </p>
-          <div className="submit-row">
-            <Link className="primary-button" href={`${basePath}/accounts`}>
-              <Library size={16} />
-              账号库
-            </Link>
-            <Link className="secondary-button" href={`${basePath}/feed`}>
-              <ArrowRight size={16} />
-              {profile ? "我的订阅" : "看一条预览"}
-            </Link>
-          </div>
-          {!profile ? <SignInCta onLogin={signIn} compact /> : null}
-          <div className="metric-row">
-            <div className="metric">
-              <Radio size={18} />
-              <strong>{accounts.length}</strong>
-              <span className="muted">已审批账号</span>
+      <PageHeader
+        eyebrow="Jibai Public"
+        title={title}
+        description={description}
+        badges={
+          <>
+            <Badge variant="warm">{isCrypto ? "加密" : "股票"}</Badge>
+            <Badge variant="neutral">{profile ? "完整模式" : "公开预览"}</Badge>
+          </>
+        }
+        actions={
+          <>
+            <Button asChild>
+              <Link href={`${basePath}/accounts`}>
+                <Library className="h-4 w-4" />
+                账号库
+              </Link>
+            </Button>
+            <Button asChild variant="secondary">
+              <Link href={`${basePath}/feed`}>
+                <ArrowRight className="h-4 w-4" />
+                {profile ? "我的订阅" : "查看预览"}
+              </Link>
+            </Button>
+          </>
+        }
+      />
+
+      {!profile ? <SignInCta onLogin={signIn} compact /> : null}
+
+      <StatGrid>
+        <StatCard
+          label="已审批账号"
+          value={accounts.length}
+          hint="账号库对游客开放，登录后按你的订阅生成个性化视图。"
+          icon={<Radio className="h-4 w-4" />}
+        />
+        <StatCard
+          label="我的订阅"
+          value={accounts.filter((item) => item.subscribed).length}
+          hint={profile ? "会直接影响你的时间线、矩阵和详情页内容。" : "登录后可开始建立自己的订阅列表。"}
+          icon={<Library className="h-4 w-4" />}
+        />
+        <StatCard
+          label="当前身份"
+          value={profile?.isAdmin ? "Admin" : profile ? "User" : "Guest"}
+          hint="管理员可查看额外的审批、抓取与运行状态页面。"
+          icon={<ShieldCheck className="h-4 w-4" />}
+        />
+      </StatGrid>
+
+      <div className="hero-grid">
+        <Card variant="elevated">
+          <CardHeader className="gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="neutral">工作流</Badge>
+              <Badge variant="warm">账号 {"->"} 提取 {"->"} 浏览</Badge>
             </div>
-            <div className="metric">
-              <Library size={18} />
-              <strong>{accounts.filter((item) => item.subscribed).length}</strong>
-              <span className="muted">我的订阅</span>
+            <CardTitle className="text-3xl sm:text-4xl">更像产品主页，而不是后台入口</CardTitle>
+            <CardDescription className="text-[15px] leading-7">
+              这次重做把公开站改成更轻、更克制的浏览体验。你可以先从账号库选作者，再进时间线、矩阵和详情页逐层深入。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[24px] border border-[color:var(--border)] bg-white/70 p-4">
+                <p className="text-sm font-semibold text-[color:var(--ink)]">首页与概览</p>
+                <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">更大的标题、更克制的色彩，以及更清晰的功能层级。</p>
+              </div>
+              <div className="rounded-[24px] border border-[color:var(--border)] bg-white/70 p-4">
+                <p className="text-sm font-semibold text-[color:var(--ink)]">数据密集页面</p>
+                <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">保留效率导向，但用更轻的表面、边界和状态色提升可读性。</p>
+              </div>
             </div>
-            <div className="metric">
-              <ShieldCheck size={18} />
-              <strong>{profile?.isAdmin ? "Admin" : profile ? "User" : "游客"}</strong>
-              <span className="muted">当前身份</span>
-            </div>
-          </div>
-        </div>
-        <div className="panel">
-          <div className="section-head">
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="gap-4">
             <div>
-              <h2>{profile ? "最近更新" : "公开预览"}</h2>
-              <p className="muted">{profile ? "来自你的订阅账号。" : "未登录只展示 1 个真实对象的少量内容。"}</p>
+              <CardTitle>{profile ? "最近更新" : "公开预览"}</CardTitle>
+              <CardDescription>
+                {profile ? "来自你的订阅账号。" : "未登录时只展示 1 个真实对象的少量内容。"}
+              </CardDescription>
             </div>
-            <Link className="secondary-button" href={`${basePath}/feed`}>
-              进入时间线
-            </Link>
-          </div>
-          {error ? <div className="empty field-error">数据接口未就绪：{error}</div> : null}
-          {feed.length ? (
-            <div className="feed-list">
-              {feed.slice(0, 3).map((item) => (
-                <article className="feed-item" key={item.id}>
-                  <div className="feed-meta">
-                    <span>@{item.username}</span>
-                    <span>{item.date}</span>
-                    <span>{item.noteCount} 条内容</span>
-                  </div>
-                  <h3>{item.displayName || item.username}</h3>
-                  <p className="muted">{isCrypto ? `${item.viewpoints.length} 个标的信号` : item.summary}</p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty">{profile ? "暂无订阅更新" : "暂无公开预览数据"}</div>
-          )}
-        </div>
-      </section>
+            <Button asChild variant="secondary">
+              <Link href={`${basePath}/feed`}>进入时间线</Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {error ? <div className="empty field-error">数据接口未就绪：{error}</div> : null}
+            {feed.length ? (
+              <div className="feed-list">
+                {feed.slice(0, 3).map((item) => (
+                  <article className="feed-item" key={item.id}>
+                    <div className="feed-meta">
+                      <span>@{item.username}</span>
+                      <span>{item.date}</span>
+                      <span>{item.noteCount} 条内容</span>
+                    </div>
+                    <h3>{item.displayName || item.username}</h3>
+                    <p className="muted">{isCrypto ? `${item.viewpoints.length} 个标的信号` : item.summary}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="empty">{profile ? "暂无订阅更新" : "暂无公开预览数据"}</div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

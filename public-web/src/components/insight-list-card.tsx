@@ -47,7 +47,7 @@ export function InsightListCard(props: InsightListCardProps) {
       className={cn(
         "block w-full rounded-[24px] border p-4 text-left transition",
         props.active
-          ? "border-[color:var(--accent)] bg-[color:rgba(181,106,59,0.12)] shadow-[0_14px_32px_rgba(44,33,22,0.08)]"
+          ? "border-[color:rgba(10,132,255,0.22)] bg-[color:rgba(10,132,255,0.08)] shadow-[0_14px_32px_rgba(15,23,42,0.08)]"
           : "border-[color:var(--border)] bg-[color:var(--paper)] hover:border-[color:var(--accent)] hover:bg-[color:var(--paper-strong)]",
       )}
     >

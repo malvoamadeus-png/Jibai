@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ArrowRight, Boxes, CalendarClock, Wallet } from "lucide-react";
 
 import { ChainBadge, formatTime, formatUsd, runStatusLabel } from "@/components/onchain-shared";
 import { LoadingPanel } from "@/components/page-states";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { PageHeader, StatCard, StatGrid } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
 import { getOnchainOverview } from "@/lib/direct-data";
 import type { OnchainOverviewData } from "@/lib/types";
@@ -48,34 +52,35 @@ export default function OnchainHomePage() {
 
   return (
     <main className="page">
-      <div className="section-head">
-        <div>
-          <h1>链上埋伏</h1>
-          <p className="muted">追踪已审批地址在多条链上的非稳定、非主流资产持仓，按代币和地址观察增持变化。</p>
-        </div>
-        <Link className="secondary-button" href="/onchain/tokens">
-          按代币查看
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="Onchain Ambush"
+        title="链上埋伏"
+        description="追踪已审批地址在多条链上的非稳定、非主流资产持仓，按代币和地址观察增持变化。"
+        badges={
+          <>
+            <Badge variant="warm">链上</Badge>
+            <Badge variant="neutral">埋伏视角</Badge>
+          </>
+        }
+        actions={
+          <Button asChild variant="secondary">
+            <Link href="/onchain/tokens">
+              按代币查看
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        }
+      />
 
       {error ? <div className="empty field-error">数据接口未就绪：{error}</div> : null}
 
-      <section className="metric-row">
-        <div className="metric">
-          <span className="muted">最新日期</span>
-          <strong>{data?.latestDate || "-"}</strong>
-        </div>
-        <div className="metric">
-          <span className="muted">可见地址</span>
-          <strong>{data?.walletCount ?? 0}</strong>
-        </div>
-        <div className="metric">
-          <span className="muted">可见代币</span>
-          <strong>{data?.tokenCount ?? 0}</strong>
-        </div>
-      </section>
+      <StatGrid>
+        <StatCard label="最新日期" value={data?.latestDate || "-"} hint="用于生成当前首页快照的数据窗口。" icon={<CalendarClock className="h-4 w-4" />} />
+        <StatCard label="可见地址" value={data?.walletCount ?? 0} hint="已审批且可在公开端查看的链上地址数。" icon={<Wallet className="h-4 w-4" />} />
+        <StatCard label="可见代币" value={data?.tokenCount ?? 0} hint="当前筛选与聚合后可见的链上代币数量。" icon={<Boxes className="h-4 w-4" />} />
+      </StatGrid>
 
-      <div className="dashboard-grid" style={{ marginTop: 22 }}>
+      <div className="dashboard-grid">
         <section className="table-panel">
           <table>
             <thead>
@@ -137,7 +142,7 @@ export default function OnchainHomePage() {
         </section>
       </div>
 
-      <div className="dashboard-grid" style={{ marginTop: 22 }}>
+      <div className="dashboard-grid">
         <section className="table-panel">
           <table>
             <thead>
@@ -202,7 +207,7 @@ export default function OnchainHomePage() {
         </section>
       </div>
 
-      <section className="table-panel" style={{ marginTop: 22 }}>
+      <section className="table-panel">
         <table>
           <thead>
             <tr>

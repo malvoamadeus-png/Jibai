@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { FormEvent, useState, useTransition } from "react";
+import { type FormEvent, useState, useTransition } from "react";
 import { Send } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { submitAccount } from "@/lib/direct-data";
 
@@ -38,16 +40,16 @@ export function SubmitAccountForm({
 
   return (
     <form className="submit-row" onSubmit={onSubmit}>
-      <input
+      <Input
         value={account}
         onChange={(event) => setAccount(event.target.value)}
         placeholder="@username 或 x.com/username"
         aria-label="X account"
       />
-      <button className="primary-button" type="submit" disabled={pending}>
+      <Button type="submit" disabled={pending}>
         <Send size={16} />
         提交
-      </button>
+      </Button>
       {message ? <span className="field-note">{message}</span> : null}
     </form>
   );

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Bell, BellOff } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { setSubscription } from "@/lib/direct-data";
 
@@ -42,10 +43,10 @@ export function AccountSubscriptionButton({
 
   return (
     <div className="inline-action">
-      <button className={subscribed ? "secondary-button" : "primary-button"} disabled={pending || loading} onClick={submit}>
+      <Button variant={subscribed ? "secondary" : "primary"} disabled={pending || loading} onClick={submit}>
         {subscribed ? <BellOff size={16} /> : <Bell size={16} />}
         {!profile ? "登录订阅" : subscribed ? "取消订阅" : "订阅"}
-      </button>
+      </Button>
       {error ? <span className="field-error">{error}</span> : null}
     </div>
   );

@@ -55,7 +55,7 @@ function formatPrice(value: number | null | undefined) {
 function markerFill(view: EntityAuthorView) {
   if (viewSignalVariant(view) === "positive") return "#2f7d56";
   if (viewSignalVariant(view) === "danger") return "#b34747";
-  if (viewSignalVariant(view) === "warm") return "#b56a3b";
+  if (viewSignalVariant(view) === "warm") return "#0a84ff";
   return "#8c7b6a";
 }
 
@@ -103,7 +103,7 @@ function renderMarkerNodes(
     const offsetX = markerOffset(stackIndex);
     const cx = x + offsetX;
     const fill = markerFill(view);
-    const stroke = "rgba(255,250,242,0.96)";
+    const stroke = "rgba(255,255,255,0.96)";
 
     if (bullish) {
       const tipY = lowY + 10 + stackIndex * 18;
@@ -329,7 +329,7 @@ export function StockKlineCard({
   if (totalCandles === 0) {
     return (
       <Card className="overflow-hidden">
-        <CardHeader className="bg-[linear-gradient(135deg,rgba(181,106,59,0.12),rgba(87,112,97,0.08))]">
+        <CardHeader className="bg-[linear-gradient(135deg,rgba(10,132,255,0.12),rgba(160,201,255,0.14))]">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="warm">日线 K 线</Badge>
             {resolvedChart.sourceLabel ? <Badge variant="neutral">{resolvedChart.sourceLabel}</Badge> : null}
@@ -482,7 +482,7 @@ export function StockKlineCard({
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="bg-[linear-gradient(135deg,rgba(181,106,59,0.14),rgba(87,112,97,0.1))]">
+      <CardHeader className="bg-[linear-gradient(135deg,rgba(10,132,255,0.14),rgba(160,201,255,0.16))]">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warm">日线 K 线</Badge>
           {resolvedChart.sourceLabel ? <Badge variant="neutral">{resolvedChart.sourceLabel}</Badge> : null}
@@ -494,7 +494,7 @@ export function StockKlineCard({
             <CardTitle className="text-2xl">近 180 天日线与观点标记</CardTitle>
           </div>
           {latest ? (
-            <div className="rounded-[22px] border border-[color:var(--border)] bg-[color:rgba(255,250,242,0.72)] px-4 py-3">
+            <div className="rounded-[22px] border border-[color:var(--border)] bg-[color:rgba(255,255,255,0.72)] px-4 py-3">
               <p className="text-xs uppercase tracking-[0.14em] text-[color:var(--soft-ink)]">Latest Close</p>
               <p className="mt-1 text-2xl font-semibold text-[color:var(--ink)]">{formatPrice(latest.close)}</p>
               <p
@@ -511,7 +511,7 @@ export function StockKlineCard({
       </CardHeader>
       <CardContent className="pt-6">
         {bannerMessage ? (
-          <div className="mb-4 rounded-[20px] border border-[color:rgba(181,106,59,0.22)] bg-[color:rgba(181,106,59,0.09)] px-4 py-3 text-sm text-[color:var(--accent-strong)]">
+          <div className="mb-4 rounded-[20px] border border-[color:rgba(10,132,255,0.18)] bg-[color:rgba(10,132,255,0.08)] px-4 py-3 text-sm text-[color:var(--accent-strong)]">
             {bannerMessage}
           </div>
         ) : null}
@@ -637,7 +637,7 @@ export function StockKlineCard({
                             y={PAD_TOP - 10}
                             width={step}
                             height={plotHeight + 20}
-                            fill="rgba(181,106,59,0.08)"
+                            fill="rgba(10,132,255,0.08)"
                             rx="8"
                           />
                         ) : null}

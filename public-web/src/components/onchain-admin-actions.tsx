@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
 import { Check, Play, Save, X } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import {
   approveOnchainWalletRequest,
@@ -27,12 +28,12 @@ function ActionButton({
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const className = kind === "primary" ? "primary-button" : kind === "danger" ? "danger-button" : "secondary-button";
+  const variant = kind === "primary" ? "primary" : kind === "danger" ? "destructive" : "secondary";
 
   return (
     <span className="inline-action">
-      <button
-        className={className}
+      <Button
+        variant={variant}
         disabled={pending}
         type="button"
         onClick={() => {
@@ -49,7 +50,7 @@ function ActionButton({
       >
         {icon}
         {label}
-      </button>
+      </Button>
       {error ? <span className="field-error">{error}</span> : null}
     </span>
   );

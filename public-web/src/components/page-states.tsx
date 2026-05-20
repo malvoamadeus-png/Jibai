@@ -1,9 +1,22 @@
-import { LogIn } from "lucide-react";
+import { LogIn, Sparkles } from "lucide-react";
 
-export function LoadingPanel({ label = "加载中" }: { label?: string }) {
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+export function LoadingPanel({ label = "加载中..." }: { label?: string }) {
   return (
     <main className="page">
-      <div className="empty">{label}</div>
+      <Card variant="muted">
+        <CardContent className="flex items-center gap-3 py-10">
+          <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[color:rgba(10,132,255,0.1)] text-[color:var(--accent-strong)]">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-semibold text-[color:var(--ink)]">{label}</p>
+            <p className="mt-1 text-sm text-[color:var(--muted-ink)]">界面正在同步最新数据与布局。</p>
+          </div>
+        </CardContent>
+      </Card>
     </main>
   );
 }
@@ -11,14 +24,20 @@ export function LoadingPanel({ label = "加载中" }: { label?: string }) {
 export function LoginRequired({ onLogin }: { onLogin: () => void }) {
   return (
     <main className="page">
-      <section className="panel">
-        <h1>请先登录</h1>
-        <p className="muted">登录后可以订阅已审批账号、提交新账号并查看自己的时间线。</p>
-        <button className="primary-button" type="button" onClick={onLogin}>
-          <LogIn size={16} />
-          Google 登录
-        </button>
-      </section>
+      <Card variant="elevated">
+        <CardHeader>
+          <CardTitle className="text-4xl">请先登录</CardTitle>
+          <CardDescription>
+            登录后可以订阅已审批账号、提交新账号，并查看自己的完整时间线。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button type="button" onClick={onLogin}>
+            <LogIn size={16} />
+            Google 登录
+          </Button>
+        </CardContent>
+      </Card>
     </main>
   );
 }

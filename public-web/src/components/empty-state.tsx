@@ -12,9 +12,9 @@ export function EmptyState({
   description: string;
 }) {
   return (
-    <Card className="border-dashed">
+    <Card variant="muted" className="border-dashed">
       <CardHeader>
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--accent)]/12 text-[color:var(--accent-strong)]">
+        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:rgba(10,132,255,0.1)] text-[color:var(--accent-strong)]">
           <DatabaseZap className="h-5 w-5" />
         </div>
         <CardTitle className="mt-4">{title}</CardTitle>
