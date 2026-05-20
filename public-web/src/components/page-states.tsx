@@ -13,7 +13,7 @@ export function LoadingPanel({ label = "加载中..." }: { label?: string }) {
           </div>
           <div>
             <p className="font-semibold text-[color:var(--ink)]">{label}</p>
-            <p className="mt-1 text-sm text-[color:var(--muted-ink)]">界面正在同步最新数据与布局。</p>
+            <p className="mt-1 text-sm text-[color:var(--muted-ink)]">正在加载页面内容，请稍候。</p>
           </div>
         </CardContent>
       </Card>

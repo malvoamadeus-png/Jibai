@@ -111,23 +111,23 @@ export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
         <Card variant="elevated">
           <CardHeader className="gap-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="neutral">工作流</Badge>
-              <Badge variant="warm">账号 {"->"} 提取 {"->"} 浏览</Badge>
+              <Badge variant="neutral">快速开始</Badge>
+              <Badge variant="warm">账号库 / 时间线 / 详情页</Badge>
             </div>
-            <CardTitle className="text-3xl sm:text-4xl">更像产品主页，而不是后台入口</CardTitle>
+            <CardTitle className="text-3xl sm:text-4xl">从公开账号快速进入观点与信号</CardTitle>
             <CardDescription className="text-[15px] leading-7">
-              这次重做把公开站改成更轻、更克制的浏览体验。你可以先从账号库选作者，再进时间线、矩阵和详情页逐层深入。
+              先浏览账号库，再按作者、时间线和标的逐层查看内容。公开预览适合快速了解，登录后可以围绕自己的订阅继续深入。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-[24px] border border-[color:var(--border)] bg-white/70 p-4">
-                <p className="text-sm font-semibold text-[color:var(--ink)]">首页与概览</p>
-                <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">更大的标题、更克制的色彩，以及更清晰的功能层级。</p>
+                <p className="text-sm font-semibold text-[color:var(--ink)]">账号库</p>
+                <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">查看已审批账号，挑选值得持续跟踪的作者。</p>
               </div>
               <div className="rounded-[24px] border border-[color:var(--border)] bg-white/70 p-4">
-                <p className="text-sm font-semibold text-[color:var(--ink)]">数据密集页面</p>
-                <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">保留效率导向，但用更轻的表面、边界和状态色提升可读性。</p>
+                <p className="text-sm font-semibold text-[color:var(--ink)]">时间线与详情</p>
+                <p className="mt-2 text-sm leading-6 text-[color:var(--muted-ink)]">按作者和标的回看观点、信号、矩阵与最近更新。</p>
               </div>
             </div>
           </CardContent>
