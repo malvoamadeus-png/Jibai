@@ -470,6 +470,48 @@ with psycopg.connect(dsn, autocommit=True) as conn:
 PY
 ```
 
+## Add Crypto Matrix Day View
+
+`supabase/migrations/021_crypto_matrix_day_granularity.sql` extends the crypto
+overview matrix RPC so `/crypto/assets/overview` can switch between weekly and
+daily windows without changing the existing preview and subscription scoping.
+
+The migration:
+
+- adds `get_visible_crypto_matrix(end_date_arg text, granularity_arg text)` for
+  `day` and `week` windows
+- keeps the one-argument `get_visible_crypto_matrix(end_date_arg text)` wrapper
+  so existing callers still get the weekly view
+- returns only authors, assets, and cells that have signal rows inside the
+  selected window
+
+Verification after applying it:
+
+```bash
+/mnt/d/Software/Code/Anaconda/python.exe - <<'PY'
+import os
+import psycopg
+from dotenv import load_dotenv
+
+load_dotenv(".env", override=False)
+dsn = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+if not dsn:
+    raise SystemExit("missing SUPABASE_DB_URL or DATABASE_URL")
+
+with psycopg.connect(dsn, autocommit=True) as conn:
+    with conn.cursor() as cur:
+        cur.execute("select public.get_visible_crypto_matrix(null, 'week')")
+        weekly = cur.fetchone()[0]
+        print("crypto_weekly_window=" + repr((weekly.get("start_date"), weekly.get("end_date"))))
+        print("crypto_weekly_counts=" + repr((len(weekly.get("assets") or []), len(weekly.get("authors") or []), len(weekly.get("cells") or []))))
+
+        cur.execute("select public.get_visible_crypto_matrix(null, 'day')")
+        daily = cur.fetchone()[0]
+        print("crypto_daily_window=" + repr((daily.get("start_date"), daily.get("end_date"))))
+        print("crypto_daily_counts=" + repr((len(daily.get("assets") or []), len(daily.get("authors") or []), len(daily.get("cells") or []))))
+PY
+```
+
 ## Apply Onchain Ambush Migration
 
 `supabase/migrations/018_onchain_ambush.sql` adds the chain-tracking tables,

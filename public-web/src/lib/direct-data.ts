@@ -12,6 +12,7 @@ import type {
   CryptoMatrixAsset,
   CryptoMatrixCell,
   CryptoMatrixData,
+  CryptoMatrixGranularity,
   EntityAuthorView,
   EntityDetailData,
   EntityListItem,
@@ -714,9 +715,11 @@ export async function getVisibleEntityTimeline(
 export async function getVisibleCryptoMatrix(
   supabase: SupabaseClient,
   endDate: string | null = null,
+  granularity: CryptoMatrixGranularity = "week",
 ): Promise<CryptoMatrixData> {
   const { data, error } = await supabase.rpc("get_visible_crypto_matrix", {
     end_date_arg: endDate || null,
+    granularity_arg: granularity,
   });
   assertNoError(error);
   const payload = asRecord(data);

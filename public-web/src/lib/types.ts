@@ -226,6 +226,7 @@ export type StockMatrixView = EntityAuthorView & {
 };
 
 export type StockMatrixGranularity = "day" | "week";
+export type CryptoMatrixGranularity = StockMatrixGranularity;
 
 export type StockMatrixCell = {
   securityKey: string;

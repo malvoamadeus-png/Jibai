@@ -1,5 +1,5 @@
-import HomePage from "@/app/page";
+import { HomePageContent } from "@/components/home-page";
 
 export default function CryptoHomePage() {
-  return <HomePage domain="crypto" />;
+  return <HomePageContent domain="crypto" />;
 }
