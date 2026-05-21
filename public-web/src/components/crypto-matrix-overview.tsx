@@ -42,6 +42,10 @@ function assetLabel(asset: CryptoMatrixAsset) {
   return [asset.ticker, asset.market].filter(Boolean).join(" / ") || asset.assetKey;
 }
 
+function assetSummary(asset: CryptoMatrixAsset) {
+  return asset.summary.trim() || "暂无说明";
+}
+
 function readGranularity(value: string | null): CryptoMatrixGranularity {
   return value === "day" ? "day" : "week";
 }
@@ -310,6 +314,9 @@ export function CryptoMatrixOverview() {
                       <th className="sticky left-0 top-0 z-30 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3">
                         标的
                       </th>
+                      <th className="sticky left-[220px] top-0 z-30 min-w-[320px] max-w-[320px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3 text-left">
+                        说明
+                      </th>
                       {matrix.authors.map((author) => (
                         <th
                           key={author.accountName}
@@ -343,6 +350,9 @@ export function CryptoMatrixOverview() {
                             {assetLabel(asset)} · {formatCount(asset.mentionCount)}
                           </span>
                         </th>
+                        <td className="sticky left-[220px] z-10 min-w-[320px] max-w-[320px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 align-top">
+                          <p className="text-sm leading-6 text-[color:var(--muted-ink)]">{assetSummary(asset)}</p>
+                        </td>
                         {matrix.authors.map((author) => {
                           const cell = cellMap.get(cellKey(asset.assetKey, author.accountName));
                           return (

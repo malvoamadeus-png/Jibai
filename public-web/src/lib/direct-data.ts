@@ -234,6 +234,9 @@ function normalizeCryptoMatrixAsset(rawValue: unknown): CryptoMatrixAsset {
     market: asNullableString(raw.market),
     mentionCount: asNumber(raw.mention_count ?? raw.mentionCount),
     latestDate: raw.latest_date || raw.latestDate ? String(raw.latest_date || raw.latestDate) : null,
+    summary: asString(raw.summary),
+    summaryStatus: asNullableString(raw.summary_status ?? raw.summaryStatus),
+    summaryUpdatedAt: asNullableString(raw.summary_updated_at ?? raw.summaryUpdatedAt),
   };
 }
 

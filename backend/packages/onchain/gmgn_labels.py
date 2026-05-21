@@ -11,6 +11,7 @@ TOKEN_TOP_TRADER_PATH = "/api/v6/dex/market/token/top-trader"
 TOKEN_HOLDER_PATH = "/api/v6/dex/market/token/holder"
 MARKET_PRICE_PATH = "/api/v6/dex/market/price"
 TOKEN_BASIC_INFO_PATH = "/api/v6/dex/market/token/basic-info"
+TOKEN_SEARCH_PATH = "/api/v6/dex/market/token/search"
 
 DEFAULT_GMGN_LIMIT = 20
 MAX_GMGN_LIMIT = 50
@@ -42,6 +43,20 @@ class GMGNTokenResult:
 class GMGNTokenError:
     input_token: str
     message: str
+
+
+@dataclass(frozen=True, slots=True)
+class OKXTokenSearchCandidate:
+    contract_address: str
+    chain_index: str
+    display_name: str
+    symbol: str
+    chain_name: str
+    community_recognized: bool
+    holder_count: float | None
+    liquidity: float | None
+    market_cap: float | None
+    raw: dict[str, Any]
 
 
 def clamp_gmgn_limit(value: Any) -> int:
@@ -91,10 +106,146 @@ def short_error(exc: Exception, limit: int = 180) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
+def _to_float(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
 def _list_response(data: Any, label: str) -> list[dict[str, Any]]:
     if not isinstance(data, list):
         raise OKXAPIError(f"Unexpected {label} response: {type(data).__name__}", code="api_error")
     return [row for row in data if isinstance(row, dict)]
+
+
+def _iter_candidate_dicts(data: Any) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, dict):
+            return
+        contract_address = (
+            value.get("tokenContractAddress")
+            or value.get("contractAddress")
+            or value.get("tokenAddress")
+            or value.get("address")
+            or value.get("ca")
+        )
+        if contract_address:
+            found.append(value)
+            return
+        for child_key in ("data", "results", "items", "tokens", "hits", "rows", "list"):
+            child = value.get(child_key)
+            if child is not None:
+                visit(child)
+
+    visit(data)
+    return found
+
+
+def parse_token_search_candidates(data: Any, *, limit: int = 5) -> list[OKXTokenSearchCandidate]:
+    candidates: list[OKXTokenSearchCandidate] = []
+    seen: set[tuple[str, str]] = set()
+    for row in _iter_candidate_dicts(data):
+        contract_address = str(
+            row.get("tokenContractAddress")
+            or row.get("contractAddress")
+            or row.get("tokenAddress")
+            or row.get("address")
+            or row.get("ca")
+            or ""
+        ).strip()
+        chain_index = str(
+            row.get("chainIndex")
+            or row.get("chain_id")
+            or row.get("chainId")
+            or row.get("networkId")
+            or ""
+        ).strip()
+        if not contract_address:
+            continue
+        key = (chain_index, normalize_address(contract_address, is_evm=looks_like_evm_address(contract_address)))
+        if key in seen:
+            continue
+        seen.add(key)
+        symbol = sanitize_ticker(
+            row.get("symbol")
+            or row.get("tokenSymbol")
+            or row.get("baseTokenSymbol")
+            or row.get("ticker")
+        )
+        display_name = str(
+            row.get("tokenName")
+            or row.get("displayName")
+            or row.get("name")
+            or row.get("baseTokenName")
+            or symbol
+            or contract_address
+        ).strip()
+        chain_name = str(
+            row.get("chainName")
+            or row.get("chain")
+            or row.get("network")
+            or row.get("chainShortName")
+            or ""
+        ).strip()
+        community_value = row.get("communityRecognized")
+        community_recognized = (
+            community_value is True
+            or str(community_value or "").strip().lower() in {"1", "true", "yes"}
+        )
+        candidates.append(
+            OKXTokenSearchCandidate(
+                contract_address=key[1],
+                chain_index=chain_index,
+                display_name=display_name,
+                symbol=symbol,
+                chain_name=chain_name,
+                community_recognized=community_recognized,
+                holder_count=_to_float(row.get("holders") or row.get("holderCount")),
+                liquidity=_to_float(row.get("liquidity") or row.get("liquidityUsd")),
+                market_cap=_to_float(row.get("marketCap") or row.get("marketCapUsd")),
+                raw=dict(row),
+            )
+        )
+        if len(candidates) >= max(1, int(limit)):
+            break
+    return candidates
+
+
+def search_token_candidates(
+    client: OKXWeb3Client,
+    query: str,
+    *,
+    limit: int = 5,
+) -> list[OKXTokenSearchCandidate]:
+    safe_query = str(query or "").strip()
+    if not safe_query:
+        return []
+    request_variants = (
+        {"keyword": safe_query, "limit": max(1, min(int(limit), 20))},
+        {"query": safe_query, "limit": max(1, min(int(limit), 20))},
+        {"searchText": safe_query, "limit": max(1, min(int(limit), 20))},
+    )
+    last_error: Exception | None = None
+    for params in request_variants:
+        try:
+            data = client.get(TOKEN_SEARCH_PATH, params)
+            parsed = parse_token_search_candidates(data, limit=limit)
+            if parsed:
+                return parsed
+        except Exception as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    return []
 
 
 def rank_unique_wallet_rows(

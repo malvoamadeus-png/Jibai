@@ -6,7 +6,6 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from packages.ai.client import LLMJsonClient
 from packages.ai.prompts import STOCK_NARRATIVE_REQUIRED_KEYS, build_stock_narrative_messages
 from packages.common.postgres_database import postgres_connection
 from packages.common.settings import load_settings
@@ -586,6 +585,8 @@ def generate_stock_narrative_once(*, brief_date: str | None = None, force: bool 
         baseline = input_digest["baseline"]
 
         try:
+            from packages.ai.client import LLMJsonClient
+
             client = LLMJsonClient(load_settings())
             result = client.generate_json(
                 build_stock_narrative_messages(input_digest),

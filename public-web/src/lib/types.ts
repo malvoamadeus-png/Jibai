@@ -277,6 +277,9 @@ export type CryptoMatrixAsset = {
   market: string | null;
   mentionCount: number;
   latestDate: string | null;
+  summary: string;
+  summaryStatus: string | null;
+  summaryUpdatedAt: string | null;
 };
 
 export type CryptoMatrixView = StockMatrixView;

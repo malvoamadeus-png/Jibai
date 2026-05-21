@@ -6,6 +6,7 @@ from packages.onchain.gmgn_labels import (
     MAX_GMGN_LIMIT,
     fetch_gmgn_label_results,
     fetch_token_result,
+    parse_token_search_candidates,
 )
 
 
@@ -62,3 +63,32 @@ def test_fetch_gmgn_label_results_clamps_limit_and_collects_errors() -> None:
     assert len(errors) == 1
     assert len(results[0].top_holders) <= MAX_GMGN_LIMIT
     assert errors[0].input_token == "NoDataSolanaToken"
+
+
+def test_parse_token_search_candidates_extracts_nested_contracts() -> None:
+    payload = {
+        "rows": [
+            {
+                "chainIndex": "1",
+                "tokenContractAddress": "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD",
+                "tokenName": "Orbiter",
+                "symbol": "obt",
+                "communityRecognized": True,
+                "holders": "1234",
+                "liquidity": "456789",
+                "marketCap": "999999",
+            },
+            {
+                "chainIndex": "1",
+                "tokenContractAddress": "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD",
+                "tokenName": "Orbiter Duplicate",
+            },
+        ]
+    }
+
+    candidates = parse_token_search_candidates(payload, limit=5)
+
+    assert len(candidates) == 1
+    assert candidates[0].contract_address == "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+    assert candidates[0].symbol == "OBT"
+    assert candidates[0].community_recognized is True

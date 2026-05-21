@@ -14,6 +14,9 @@ STOCK_NARRATIVE_REQUIRED_KEYS = [
     "new_directions",
     "rare_negative_signals",
 ]
+CRYPTO_KEYWORD_EXPANSION_REQUIRED_KEYS = ["keywords"]
+CRYPTO_CA_MATCH_REQUIRED_KEYS = ["same_project", "confidence", "shared_signals", "reason"]
+CRYPTO_ASSET_BRIEF_REQUIRED_KEYS = ["summary_text"]
 
 
 def build_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
@@ -70,6 +73,81 @@ def build_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
         {
             "role": "user",
             "content": "请分析下面这篇内容并输出结构化 JSON：\n\n" + json.dumps(payload, ensure_ascii=False),
+        },
+    ]
+
+
+def build_crypto_asset_keyword_messages(asset_payload: dict) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是一个 crypto 社区检索词扩展助手。"
+                "只输出 JSON 对象，不要输出 markdown。"
+                "必须输出字段：keywords。"
+                "keywords 必须是 3 到 5 个中文或英文短词数组。"
+                "每个短词只能是项目别名、赛道词、社区常用简称、机制词，不要写完整句子，不要写买卖建议。"
+                "如果信息不足，也要尽量给出最稳妥的短词。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": "请基于下面资产信息生成 X 搜索扩展词：\n\n" + json.dumps(asset_payload, ensure_ascii=False),
+        },
+    ]
+
+
+def build_crypto_ca_match_messages(name_group: dict, candidate_group: dict) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是一个 crypto 项目同一性判断助手。"
+                "目标是判断“名称搜索结果”和“候选合约地址搜索结果”是否在讨论同一个项目。"
+                "只输出 JSON 对象，不要输出 markdown。"
+                "必须输出字段：same_project, confidence, shared_signals, reason。"
+                "same_project 必须是 true 或 false。"
+                "confidence 必须是 0 到 1 之间的小数。"
+                "shared_signals 必须是字符串数组，写出共同账号、共同别名、共同叙事词、共同机制词等。"
+                "reason 用一句中文说明判断依据。"
+                "判断时优先看社区讨论对象、项目账号、别名、机制词、赛道词是否一致，不要求文本完全重复。"
+                "如果样本很少或证据冲突，应该降低 confidence。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "请判断这两组 X 内容是否在说同一个 crypto 项目。\n\n"
+                + json.dumps(
+                    {
+                        "name_group": name_group,
+                        "candidate_group": candidate_group,
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        },
+    ]
+
+
+def build_crypto_asset_brief_messages(payload: dict) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是一个中文 crypto 叙事摘要助手。"
+                "只输出 JSON 对象，不要输出 markdown。"
+                "必须输出字段：summary_text。"
+                "summary_text 必须是 1 到 2 句中文。"
+                "第一句说明这个代币或项目是干嘛的。"
+                "第二句说明 X 上当前主要叙事、社区认知或讨论焦点。"
+                "不要给买卖建议，不要编造链上数据，不要输出列表。"
+                "如果样本不足，也要直说信息不足。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": "请基于下面材料生成 crypto 资产摘要：\n\n" + json.dumps(payload, ensure_ascii=False),
         },
     ]
 

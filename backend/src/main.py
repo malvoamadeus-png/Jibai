@@ -189,6 +189,32 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Regenerate even if a successful brief already exists for the date.",
     )
+    public_crypto_asset_brief_parser = subparsers.add_parser(
+        "public-generate-crypto-asset-briefs",
+        help="Generate crypto asset narrative briefs for recent visible assets.",
+    )
+    public_crypto_asset_brief_parser.add_argument(
+        "--days",
+        type=int,
+        default=30,
+        help="Recent Shanghai natural days to scan for assets. Defaults to 30.",
+    )
+    public_crypto_asset_brief_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum assets to process in this run.",
+    )
+    public_crypto_asset_brief_parser.add_argument(
+        "--asset-key",
+        action="append",
+        default=[],
+        help="Asset key to process. Can be passed multiple times.",
+    )
+    public_crypto_asset_brief_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate even if a successful brief already exists for the asset.",
+    )
     public_onchain_fetch_parser = subparsers.add_parser(
         "public-onchain-fetch",
         help="Fetch approved onchain wallet holdings from OKX and rebuild daily views.",
@@ -296,6 +322,15 @@ def main() -> int:
         from packages.public_app.stock_narrative import generate_stock_narrative_once  # noqa: PLC0415
 
         return generate_stock_narrative_once(brief_date=args.date, force=args.force)
+    if args.command == "public-generate-crypto-asset-briefs":
+        from packages.public_app.crypto_asset_narrative import generate_crypto_asset_briefs_once  # noqa: PLC0415
+
+        return generate_crypto_asset_briefs_once(
+            days=args.days,
+            limit=args.limit,
+            asset_keys=args.asset_key,
+            force=args.force,
+        )
     if args.command == "public-onchain-fetch":
         from packages.onchain.service import fetch_onchain_once  # noqa: PLC0415
 

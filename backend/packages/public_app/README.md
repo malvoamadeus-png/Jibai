@@ -47,6 +47,7 @@ PUBLIC_WORKER_LIGHT_MARKET_DATA_DAYS=7
 PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS=30
 PUBLIC_WORKER_DOMAINS=stock,crypto
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
+PUBLIC_WORKER_CRYPTO_ASSET_BRIEF_TIME=22:50
 PUBLIC_ONCHAIN_ENABLED=true
 PUBLIC_ONCHAIN_FETCH_TIMES=04:20,10:20,16:20,22:20
 PUBLIC_ONCHAIN_MIN_VALUE_USD=200
@@ -169,6 +170,8 @@ python backend/src/main.py normalize-crypto-assets --days 30
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-generate-stock-narrative
 python backend/src/main.py public-generate-stock-narrative --date 2026-05-18 --force
+python backend/src/main.py public-generate-crypto-asset-briefs
+python backend/src/main.py public-generate-crypto-asset-briefs --asset-key orbiter --force
 python backend/src/main.py public-import-sqlite
 ```
 
@@ -218,6 +221,27 @@ from the materialized stock views. It reads the latest available stock viewpoint
 date by default, or a specific `--date`, and skips an already successful brief
 unless `--force` is passed. Logs include only status, window, counts, and token
 usage; they must not print the prompt payload, DSN, or AI key.
+
+`public-generate-crypto-asset-briefs` generates one frozen brief per visible
+crypto asset and pins the model to `gpt-5.4-mini`. The worker runs this stage at
+`PUBLIC_WORKER_CRYPTO_ASSET_BRIEF_TIME`, default `22:50` Asia/Shanghai.
+
+The crypto brief pipeline is:
+
+1. Reuse existing `crypto_entities.contract_addresses_json` and stored raw identifiers first.
+2. If unresolved, query OKX Onchain OS token search for up to five CA candidates.
+3. Build a name-group X search set from display name, symbol, aliases, project accounts, and AI-expanded short keywords.
+4. Build a candidate-group X search set for each CA candidate from the CA itself, `"CA" + display_name`, and `"CA" + symbol`.
+5. Cheap-filter obvious mismatches by shared accounts, aliases, keywords, and project fragments.
+6. Let `gpt-5.4-mini` judge whether the surviving name-group and CA-group tweets are discussing the same project.
+7. Accept only candidates with `same_project=true`, `confidence >= 0.75`, and at least one stable shared-signal rule.
+8. Generate a 1-2 sentence Chinese summary answering what the token/project does and the current X narrative or crowd perception.
+
+Successful asset briefs are skipped on later runs unless `--force` is passed.
+If CA resolution fails, the job still tries to summarize from the name-group
+alone when enough X samples exist. The frontend only receives
+`summary`, `summary_status`, and `summary_updated_at` from the crypto matrix
+RPC; it does not expose CA candidates or internal similarity-judgment payloads.
 
 The command prints the matched `security_key` values before fetching. If
 `--query AMD` does not match `amd`, inspect `security_entities` because the

@@ -151,6 +151,12 @@ use:
 sql_path = Path("supabase/migrations/022_crypto_asset_candidate_rpc.sql")
 ```
 
+For crypto asset narrative briefs and the crypto overview summary column, use:
+
+```python
+sql_path = Path("supabase/migrations/023_crypto_asset_narrative_briefs.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -215,6 +221,34 @@ AI_API_TIMEOUT_SECONDS=180 \
 Use `--date YYYY-MM-DD --force` only when intentionally replacing an existing
 successful brief for that date.
 
+Generate or refresh crypto asset briefs after the crypto migration or resolver
+change:
+
+```bash
+AI_API_TIMEOUT_SECONDS=180 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-generate-crypto-asset-briefs
+```
+
+Useful one-off variants:
+
+```bash
+AI_API_TIMEOUT_SECONDS=180 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-generate-crypto-asset-briefs --asset-key orbiter --force
+
+AI_API_TIMEOUT_SECONDS=180 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-generate-crypto-asset-briefs --days 30 --limit 20
+```
+
+What it does:
+
+- reads recent visible crypto assets from `crypto_entity_daily_views`
+- reuses existing CA identifiers from `crypto_entities` when present
+- otherwise calls OKX Onchain OS token search for up to five CA candidates
+- searches X for both the name-group and each CA-group
+- uses cheap overlap plus `gpt-5.4-mini` similarity judgment to decide whether a CA candidate is the same project
+- stores one frozen summary row per `asset_key` in `crypto_asset_narrative_briefs`
+- leaves `contract_address` empty and `ca_resolution_status='unresolved'` when no candidate passes, while still allowing a name-only summary
+
 ## Verify Database State Locally
 
 Run this after migration or reanalysis:
@@ -241,6 +275,7 @@ with psycopg.connect(dsn, autocommit=True) as conn:
             "security_daily_views",
             "crypto_entities",
             "crypto_entity_daily_views",
+            "crypto_asset_narrative_briefs",
             "theme_daily_views",
             "stock_narrative_briefs",
         ]:
@@ -292,6 +327,22 @@ with psycopg.connect(dsn, autocommit=True) as conn:
 
         cur.execute("select min(date_key), max(date_key), count(*) from crypto_entity_daily_views")
         print("crypto_dates=" + repr(cur.fetchone()))
+
+        cur.execute("""
+            select status, ca_resolution_status, count(*)
+            from crypto_asset_narrative_briefs
+            group by 1,2
+            order by 1,2
+        """)
+        print("crypto_brief_statuses=" + repr(cur.fetchall()))
+
+        cur.execute("""
+            select asset_key, left(summary_text, 80), contract_address, model_name
+            from crypto_asset_narrative_briefs
+            order by updated_at desc
+            limit 5
+        """)
+        print("crypto_brief_samples=" + repr(cur.fetchall()))
 PY
 ```
 
@@ -311,6 +362,9 @@ Expected crypto state after a crypto run:
 - crypto rows in `content_viewpoints` use `analysis_domain='crypto'` and `entity_type='crypto_entity'`
 - weak signals may have `signal_type in ('informational','mention_signal')` and `direction='unknown'`
 - `crypto_entity_daily_views` is populated when crypto signals exist
+- `crypto_asset_narrative_briefs` stores one row per `asset_key`
+- successful brief rows should normally use `model_name='gpt-5.4-mini'`
+- `ca_resolution_status` may be `existing_identifier`, `resolved`, or `unresolved`
 
 ## Verify RPC Behavior Locally
 
