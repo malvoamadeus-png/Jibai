@@ -243,6 +243,14 @@ alone when enough X samples exist. The frontend only receives
 `summary`, `summary_status`, and `summary_updated_at` from the crypto matrix
 RPC; it does not expose CA candidates or internal similarity-judgment payloads.
 
+Crypto admin controls add two more guards:
+
+- blocked terms: if an asset matches a blocked term such as `base`, the brief
+  worker writes `status=skipped` and does not run any later X/OKX/AI steps
+- deleted assets: if an admin deletes an asset from the crypto overview, that
+  `asset_key` is hidden from visible crypto list/detail/overview RPCs and is no
+  longer selected by the brief worker
+
 The command prints the matched `security_key` values before fetching. If
 `--query AMD` does not match `amd`, inspect `security_entities` because the
 AI/entity normalization probably stored the object under a company-name key

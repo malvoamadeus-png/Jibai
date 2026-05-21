@@ -4,6 +4,7 @@ from contextlib import contextmanager
 
 from packages.onchain.gmgn_labels import OKXTokenSearchCandidate
 from packages.public_app.crypto_asset_narrative import (
+    BlockedAssetMatch,
     CandidateDecision,
     CryptoAssetBriefTarget,
     SearchGroup,
@@ -11,6 +12,7 @@ from packages.public_app.crypto_asset_narrative import (
     _decide_candidate_pass,
     _decision_rank_key,
     _extract_existing_resolution,
+    _find_blocked_match,
     _match_candidate_with_ai,
     generate_crypto_asset_briefs_once,
 )
@@ -223,6 +225,29 @@ def test_decision_rank_prefers_confidence_then_strength() -> None:
     ranked = sorted([weaker, stronger], key=_decision_rank_key, reverse=True)
 
     assert ranked[0].candidate.contract_address == "0x222"
+
+
+def test_blocked_term_matches_display_name_and_skips() -> None:
+    asset = _asset()
+    match = _find_blocked_match(asset, ["base", "solana"])
+    assert match is None
+
+    base_asset = CryptoAssetBriefTarget(
+        asset_key="proj:base",
+        display_name="Base",
+        symbol="",
+        chain="Base",
+        identifier_type="project_name",
+        aliases=["Base chain"],
+        raw_identifiers=[],
+        contract_addresses=[],
+        x_accounts=[],
+        first_seen_date="2026-05-01",
+        latest_seen_date="2026-05-21",
+        mention_count=10,
+    )
+    blocked = _find_blocked_match(base_asset, ["base"])
+    assert blocked == BlockedAssetMatch(term="base", source_field="asset_key")
 
 
 def test_generate_skips_existing_success_without_force(monkeypatch) -> None:

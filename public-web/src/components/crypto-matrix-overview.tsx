@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { DeleteCryptoAssetButton } from "@/components/admin-actions";
 import { LoadingPanel } from "@/components/page-states";
 import { SignInCta } from "@/components/signin-cta";
 import { Badge } from "@/components/ui/badge";
@@ -317,6 +318,11 @@ export function CryptoMatrixOverview() {
                       <th className="sticky left-[220px] top-0 z-30 min-w-[320px] max-w-[320px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3 text-left">
                         说明
                       </th>
+                      {profile?.isAdmin ? (
+                        <th className="sticky left-[540px] top-0 z-30 min-w-[128px] max-w-[128px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3 text-left">
+                          管理
+                        </th>
+                      ) : null}
                       {matrix.authors.map((author) => (
                         <th
                           key={author.accountName}
@@ -353,6 +359,26 @@ export function CryptoMatrixOverview() {
                         <td className="sticky left-[220px] z-10 min-w-[320px] max-w-[320px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 align-top">
                           <p className="text-sm leading-6 text-[color:var(--muted-ink)]">{assetSummary(asset)}</p>
                         </td>
+                        {profile?.isAdmin ? (
+                          <td className="sticky left-[540px] z-10 min-w-[128px] max-w-[128px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 align-top">
+                            <DeleteCryptoAssetButton
+                              assetKey={asset.assetKey}
+                              reason="deleted_from_overview"
+                              label="删除"
+                              onChanged={() => {
+                                setData((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        assets: current.assets.filter((item) => item.assetKey !== asset.assetKey),
+                                        cells: current.cells.filter((item) => item.assetKey !== asset.assetKey),
+                                      }
+                                    : current,
+                                );
+                              }}
+                            />
+                          </td>
+                        ) : null}
                         {matrix.authors.map((author) => {
                           const cell = cellMap.get(cellKey(asset.assetKey, author.accountName));
                           return (

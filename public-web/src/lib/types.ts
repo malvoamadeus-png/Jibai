@@ -554,3 +554,22 @@ export type AdminJobItem = {
   createdAt: string;
   finishedAt: string | null;
 };
+
+export type CryptoAdminBlockedTermItem = {
+  term: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type CryptoAdminDeletedAssetItem = {
+  assetKey: string;
+  displayName: string;
+  reason: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type CryptoAdminControls = {
+  blockedTerms: CryptoAdminBlockedTermItem[];
+  deletedAssets: CryptoAdminDeletedAssetItem[];
+};

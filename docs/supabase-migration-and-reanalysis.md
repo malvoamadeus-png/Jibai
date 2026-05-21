@@ -157,6 +157,12 @@ For crypto asset narrative briefs and the crypto overview summary column, use:
 sql_path = Path("supabase/migrations/023_crypto_asset_narrative_briefs.sql")
 ```
 
+For crypto blocked terms and admin asset deletion controls, use:
+
+```python
+sql_path = Path("supabase/migrations/024_crypto_admin_controls.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally

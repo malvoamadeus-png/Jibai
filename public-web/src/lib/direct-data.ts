@@ -9,6 +9,7 @@ import type {
   AuthorDetailData,
   AuthorListItem,
   AuthorTimelineDay,
+  CryptoAdminControls,
   CryptoMatrixAsset,
   CryptoMatrixCell,
   CryptoMatrixData,
@@ -1015,6 +1016,54 @@ export async function disableAccount(supabase: SupabaseClient, accountId: string
 
 export async function enqueueManualCrawl(supabase: SupabaseClient, domain: Domain = "stock") {
   const { error } = await supabase.rpc("enqueue_manual_crawl", { domain_arg: domain });
+  assertNoError(error);
+}
+
+export async function listCryptoAdminControls(supabase: SupabaseClient): Promise<CryptoAdminControls> {
+  const { data, error } = await supabase.rpc("list_crypto_admin_controls");
+  assertNoError(error);
+  const payload = asRecord(data);
+  return {
+    blockedTerms: asArray(payload.blocked_terms ?? payload.blockedTerms).map((item) => {
+      const raw = asRecord(item);
+      return {
+        term: asString(raw.term),
+        createdAt: asNullableString(raw.created_at ?? raw.createdAt),
+        updatedAt: asNullableString(raw.updated_at ?? raw.updatedAt),
+      };
+    }),
+    deletedAssets: asArray(payload.deleted_assets ?? payload.deletedAssets).map((item) => {
+      const raw = asRecord(item);
+      return {
+        assetKey: asString(raw.asset_key ?? raw.assetKey),
+        displayName: asString(raw.display_name ?? raw.displayName ?? raw.asset_key ?? raw.assetKey),
+        reason: asString(raw.reason),
+        createdAt: asNullableString(raw.created_at ?? raw.createdAt),
+        updatedAt: asNullableString(raw.updated_at ?? raw.updatedAt),
+      };
+    }),
+  };
+}
+
+export async function addCryptoBlockedTerm(supabase: SupabaseClient, term: string) {
+  const { error } = await supabase.rpc("add_crypto_blocked_term", {
+    term_arg: term,
+  });
+  assertNoError(error);
+}
+
+export async function removeCryptoBlockedTerm(supabase: SupabaseClient, term: string) {
+  const { error } = await supabase.rpc("remove_crypto_blocked_term", {
+    term_arg: term,
+  });
+  assertNoError(error);
+}
+
+export async function adminDeleteCryptoAsset(supabase: SupabaseClient, assetKey: string, reason = "deleted_by_admin") {
+  const { error } = await supabase.rpc("admin_delete_crypto_asset", {
+    asset_key_arg: assetKey,
+    reason_arg: reason,
+  });
   assertNoError(error);
 }
 

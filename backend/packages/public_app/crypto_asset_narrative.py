@@ -133,6 +133,12 @@ class CandidateDecision:
     candidate_sample_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class BlockedAssetMatch:
+    term: str
+    source_field: str
+
+
 def _clip(value: str, limit: int) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= limit:
@@ -227,6 +233,45 @@ def _coerce_contracts(values: Iterable[str]) -> list[str]:
         if contract not in output:
             output.append(contract)
     return output
+
+
+def _normalize_blocked_term(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _asset_text_fields(asset: CryptoAssetBriefTarget) -> list[tuple[str, str]]:
+    fields: list[tuple[str, str]] = [
+        ("asset_key", asset.asset_key),
+        ("display_name", asset.display_name),
+        ("symbol", asset.symbol),
+    ]
+    fields.extend(("alias", alias) for alias in asset.aliases)
+    return [(label, str(value or "").strip()) for label, value in fields if str(value or "").strip()]
+
+
+def _fetch_blocked_terms(conn: Any) -> list[str]:
+    if not hasattr(conn, "execute"):
+        return []
+    rows = conn.execute(
+        """
+        select term
+        from crypto_asset_blocklist
+        order by term asc
+        """
+    ).fetchall()
+    return [_normalize_blocked_term(row["term"]) for row in rows if _normalize_blocked_term(row["term"])]
+
+
+def _find_blocked_match(asset: CryptoAssetBriefTarget, blocked_terms: Sequence[str]) -> BlockedAssetMatch | None:
+    normalized_terms = [term for term in (_normalize_blocked_term(item) for item in blocked_terms) if term]
+    if not normalized_terms:
+        return None
+    for field_name, field_value in _asset_text_fields(asset):
+        lowered = field_value.lower()
+        for term in normalized_terms:
+            if term in lowered:
+                return BlockedAssetMatch(term=term, source_field=field_name)
+    return None
 
 
 def _asset_alias_pool(asset: CryptoAssetBriefTarget) -> list[str]:
@@ -713,6 +758,8 @@ def _fetch_targets(
             coalesce(sum(cdv.mention_count), 0)::int as mention_count
           from crypto_entities ce
           join crypto_entity_daily_views cdv on cdv.crypto_entity_id = ce.id
+          left join crypto_asset_admin_deletions deleted on deleted.asset_key = ce.asset_key
+          where deleted.asset_key is null
           group by ce.id
         )
         select *
@@ -837,6 +884,7 @@ def generate_crypto_asset_briefs_once(
     settings = _model_settings()
     with postgres_connection() as conn:
         targets = _fetch_targets(conn, days=days, limit=limit, asset_keys=asset_keys)
+        blocked_terms = _fetch_blocked_terms(conn)
         if not targets:
             print("[public-worker] crypto_asset_brief skipped reason=no_recent_assets")
             return 0
@@ -848,6 +896,36 @@ def generate_crypto_asset_briefs_once(
             existing = _fetch_existing_success(conn, asset.asset_key)
             if existing and not force:
                 skipped += 1
+                continue
+
+            blocked_match = _find_blocked_match(asset, blocked_terms)
+            if blocked_match is not None:
+                _upsert_brief(
+                    conn,
+                    asset=asset,
+                    status="skipped",
+                    ca_resolution_status="unresolved",
+                    contract_address="",
+                    chain_index="",
+                    resolved_by="blocked_term",
+                    summary_text="",
+                    candidate_contracts=[],
+                    query_set={},
+                    source_urls=[],
+                    source_stats={
+                        "skip_reason": "blocked_term",
+                        "blocked_term": blocked_match.term,
+                        "matched_field": blocked_match.source_field,
+                    },
+                    model_name=None,
+                    usage={},
+                    error_text=f"blocked term matched: {blocked_match.term}",
+                )
+                skipped += 1
+                print(
+                    "[public-worker] crypto_asset_brief "
+                    f"asset_key={asset.asset_key} status=skipped reason=blocked_term term={blocked_match.term}"
+                )
                 continue
 
             usage_totals = {"input_tokens": 0, "output_tokens": 0}

@@ -162,6 +162,33 @@ If summary generation itself fails:
 - keep `error_text`
 - allow a later rerun with `--force`
 
+## Admin Controls
+
+`supabase/migrations/024_crypto_admin_controls.sql` adds two admin-only control
+paths:
+
+- `crypto_asset_blocklist`
+- `crypto_asset_admin_deletions`
+
+Blocked term behavior:
+
+- if `asset_key`, `display_name`, `symbol`, or aliases match a blocked term, the
+  brief job writes `status='skipped'`
+- the asset is skipped before all later X-search / CA-search / AI-summary work
+- the same blocked asset is hidden from visible crypto asset list, detail, and
+  overview RPC results
+
+The first default blocked term is:
+
+- `base`
+
+Admin delete behavior:
+
+- deleting an asset marks the `asset_key` in `crypto_asset_admin_deletions`
+- the asset is hidden from crypto list, detail, and overview surfaces
+- existing brief rows for that asset are removed immediately
+- later brief runs no longer pick that asset as a target
+
 ## Validation
 
 Backend checks:

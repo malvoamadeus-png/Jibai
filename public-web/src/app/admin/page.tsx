@@ -2,14 +2,27 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { ApproveButton, DisableButton, ManualRunButton, RejectButton } from "@/components/admin-actions";
+import {
+  AddCryptoBlockedTermButton,
+  ApproveButton,
+  DisableButton,
+  ManualRunButton,
+  RejectButton,
+  RemoveCryptoBlockedTermButton,
+} from "@/components/admin-actions";
 import { LoadingPanel, LoginRequired } from "@/components/page-states";
 import { useAuth } from "@/lib/auth-context";
-import { listAdminDashboard } from "@/lib/direct-data";
-import type { AdminAccountItem, AdminJobItem, AdminRequestItem } from "@/lib/types";
+import { listAdminDashboard, listCryptoAdminControls } from "@/lib/direct-data";
+import type {
+  AdminAccountItem,
+  AdminJobItem,
+  AdminRequestItem,
+  CryptoAdminBlockedTermItem,
+  CryptoAdminDeletedAssetItem,
+} from "@/lib/types";
 
 const JOB_LABELS: Record<string, string> = {
-  initial_backfill: "首次回溯",
+  initial_backfill: "首次回填",
   scheduled_crawl: "定时抓取",
   manual_crawl: "手动抓取",
 };
@@ -27,8 +40,7 @@ function formatTime(value: string | null) {
 
 function parseLegacySummary(summary: string) {
   const result: Record<string, string> = {};
-  const pattern =
-    /(\w+)=([\s\S]*?)(?=\s+\w+=|$)/g;
+  const pattern = /(\w+)=([\s\S]*?)(?=\s+\w+=|$)/g;
   for (const match of summary.matchAll(pattern)) {
     result[match[1]] = match[2].trim();
   }
@@ -79,14 +91,22 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
   const [approvedAccounts, setApprovedAccounts] = useState<AdminAccountItem[]>([]);
   const [requests, setRequests] = useState<AdminRequestItem[]>([]);
   const [jobs, setJobs] = useState<AdminJobItem[]>([]);
+  const [blockedTerms, setBlockedTerms] = useState<CryptoAdminBlockedTermItem[]>([]);
+  const [deletedAssets, setDeletedAssets] = useState<CryptoAdminDeletedAssetItem[]>([]);
+  const [newBlockedTerm, setNewBlockedTerm] = useState("base");
 
   const reload = useCallback(async () => {
     if (!profile?.isAdmin) return;
-    const dashboard = await listAdminDashboard(supabase, domain);
+    const [dashboard, cryptoControls] = await Promise.all([
+      listAdminDashboard(supabase, domain),
+      domain === "crypto" ? listCryptoAdminControls(supabase) : Promise.resolve(null),
+    ]);
     setApprovedCount(dashboard.approvedCount);
     setApprovedAccounts(dashboard.approvedAccounts);
     setRequests(dashboard.requests);
     setJobs(dashboard.jobs);
+    setBlockedTerms(cryptoControls?.blockedTerms ?? []);
+    setDeletedAssets(cryptoControls?.deletedAssets ?? []);
   }, [domain, profile, supabase]);
 
   useEffect(() => {
@@ -110,7 +130,7 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
       <div className="section-head">
         <div>
           <h1>管理</h1>
-          <p className="muted">审批账号请求。通过后会创建首次回溯任务，阿里云 worker 会定时轮询并串行执行。</p>
+          <p className="muted">审批账号请求。通过后会创建首次回填任务，worker 会定时轮询并串行执行。</p>
         </div>
         <ManualRunButton onChanged={reload} domain={domain} />
       </div>
@@ -129,6 +149,93 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
           <span className="muted">运行中任务</span>
         </div>
       </section>
+
+      {domain === "crypto" ? (
+        <>
+          <section className="table-panel" style={{ marginTop: 18 }}>
+            <div className="section-head" style={{ marginBottom: 12 }}>
+              <div>
+                <h2>屏蔽词</h2>
+                <p className="muted">命中屏蔽词的标的会直接跳过摘要生成，并从 crypto 可见标的结果里隐藏。</p>
+              </div>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  value={newBlockedTerm}
+                  onChange={(event) => setNewBlockedTerm(event.target.value)}
+                  placeholder="输入屏蔽词"
+                  className="input"
+                  style={{ minWidth: 180 }}
+                />
+                <AddCryptoBlockedTermButton term={newBlockedTerm} onChanged={reload} />
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>词</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {blockedTerms.map((item) => (
+                  <tr key={item.term}>
+                    <td>{item.term}</td>
+                    <td className="muted">{formatTime(item.updatedAt)}</td>
+                    <td>
+                      <RemoveCryptoBlockedTermButton term={item.term} onChanged={reload} />
+                    </td>
+                  </tr>
+                ))}
+                {!blockedTerms.length ? (
+                  <tr>
+                    <td colSpan={3}>
+                      <div className="empty">暂无屏蔽词</div>
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="table-panel" style={{ marginTop: 18 }}>
+            <div className="section-head" style={{ marginBottom: 12 }}>
+              <div>
+                <h2>已删除标的</h2>
+                <p className="muted">管理员删除后，该标的会从列表、详情和一览表中隐藏。</p>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>标的</th>
+                  <th>原因</th>
+                  <th>更新时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deletedAssets.map((item) => (
+                  <tr key={item.assetKey}>
+                    <td>
+                      <strong>{item.displayName}</strong>
+                      <div className="muted">{item.assetKey}</div>
+                    </td>
+                    <td>{item.reason || "-"}</td>
+                    <td className="muted">{formatTime(item.updatedAt)}</td>
+                  </tr>
+                ))}
+                {!deletedAssets.length ? (
+                  <tr>
+                    <td colSpan={3}>
+                      <div className="empty">暂无已删除标的</div>
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </section>
+        </>
+      ) : null}
 
       <section className="table-panel" style={{ marginTop: 18 }}>
         <table>
@@ -173,7 +280,7 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
           <thead>
             <tr>
               <th>已批准账号</th>
-              <th>首次回溯</th>
+              <th>首次回填</th>
               <th>操作</th>
             </tr>
           </thead>

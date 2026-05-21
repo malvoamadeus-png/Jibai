@@ -3,11 +3,19 @@
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
-import { Ban, Check, Play, X } from "lucide-react";
+import { Ban, Check, Play, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { approveRequest, disableAccount, enqueueManualCrawl, rejectRequest } from "@/lib/direct-data";
+import {
+  addCryptoBlockedTerm,
+  adminDeleteCryptoAsset,
+  approveRequest,
+  disableAccount,
+  enqueueManualCrawl,
+  rejectRequest,
+  removeCryptoBlockedTerm,
+} from "@/lib/direct-data";
 
 function AdminButton({
   action,
@@ -112,6 +120,67 @@ export function ManualRunButton({
       label="手动抓取"
       kind="primary"
       icon={<Play size={16} />}
+      onChanged={onChanged}
+    />
+  );
+}
+
+export function AddCryptoBlockedTermButton({
+  term,
+  onChanged,
+}: {
+  term: string;
+  onChanged?: () => void;
+}) {
+  const { supabase } = useAuth();
+  return (
+    <AdminButton
+      action={() => addCryptoBlockedTerm(supabase, term)}
+      label="添加屏蔽词"
+      kind="primary"
+      icon={<Ban size={16} />}
+      onChanged={onChanged}
+    />
+  );
+}
+
+export function RemoveCryptoBlockedTermButton({
+  term,
+  onChanged,
+}: {
+  term: string;
+  onChanged?: () => void;
+}) {
+  const { supabase } = useAuth();
+  return (
+    <AdminButton
+      action={() => removeCryptoBlockedTerm(supabase, term)}
+      label="移除"
+      kind="danger"
+      icon={<X size={16} />}
+      onChanged={onChanged}
+    />
+  );
+}
+
+export function DeleteCryptoAssetButton({
+  assetKey,
+  reason = "deleted_by_admin",
+  label = "删除标的",
+  onChanged,
+}: {
+  assetKey: string;
+  reason?: string;
+  label?: string;
+  onChanged?: () => void;
+}) {
+  const { supabase } = useAuth();
+  return (
+    <AdminButton
+      action={() => adminDeleteCryptoAsset(supabase, assetKey, reason)}
+      label={label}
+      kind="danger"
+      icon={<Trash2 size={16} />}
       onChanged={onChanged}
     />
   );
