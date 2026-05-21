@@ -15,6 +15,7 @@ import {
   Newspaper,
   Orbit,
   Shield,
+  Tags,
   UserRound,
   WalletCards,
   X,
@@ -55,6 +56,7 @@ export function Nav() {
         { href: "/onchain", label: "总览", icon: Home, exact: true },
         { href: "/onchain/wallets", label: "地址库 / 按人", icon: WalletCards },
         { href: "/onchain/tokens", label: "按代币", icon: Grid3X3 },
+        { href: "/onchain/gmgn-labels", label: "GMGN备注生成", icon: Tags },
       ]
     : isCrypto
       ? [

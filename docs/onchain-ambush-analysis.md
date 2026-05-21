@@ -23,6 +23,7 @@
 | 总览 | `/onchain` | 今日新买入、共识持仓、增持榜、地址活跃度和最近运行状态。 |
 | 地址库 / 按人 | `/onchain/wallets` | 已审批地址列表、订阅、提交地址、私有备注、单地址 token x 日期矩阵。 |
 | 按代币 | `/onchain/tokens` | token 为行、日期为列，支持数量、金额、括号持有人数、排序和链筛选。 |
+| GMGN备注生成 | `/onchain/gmgn-labels` | 输入 token，调用 Linux API 查询 OKX Top 持仓/盈利地址，并在浏览器本地按用户原备注生成新增 GMGN 备注。 |
 | 管理 | `/onchain/admin` | 审批地址、配置启用链、全站备注、手动抓取、运行状态。 |
 
 地址显示优先级固定为：
@@ -49,8 +50,9 @@
 后端使用 OKX Web3 / OnchainOS：
 
 - 接口：`/api/v6/dex/balance/all-token-balances-by-address`
+- GMGN 备注接口：`/api/v6/dex/market/token/top-trader`、`/api/v6/dex/market/token/holder`、`/api/v6/dex/market/token/basic-info`
 - 代码：`backend/packages/onchain/okx_client.py`
-- 签名逻辑参考 `D:\Coding\RelayTrade\token_report_cli\core\client.py`
+- GMGN 备注代码：`backend/packages/onchain/gmgn_labels.py`、`backend/packages/public_app/api.py`
 
 OKX env 只在后端读取：
 
@@ -73,6 +75,8 @@ OKX_REQUEST_DELAY_SECONDS=0.25
 ```
 
 OKX `excludeRiskToken=0` 表示过滤风险空投和貔貅盘；代码同时保留本地 `isRiskToken` 二次过滤。
+
+GMGN 备注生成只把 token address 和 `limit` 发到 Linux API；EVM/Solana 原备注只在浏览器本地解析、去重和生成 `NewLabel-*` 输出，不上传服务器。API 要求 Supabase 登录态 Bearer token，服务端用 `SUPABASE_URL` 和 `SUPABASE_ANON_KEY` 校验用户已登录。
 
 ## 过滤和身份
 
@@ -155,6 +159,7 @@ Migration 会写入两个已审批生产种子地址：
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-onchain-fetch --once
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-onchain-rebuild-daily --days 30
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-onchain-process-pending --limit 1
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-api --host 127.0.0.1 --port 8010
 ```
 
 `public-worker` 长驻进程已集成链上调度：
@@ -202,6 +207,7 @@ npm run dev
 - `/onchain`
 - `/onchain/wallets`
 - `/onchain/tokens`
+- `/onchain/gmgn-labels`
 - `/onchain/admin`
 
 关键检查：
@@ -210,6 +216,7 @@ npm run dev
 - 裤子启用 BSC、Ethereum、Base。
 - 地址不会以完整长串撑开 UI。
 - 链筛选、指标切换、私有备注和管理页保存可用。
+- GMGN 备注生成请求体不包含用户粘贴的 EVM/Solana 原备注。
 
 ## 部署验证
 
@@ -268,7 +275,7 @@ with psycopg.connect(dsn, autocommit=True) as conn:
 PY
 ```
 
-Linux 部署时按 `docs/agent-operations-runbook.md`：先看服务器 `git status --short`，不要覆盖脏改；重启 `jibai-public-worker.service` 后必须读最新 `journalctl`，不能只看 `active`。
+Linux 部署时按 `docs/agent-operations-runbook.md`：先看服务器 `git status --short`，不要覆盖脏改；重启 `jibai-public-worker.service` 或 `jibai-public-api.service` 后必须读最新 `journalctl`，不能只看 `active`。
 
 ## 2026-05-20 补充
 

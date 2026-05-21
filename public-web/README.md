@@ -8,6 +8,8 @@ Copy `.env.example` to `.env.local` and set:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_GMGN_LABEL_API_URL` for the Linux public API used by
+  `/onchain/gmgn-labels`
 
 Run locally:
 
@@ -54,3 +56,7 @@ python backend/src/main.py public-worker
 ```
 
 Approving a new account creates an `initial_backfill` job in Supabase. The worker picks it up and writes content plus analysis back into the public tables.
+
+`/onchain/gmgn-labels` calls the Linux public API with the logged-in Supabase
+access token. User-pasted GMGN labels are parsed locally in the browser and are
+not sent to the API.

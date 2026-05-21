@@ -183,7 +183,7 @@ ssh -i ~/.ssh/id_ed25519_prod \
   -o ConnectTimeout=10 \
   -o StrictHostKeyChecking=accept-new \
   root@47.76.243.147 \
-  "cd /opt/Jibai && git rev-parse --short HEAD && git status --short && systemctl is-active jibai-public-worker.service"
+  "cd /opt/Jibai && git rev-parse --short HEAD && git status --short && systemctl is-active jibai-public-worker.service && (systemctl is-active jibai-public-api.service || true)"
 ```
 
 如果服务器工作区是干净的，可以正常拉取：
@@ -221,9 +221,24 @@ ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 '
 cd /opt/Jibai
 .venv/bin/python -m compileall backend/packages backend/src
 systemctl restart jibai-public-worker.service
+systemctl restart jibai-public-api.service
 sleep 3
 systemctl status jibai-public-worker.service --no-pager -l
 journalctl -u jibai-public-worker.service -n 50 --no-pager
+systemctl status jibai-public-api.service --no-pager -l
+journalctl -u jibai-public-api.service -n 50 --no-pager
+'
+```
+
+如果本次只改了其中一个服务，可以只重启对应服务。新增或修改 systemd unit
+后先执行：
+
+```bash
+ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 '
+systemctl daemon-reload
+systemctl enable --now jibai-public-api.service
+systemctl status jibai-public-api.service --no-pager -l
+journalctl -u jibai-public-api.service -n 50 --no-pager
 '
 ```
 

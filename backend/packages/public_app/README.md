@@ -31,6 +31,8 @@ Approval flow:
 Create `/etc/jibai/public-worker.env` on the server:
 
 ```bash
+SUPABASE_URL='https://your-project.supabase.co'
+SUPABASE_ANON_KEY='your-supabase-anon-key'
 SUPABASE_DB_URL='postgresql://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
 PUBLIC_WORKER_CRAWL_TIMES=04:00,10:00,16:00,22:00
 PUBLIC_WORKER_ACCOUNT_DELAY_SECONDS=5
@@ -58,9 +60,14 @@ AI_FALLBACK_MODELS='optional-fallback-model-1,optional-fallback-model-2'
 OKX_API_KEY='your-okx-web3-api-key'
 OKX_SECRET_KEY='your-okx-web3-secret-key'
 OKX_PASSPHRASE='your-okx-web3-passphrase'
+PUBLIC_API_ALLOWED_ORIGINS='https://your-public-web-domain.com,http://localhost:3000'
 ```
 
 Use the Supabase Postgres connection string, not the anon key. The anon key is for browser/database API access; this worker needs a server-side SQL connection so it can claim jobs, run locks, and write analysis tables.
+
+The Linux public API also uses `SUPABASE_URL` and `SUPABASE_ANON_KEY` to verify
+Supabase access tokens for logged-in users. `PUBLIC_API_ALLOWED_ORIGINS` must
+include the Vercel public-web origin so browsers can call the API.
 
 AI settings use the same OpenAI-compatible configuration as the local backend.
 If local development uses an OpenAI relay endpoint, copy the same endpoint into
@@ -132,6 +139,11 @@ single-wallet matrix, and `/onchain/admin` enqueues manual fetch runs. The
 long-running worker executes both scheduled fetches and pending manual onchain
 runs.
 
+`/onchain/gmgn-labels` calls the Linux public API endpoint
+`POST /api/onchain/gmgn-labels`. The API receives only token addresses and
+`limit`; user-pasted EVM/Solana GMGN label files stay in the browser and are
+used locally for de-duplication.
+
 ## Commands
 
 ```bash
@@ -143,6 +155,7 @@ set +a
 
 python backend/src/main.py public-worker --once
 python backend/src/main.py public-worker
+python backend/src/main.py public-api --host 127.0.0.1 --port 8010
 python backend/src/main.py public-worker-doctor
 python backend/src/main.py public-enqueue-scheduled
 python backend/src/main.py public-onchain-doctor
@@ -164,6 +177,10 @@ manual tests after migrations or deploys. `public-worker` starts the long-runnin
 poller and in-process scheduler. `public-enqueue-scheduled` inserts one scheduled
 crawl job immediately, which is useful when you want the worker to process a run
 without waiting for the next configured wall-clock time.
+
+`public-api` starts the FastAPI service used by the Vercel frontend. Put it
+behind Nginx or another TLS reverse proxy, and point
+`NEXT_PUBLIC_GMGN_LABEL_API_URL` in `public-web` at that public HTTPS origin.
 
 `public-reanalyze-recent --days 30 --clear-analysis` keeps raw `content_items`,
 clears analysis/materialized outputs, and force-runs the current stock-only
@@ -277,4 +294,33 @@ systemctl daemon-reload
 systemctl enable --now jibai-public-worker
 systemctl status jibai-public-worker
 journalctl -u jibai-public-worker -f
+```
+
+Create `/etc/systemd/system/jibai-public-api.service`:
+
+```ini
+[Unit]
+Description=Jibai public API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/Jibai
+EnvironmentFile=/etc/jibai/public-worker.env
+ExecStart=/opt/Jibai/.venv/bin/python backend/src/main.py public-api --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then run:
+
+```bash
+systemctl daemon-reload
+systemctl enable --now jibai-public-api
+systemctl status jibai-public-api
+journalctl -u jibai-public-api -f
 ```

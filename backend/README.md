@@ -38,4 +38,5 @@ python src/main.py login --config ../data/config/watchlist.json
 python src/main.py run-once --config ../data/config/watchlist.json
 python src/main.py run-once-x --config ../data/config/x_watchlist.json
 python src/main.py run-scheduler --config ../data/config/watchlist.json
+python src/main.py public-api --host 127.0.0.1 --port 8010
 ```

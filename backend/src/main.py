@@ -77,6 +77,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Process at most one pending public crawl job, then exit.",
     )
+    public_api_parser = subparsers.add_parser(
+        "public-api",
+        help="Run the public HTTP API service.",
+    )
+    public_api_parser.add_argument("--host", default="127.0.0.1", help="Bind host. Defaults to 127.0.0.1.")
+    public_api_parser.add_argument("--port", type=int, default=8010, help="Bind port. Defaults to 8010.")
     subparsers.add_parser(
         "public-enqueue-scheduled",
         help="Enqueue one scheduled public X crawl job in Supabase.",
@@ -239,6 +245,11 @@ def main() -> int:
         from packages.public_app.worker import run_worker  # noqa: PLC0415
 
         return run_worker(once=args.once)
+    if args.command == "public-api":
+        import uvicorn  # noqa: PLC0415
+
+        uvicorn.run("packages.public_app.api:create_app", factory=True, host=args.host, port=args.port)
+        return 0
     if args.command == "public-enqueue-scheduled":
         from packages.public_app.worker import enqueue_scheduled_crawl  # noqa: PLC0415
 

@@ -103,17 +103,29 @@ class OKXWeb3Client:
         query = urlencode(filtered)
         return f"{path}?{query}" if query else path
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: Any = None,
+    ) -> Any:
         request_path = self._build_request_path(path, params)
         url = f"{API_BASE_URL}{request_path}"
+        body_text = _json_dumps_minified(json_body) if json_body is not None else ""
         last_error = ""
 
         for attempt in range(1, self.max_retries + 1):
-            headers = self._sign_headers("GET", request_path)
+            headers = self._sign_headers(method.upper(), request_path, body_text)
+            if json_body is not None:
+                headers["Content-Type"] = "application/json"
             try:
-                response = self.session.get(
-                    url,
+                response = self.session.request(
+                    method=method.upper(),
+                    url=url,
                     headers=headers,
+                    data=body_text or None,
                     timeout=self.timeout_seconds,
                     proxies=self.proxies,
                 )
@@ -146,6 +158,12 @@ class OKXWeb3Client:
             raise OKXAPIError(f"OKX API error: code={code} msg={msg}", code="api_error")
 
         raise OKXAPIError(last_error or "Unknown OKX API error", code="api_error")
+
+    def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return self.request("GET", path, params=params)
+
+    def post_json(self, path: str, json_body: Any) -> Any:
+        return self.request("POST", path, json_body=json_body)
 
     def fetch_all_token_balances(self, *, wallet_address: str, chains: str) -> list[dict[str, Any]]:
         data = self.get(

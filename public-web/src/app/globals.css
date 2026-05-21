@@ -966,6 +966,120 @@ th {
   padding: 24px;
 }
 
+.gmgn-tool-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 240px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.gmgn-token-field,
+.gmgn-json-field {
+  min-width: 0;
+}
+
+.gmgn-token-field textarea {
+  min-height: 150px;
+}
+
+.gmgn-action-stack {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.gmgn-action-stack .field,
+.gmgn-action-stack input {
+  min-width: 0;
+  width: 100%;
+}
+
+.gmgn-small {
+  margin: 0;
+  font-size: 13px;
+}
+
+.gmgn-notice-grid,
+.gmgn-workspace {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.gmgn-notice,
+.gmgn-warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 18px;
+}
+
+.gmgn-notice {
+  border-color: rgba(25, 131, 93, 0.2);
+  color: var(--success);
+}
+
+.gmgn-warning {
+  border-color: rgba(181, 119, 23, 0.24);
+  color: var(--warning);
+}
+
+.gmgn-notice p,
+.gmgn-warning p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.65;
+}
+
+.gmgn-column {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.gmgn-column h2 {
+  margin-bottom: 6px;
+}
+
+.gmgn-json-field textarea {
+  min-height: 260px;
+  min-width: 0;
+  width: 100%;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+
+.gmgn-json-field button {
+  width: fit-content;
+}
+
+.gmgn-result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.gmgn-error-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.gmgn-error-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1100px) {
   .mobile-topbar {
     position: fixed;
@@ -1044,6 +1158,9 @@ th {
   .dashboard-grid,
   .metric-row,
   .risk-grid,
+  .gmgn-tool-head,
+  .gmgn-notice-grid,
+  .gmgn-workspace,
   .risk-guide-list {
     grid-template-columns: 1fr;
   }
