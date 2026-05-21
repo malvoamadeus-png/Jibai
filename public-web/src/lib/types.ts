@@ -310,6 +310,9 @@ export type EntityDetailData = {
   displayName: string;
   ticker: string | null;
   market: string | null;
+  identifierType?: string | null;
+  rawIdentifiers?: string[];
+  normalizedStatus?: string | null;
   timeline: PagedResult<StockTimelineDay>;
   chart?: StockKlineData | null;
 };

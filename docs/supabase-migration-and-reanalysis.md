@@ -144,6 +144,13 @@ For the public stock narrative brief, use:
 sql_path = Path("supabase/migrations/019_stock_narrative_briefs.sql")
 ```
 
+For crypto asset-candidate filtering and provisional normalization metadata,
+use:
+
+```python
+sql_path = Path("supabase/migrations/022_crypto_asset_candidate_rpc.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -191,6 +198,12 @@ AI_API_TIMEOUT_SECONDS=180 \
 AI_API_TIMEOUT_SECONDS=180 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py normalize-crypto-assets --days 30
 ```
+
+After changing crypto resolver logic, prefer `normalize-crypto-assets --days 30`
+over another full LLM reanalysis when the existing `content_analyses` rows are
+already present. It re-normalizes stored crypto viewpoints, filters
+`asset_candidate=false` rows out of materialized asset timelines, and rebuilds
+`crypto_entity_daily_views` from current code.
 
 Generate or refresh the public stock narrative brief after the migration:
 
@@ -613,3 +626,36 @@ Asia/Shanghai natural day. Final verified state included:
 - `security_daily_views=95`
 - `theme_daily_views=0`
 - invalid stock-signal rows: `0`
+
+## Notes From The 2026-05-21 Crypto Resolver Migration
+
+Migration `022_crypto_asset_candidate_rpc.sql` keeps generic/theme-like crypto
+mentions out of visible asset RPCs and exposes the newer crypto matrix payload
+fields used by the frontend, including raw identifiers, normalization status,
+resolver strategy, match confidence, source signal level, and metadata.
+
+The historical repair used the local venv runtime on Windows:
+
+```powershell
+$env:PYTHONPATH='backend'
+$env:AI_API_TIMEOUT_SECONDS='180'
+.\.venv-codex\Scripts\python.exe backend\src\main.py public-reanalyze-recent --domain crypto --days 30 --clear-analysis
+.\.venv-codex\Scripts\python.exe backend\src\main.py normalize-crypto-assets --days 30
+```
+
+The second command is important when old materialized rows were created before
+the resolver/filter logic changed. It clears and rebuilds
+`crypto_entity_daily_views` for the selected crypto window from the current
+stored analyses.
+
+Verified state for the `2026-04-22` through `2026-05-21` Asia/Shanghai crypto
+window after the rebuild:
+
+- crypto domain notes in worker scope: `336`
+- missing crypto analyses in scope: `0`
+- crypto viewpoints in scope: `598`
+- crypto author daily summaries: `49`
+- crypto entity daily views: `226`
+- `AEON` symbol and meme-ticker rows materialized under `tick:aeon`
+- `decentralized LLM` no longer appears in visible crypto entities or materialized crypto daily views
+- `1confirmation` mentions normalize to `proj:1confirmation`, but are not materialized as an asset when classified as `org_or_fund` with `asset_candidate=false`

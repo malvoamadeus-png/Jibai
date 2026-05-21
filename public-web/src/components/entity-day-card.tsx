@@ -5,6 +5,23 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 
+function cryptoResolverBadges(view: EntityAuthorView) {
+  const metadata = view.metadata || {};
+  const badges: Array<{ text: string; variant: "neutral" | "warm" }> = [];
+  if (view.normalized_status && view.normalized_status !== "canonical") {
+    badges.push({ text: "临时归一", variant: "warm" });
+  }
+  const strategy = typeof metadata.resolver_strategy === "string" ? metadata.resolver_strategy : "";
+  if (strategy) {
+    badges.push({ text: `归并 · ${strategy}`, variant: "neutral" });
+  }
+  const confidence = typeof metadata.match_confidence === "string" ? metadata.match_confidence : "";
+  if (confidence) {
+    badges.push({ text: `置信 · ${confidence}`, variant: "neutral" });
+  }
+  return badges;
+}
+
 export function EntityDayCard({
   day,
   domain = "stock",
@@ -53,10 +70,22 @@ export function EntityDayCard({
 
               <div className="flex flex-wrap items-start gap-2">
                 <Badge variant={viewSignalVariant(view)}>{viewSignalLabel(view)}</Badge>
+                {domain === "crypto"
+                  ? cryptoResolverBadges(view).map((badge) => (
+                      <Badge key={`${badge.text}-${view.account_name}`} variant={badge.variant}>
+                        {badge.text}
+                      </Badge>
+                    ))
+                  : null}
               </div>
 
               <div className="space-y-2">
                 <p className="text-sm leading-7 text-[color:var(--muted-ink)]">{view.logic || "暂无逻辑说明"}</p>
+                {domain === "crypto" && view.raw_identifiers?.length ? (
+                  <p className="text-xs leading-6 text-[color:var(--soft-ink)]">
+                    标识：{view.raw_identifiers.join(" · ")}
+                  </p>
+                ) : null}
                 {view.evidence.length > 0 && (
                   <p className="text-xs leading-6 text-[color:var(--soft-ink)]">
                     证据：{view.evidence.join("；")}

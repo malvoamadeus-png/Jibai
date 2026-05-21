@@ -92,6 +92,13 @@ export function EntityBrowser({
   const basePath = isCrypto ? "/crypto/assets" : "/stocks";
   const title = isCrypto ? "按标的（详情）" : "按股票（详情）";
   const description = isCrypto ? "左侧快速切换项目或资产，右侧查看按日作者信号、原文标识、逻辑和来源。" : "左侧快速切换股票，右侧查看日线标记和按日作者观点。";
+  const cryptoIdentifierBadges = useMemo(() => {
+    if (!isCrypto || !detail) return [];
+    const badges: string[] = [];
+    if (detail.normalizedStatus && detail.normalizedStatus !== "canonical") badges.push("临时归一");
+    if (detail.identifierType) badges.push(`主标识 · ${detail.identifierType}`);
+    return badges;
+  }, [detail, isCrypto]);
 
   useEffect(() => {
     if (loading) return;
@@ -286,9 +293,17 @@ export function EntityBrowser({
                   <div className="flex flex-wrap items-center gap-2">
                     {detail.ticker ? <Badge variant="warm">{detail.ticker}</Badge> : null}
                     {detail.market ? <Badge variant="neutral">{detail.market}</Badge> : null}
+                    {cryptoIdentifierBadges.map((badge) => (
+                      <Badge key={badge} variant="neutral">
+                        {badge}
+                      </Badge>
+                    ))}
                     <Badge variant="neutral">{detail.key}</Badge>
                   </div>
                   <CardTitle className="text-3xl">{detail.displayName}</CardTitle>
+                  {isCrypto && detail.rawIdentifiers?.length ? (
+                    <CardDescription>原始标识：{detail.rawIdentifiers.join(" · ")}</CardDescription>
+                  ) : null}
                 </CardHeader>
               </Card>
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
+from typing import Any
 
 from .io import read_json, safe_filename
 from .paths import AppPaths
@@ -19,6 +20,8 @@ class CryptoIdentity:
     aliases: tuple[str, ...] = ()
     chain: str | None = None
     normalized_status: str = "temporary"
+    resolver_strategy: str = "direct"
+    match_confidence: str = "medium"
 
 
 _SPACE_RE = re.compile(r"\s+")
@@ -26,6 +29,7 @@ _EVM_CA_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 _SOLANA_ADDR_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _X_ACCOUNT_RE = re.compile(r"^@[A-Za-z0-9_]{1,15}$")
 _SYMBOL_RE = re.compile(r"^\$?[A-Za-z][A-Za-z0-9_]{1,20}$")
+_ASCII_SLUG_RE = re.compile(r"[^a-z0-9_]+")
 
 
 def _normalize_lookup(value: str) -> str:
@@ -51,6 +55,18 @@ def _dedupe(values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _normalized_text_slug(value: str) -> str:
+    cleaned = _clean_identifier(value).lstrip("@$").casefold()
+    return _ASCII_SLUG_RE.sub("", cleaned)
+
+
+def _first_candidate_for_type(candidates: tuple[str, ...], identifier_type: str) -> str:
+    for candidate in candidates:
+        if infer_identifier_type(candidate) == identifier_type:
+            return candidate
+    return next((candidate for candidate in candidates if candidate), "")
+
+
 def infer_identifier_type(identifier: str) -> str:
     value = _clean_identifier(identifier)
     if _EVM_CA_RE.fullmatch(value):
@@ -70,12 +86,14 @@ def _asset_key_from_identifier(identifier: str, identifier_type: str) -> str:
         return f"ca:{value.lower()}"
     if identifier_type == "solana_address":
         return f"sol:{value}"
-    if identifier_type == "project_account":
-        return "x:" + value.lstrip("@").casefold()
-    if identifier_type == "meme_ticker":
-        return "meme:" + value.lstrip("$").casefold()
-    if identifier_type == "symbol":
-        return "sym:" + value.lstrip("$").casefold()
+    if identifier_type in {"project_name", "project_account"}:
+        slug = _normalized_text_slug(value)
+        if slug:
+            return f"proj:{slug}"
+    if identifier_type in {"symbol", "meme_ticker"}:
+        slug = _normalized_text_slug(value)
+        if slug:
+            return f"tick:{slug}"
     return "tmp:" + safe_filename(value.casefold(), default="crypto")
 
 
@@ -103,6 +121,8 @@ def _identity_from_payload(alias: str, payload: dict[str, object]) -> CryptoIden
         aliases=aliases,
         chain=str(payload.get("chain") or "").strip() or None,
         normalized_status=str(payload.get("normalized_status") or "canonical").strip() or "canonical",
+        resolver_strategy=str(payload.get("resolver_strategy") or "alias").strip() or "alias",
+        match_confidence=str(payload.get("match_confidence") or "high").strip() or "high",
     )
 
 
@@ -144,6 +164,7 @@ def resolve_crypto_identity(
     entity_identifier_type: str | None = None,
     raw_identifiers: list[str] | None = None,
     aliases: dict[str, CryptoIdentity] | None = None,
+    resolver_hints: dict[str, Any] | None = None,
 ) -> CryptoIdentity | None:
     candidates = _dedupe(
         [
@@ -157,7 +178,12 @@ def resolve_crypto_identity(
         hit = alias_map.get(_normalize_lookup(candidate))
         if hit is not None:
             merged_raw = _dedupe([*hit.raw_identifiers, *candidates])
-            return replace(hit, raw_identifiers=merged_raw)
+            return replace(
+                hit,
+                raw_identifiers=merged_raw,
+                resolver_strategy="alias",
+                match_confidence="high",
+            )
 
     primary = next((item for item in candidates if item), "")
     if not primary:
@@ -165,6 +191,9 @@ def resolve_crypto_identity(
     identifier_type = entity_identifier_type or infer_identifier_type(primary)
     if identifier_type == "unknown":
         identifier_type = infer_identifier_type(primary)
+    preferred = _first_candidate_for_type(candidates, identifier_type)
+    if preferred:
+        primary = preferred
     display_name = entity_name.strip() or entity_code_or_name or primary
     symbol = None
     if identifier_type in {"symbol", "meme_ticker"}:
@@ -174,8 +203,24 @@ def resolve_crypto_identity(
 
     contract_addresses = tuple(item for item in candidates if infer_identifier_type(item) == "evm_contract")
     x_accounts = tuple(item for item in candidates if infer_identifier_type(item) == "project_account")
+    hint_symbol = str((resolver_hints or {}).get("linked_symbol") or "").strip()
+    if not symbol and hint_symbol:
+        symbol = hint_symbol.lstrip("$").upper()
+    asset_key = _asset_key_from_identifier(primary, identifier_type)
+    if identifier_type in {"evm_contract", "solana_address"}:
+        resolver_strategy = "address_exact"
+        match_confidence = "high"
+    elif asset_key.startswith("proj:"):
+        resolver_strategy = "project_group"
+        match_confidence = "medium"
+    elif asset_key.startswith("tick:"):
+        resolver_strategy = "ticker_group"
+        match_confidence = "medium"
+    else:
+        resolver_strategy = "fallback"
+        match_confidence = "low"
     return CryptoIdentity(
-        asset_key=_asset_key_from_identifier(primary, identifier_type),
+        asset_key=asset_key,
         display_name=display_name,
         symbol=symbol,
         identifier_type=identifier_type,
@@ -185,4 +230,6 @@ def resolve_crypto_identity(
         aliases=(),
         chain="EVM" if identifier_type == "evm_contract" else "Solana" if identifier_type == "solana_address" else None,
         normalized_status="temporary",
+        resolver_strategy=resolver_strategy,
+        match_confidence=match_confidence,
     )

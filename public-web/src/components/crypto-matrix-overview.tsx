@@ -73,7 +73,21 @@ function dotClass(view: CryptoMatrixView) {
   return "border-[color:rgba(92,92,92,0.34)] bg-[#8a8a84]";
 }
 
+function cryptoViewMetaBadges(view: CryptoMatrixView) {
+  const metadata = view.metadata || {};
+  const badges: string[] = [];
+  if (view.normalized_status && view.normalized_status !== "canonical") badges.push("临时归一");
+  if (typeof metadata.resolver_strategy === "string" && metadata.resolver_strategy) {
+    badges.push(`归并 · ${metadata.resolver_strategy}`);
+  }
+  if (typeof metadata.match_confidence === "string" && metadata.match_confidence) {
+    badges.push(`置信 · ${metadata.match_confidence}`);
+  }
+  return badges;
+}
+
 function ViewTooltip({ asset, view }: { asset: CryptoMatrixAsset; view: CryptoMatrixView }) {
+  const badges = cryptoViewMetaBadges(view);
   return (
     <span className="pointer-events-auto absolute left-1/2 top-5 z-30 hidden w-[min(360px,calc(100vw-48px))] -translate-x-1/2 rounded-2xl border border-[color:var(--border-strong)] bg-[color:var(--paper)] p-4 text-left shadow-[0_18px_50px_rgba(44,33,22,0.18)] group-hover:block group-focus-within:block">
       <span className="mb-2 flex flex-wrap items-center gap-2">
@@ -86,6 +100,11 @@ function ViewTooltip({ asset, view }: { asset: CryptoMatrixAsset; view: CryptoMa
         <Badge variant="neutral" className="normal-case">
           {asset.displayName}
         </Badge>
+        {badges.map((badge) => (
+          <Badge key={badge} variant="neutral" className="normal-case">
+            {badge}
+          </Badge>
+        ))}
       </span>
       <span className="block text-sm font-semibold text-[color:var(--ink)]">
         {view.author_nickname || view.account_name} · {viewSignalLabel(view)}
@@ -93,6 +112,11 @@ function ViewTooltip({ asset, view }: { asset: CryptoMatrixAsset; view: CryptoMa
       <span className="mt-2 block text-xs leading-6 text-[color:var(--muted-ink)]">
         {view.logic || "暂无逻辑说明"}
       </span>
+      {view.raw_identifiers?.length ? (
+        <span className="mt-2 block text-xs leading-6 text-[color:var(--soft-ink)]">
+          标识：{view.raw_identifiers.join(" · ")}
+        </span>
+      ) : null}
       {view.evidence.length ? (
         <span className="mt-2 block text-xs leading-6 text-[color:var(--soft-ink)]">
           证据：{view.evidence.join("；")}

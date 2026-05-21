@@ -686,6 +686,9 @@ export async function getVisibleEntityTimeline(
       displayName: asString(meta.displayName ?? meta.display_name, entityKey),
       ticker: asNullableString(meta.ticker),
       market: asNullableString(meta.market),
+      identifierType: asNullableString(meta.identifier_type ?? meta.identifierType),
+      rawIdentifiers: normalizeStringArray(meta.raw_identifiers ?? meta.rawIdentifiers),
+      normalizedStatus: asNullableString(meta.normalized_status ?? meta.normalizedStatus),
       timeline: normalizePaged(payload.timeline, normalizeEntityDay),
       chart: null,
     } satisfies EntityDetailData;
@@ -707,6 +710,9 @@ export async function getVisibleEntityTimeline(
     displayName: asString(meta.displayName ?? meta.display_name, entityKey),
     ticker: asNullableString(meta.ticker),
     market: asNullableString(meta.market),
+    identifierType: asNullableString(meta.identifier_type ?? meta.identifierType),
+    rawIdentifiers: normalizeStringArray(meta.raw_identifiers ?? meta.rawIdentifiers),
+    normalizedStatus: asNullableString(meta.normalized_status ?? meta.normalizedStatus),
     timeline: normalizePaged(payload.timeline, normalizeEntityDay),
     chart: type === "stock" ? normalizeStockChart(payload.chart) : null,
   } satisfies EntityDetailData;

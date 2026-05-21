@@ -122,6 +122,45 @@ VALID_EVIDENCE_TYPES: set[ViewEvidenceType] = {
     "unknown",
 }
 VALID_HORIZONS: set[ViewHorizon] = {"short_term", "medium_term", "long_term", "unspecified"}
+CRYPTO_ENTITY_KIND_ALIASES = {
+    "project": "project",
+    "protocol": "project",
+    "token": "token",
+    "coin": "token",
+    "asset": "token",
+    "org": "org_or_fund",
+    "organization": "org_or_fund",
+    "fund": "org_or_fund",
+    "vc": "org_or_fund",
+    "org_or_fund": "org_or_fund",
+    "account": "account",
+    "project_account": "account",
+    "theme": "theme_or_generic",
+    "generic": "theme_or_generic",
+    "theme_or_generic": "theme_or_generic",
+    "sector": "theme_or_generic",
+    "narrative": "theme_or_generic",
+}
+GENERIC_CRYPTO_NAME_HINTS = (
+    " project",
+    " projects",
+    " protocol",
+    " protocols",
+    " ecosystem",
+    " ecosystems",
+    " sector",
+    " sectors",
+    " narrative",
+    " narratives",
+    "theme",
+    "themes",
+    "赛道",
+    "项目",
+    "生态",
+    "叙事",
+    "概念",
+    "板块",
+)
 
 
 @dataclass(slots=True)
@@ -223,6 +262,112 @@ def _source_signal_level(
     if direction == "unknown" or judgment_type in {"factual_only", "quoted", "mention_only"}:
         return "weak"
     return "strong"
+
+
+def _normalize_crypto_entity_kind(value: object) -> str:
+    cleaned = str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
+    if not cleaned:
+        return "unknown"
+    return CRYPTO_ENTITY_KIND_ALIASES.get(cleaned, cleaned if cleaned in {"project", "token", "org_or_fund", "account", "theme_or_generic"} else "unknown")
+
+
+def _coerce_score(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, score))
+
+
+def _coerce_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    cleaned = str(value or "").strip().casefold()
+    if cleaned in {"true", "1", "yes"}:
+        return True
+    if cleaned in {"false", "0", "no"}:
+        return False
+    return None
+
+
+def _infer_generic_crypto_term(
+    *,
+    entity_name: str,
+    identifier_type: str,
+    identity: CryptoIdentity,
+    entity_kind: str,
+) -> bool:
+    if entity_kind == "theme_or_generic":
+        return True
+    if identifier_type not in {"project_name", "unknown"}:
+        return False
+    if identity.contract_addresses or identity.x_accounts or identity.symbol:
+        return False
+    normalized = f" {entity_name.strip().casefold()} "
+    return any(hint in normalized or hint in entity_name for hint in GENERIC_CRYPTO_NAME_HINTS)
+
+
+def _build_crypto_viewpoint_metadata(
+    *,
+    payload: dict[str, Any],
+    identity: CryptoIdentity,
+    entity_name: str,
+) -> dict[str, Any]:
+    entity_kind = _normalize_crypto_entity_kind(payload.get("entity_kind"))
+    canonical_name_hint = str(payload.get("canonical_name_hint") or "").strip()
+    investable_score = _coerce_score(payload.get("investable_score"))
+    specificity_score = _coerce_score(payload.get("specificity_score"))
+    entityness_score = _coerce_score(payload.get("entityness_score"))
+    is_generic_term = _coerce_bool(payload.get("is_generic_term"))
+    if is_generic_term is None:
+        is_generic_term = _infer_generic_crypto_term(
+            entity_name=entity_name,
+            identifier_type=identity.identifier_type,
+            identity=identity,
+            entity_kind=entity_kind,
+        )
+
+    asset_candidate = not is_generic_term
+    if entity_kind in {"org_or_fund", "account", "theme_or_generic"}:
+        asset_candidate = False
+    if investable_score is not None and investable_score < 0.35:
+        asset_candidate = False
+    if specificity_score is not None and specificity_score < 0.35:
+        asset_candidate = False
+    if entityness_score is not None and entityness_score < 0.35:
+        asset_candidate = False
+
+    metadata: dict[str, Any] = {
+        "raw_identifiers": list(identity.raw_identifiers),
+        "contract_addresses": list(identity.contract_addresses),
+        "x_accounts": list(identity.x_accounts),
+        "chain": identity.chain,
+        "entity_kind": entity_kind,
+        "is_generic_term": is_generic_term,
+        "asset_candidate": asset_candidate,
+        "resolver_strategy": identity.resolver_strategy,
+        "match_confidence": identity.match_confidence,
+    }
+    if canonical_name_hint:
+        metadata["canonical_name_hint"] = canonical_name_hint
+    if investable_score is not None:
+        metadata["investable_score"] = investable_score
+    if specificity_score is not None:
+        metadata["specificity_score"] = specificity_score
+    if entityness_score is not None:
+        metadata["entityness_score"] = entityness_score
+    return metadata
+
+
+def _is_crypto_asset_candidate(metadata: dict[str, Any] | None) -> bool:
+    if not metadata:
+        return True
+    value = metadata.get("asset_candidate")
+    if isinstance(value, bool):
+        return value
+    return _coerce_bool(value) is not False
 
 
 def _derive_compatible_stance(
@@ -509,6 +654,7 @@ def _parse_crypto_viewpoint(
         entity_identifier_type=identifier_type,
         raw_identifiers=raw_identifiers,
         aliases=aliases,
+        resolver_hints=raw if isinstance(raw, dict) else None,
     )
     if identity is None:
         return None
@@ -555,12 +701,11 @@ def _parse_crypto_viewpoint(
         direction=direction,  # type: ignore[arg-type]
         judgment_type=judgment_type,  # type: ignore[arg-type]
     )
-    metadata = {
-        "raw_identifiers": list(identity.raw_identifiers),
-        "contract_addresses": list(identity.contract_addresses),
-        "x_accounts": list(identity.x_accounts),
-        "chain": identity.chain,
-    }
+    metadata = _build_crypto_viewpoint_metadata(
+        payload=raw,
+        identity=identity,
+        entity_name=entity_name,
+    )
 
     return ViewpointRecord(
         entity_type="crypto_entity",
@@ -634,17 +779,21 @@ def _normalize_crypto_viewpoint(
         entity_identifier_type=viewpoint.entity_identifier_type,
         raw_identifiers=viewpoint.raw_identifiers,
         aliases=aliases,
+        resolver_hints=viewpoint.metadata,
     )
     if identity is None:
         return None
 
-    metadata = dict(viewpoint.metadata)
+    metadata = _build_crypto_viewpoint_metadata(
+        payload=viewpoint.metadata,
+        identity=identity,
+        entity_name=viewpoint.entity_name,
+    )
     metadata.update(
         {
-            "raw_identifiers": list(identity.raw_identifiers),
-            "contract_addresses": list(identity.contract_addresses),
-            "x_accounts": list(identity.x_accounts),
-            "chain": identity.chain,
+            key: value
+            for key, value in dict(viewpoint.metadata).items()
+            if key not in metadata and value is not None
         }
     )
 
@@ -1052,7 +1201,11 @@ def _build_author_day_record(
     safe_domain = "crypto" if analysis_domain == "crypto" else "stock"
     day_viewpoints = _aggregate_author_day_viewpoints(extracts, analysis_domain=safe_domain)
     mentioned_stocks = [item.entity_name for item in day_viewpoints if item.entity_type == "stock"]
-    mentioned_crypto = [item.entity_name for item in day_viewpoints if item.entity_type == "crypto_entity"]
+    mentioned_crypto = [
+        item.entity_name
+        for item in day_viewpoints
+        if item.entity_type == "crypto_entity" and _is_crypto_asset_candidate(item.metadata)
+    ]
     mentioned_themes: list[str] = []
     notes_payload = [
         AuthorTimelineNote(
@@ -1322,6 +1475,8 @@ def _materialize_crypto_timelines(
     for extract in extracts.values():
         for viewpoint in extract.viewpoints:
             if viewpoint.entity_type != "crypto_entity":
+                continue
+            if not _is_crypto_asset_candidate(viewpoint.metadata):
                 continue
             display_names[viewpoint.entity_key] = viewpoint.entity_name
             symbols[viewpoint.entity_key] = viewpoint.entity_code_or_name
