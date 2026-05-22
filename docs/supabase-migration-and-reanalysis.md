@@ -163,6 +163,12 @@ For crypto blocked terms and admin asset deletion controls, use:
 sql_path = Path("supabase/migrations/024_crypto_admin_controls.sql")
 ```
 
+For crypto matrix filtering parity and brief `identity_status`, use:
+
+```python
+sql_path = Path("supabase/migrations/025_crypto_matrix_identity_filters.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -242,6 +248,9 @@ AI_API_TIMEOUT_SECONDS=180 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-generate-crypto-asset-briefs --asset-key orbiter --force
 
 AI_API_TIMEOUT_SECONDS=180 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-generate-crypto-asset-briefs --asset-key aeon --asset-key pitch --asset-key surplus --force
+
+AI_API_TIMEOUT_SECONDS=180 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-generate-crypto-asset-briefs --days 30 --limit 20
 ```
 
@@ -253,7 +262,12 @@ What it does:
 - searches X for both the name-group and each CA-group
 - uses cheap overlap plus `gpt-5.4-mini` similarity judgment to decide whether a CA candidate is the same project
 - stores one frozen summary row per `asset_key` in `crypto_asset_narrative_briefs`
+- stores `identity_status` as `anchored`, `fuzzy`, or `ambiguous`
 - leaves `contract_address` empty and `ca_resolution_status='unresolved'` when no candidate passes, while still allowing a name-only summary
+
+The brief X search runtime is now backend-internal and browser-only. Server or
+local runtimes must have both Python package dependencies and Playwright
+Chromium installed. This pipeline must not depend on `Reference/` scripts.
 
 ## Verify Database State Locally
 
@@ -335,10 +349,10 @@ with psycopg.connect(dsn, autocommit=True) as conn:
         print("crypto_dates=" + repr(cur.fetchone()))
 
         cur.execute("""
-            select status, ca_resolution_status, count(*)
+            select status, identity_status, ca_resolution_status, count(*)
             from crypto_asset_narrative_briefs
-            group by 1,2
-            order by 1,2
+            group by 1,2,3
+            order by 1,2,3
         """)
         print("crypto_brief_statuses=" + repr(cur.fetchall()))
 
@@ -371,6 +385,7 @@ Expected crypto state after a crypto run:
 - `crypto_asset_narrative_briefs` stores one row per `asset_key`
 - successful brief rows should normally use `model_name='gpt-5.4-mini'`
 - `ca_resolution_status` may be `existing_identifier`, `resolved`, or `unresolved`
+- `identity_status` may be `anchored`, `fuzzy`, or `ambiguous`
 
 ## Verify RPC Behavior Locally
 
@@ -398,6 +413,16 @@ with psycopg.connect(dsn, autocommit=True) as conn:
         print("rpc_crypto_count=" + str(cur.fetchone()[0]))
         cur.execute("select jsonb_typeof(public.get_visible_crypto_matrix(null))")
         print("rpc_crypto_matrix_type=" + str(cur.fetchone()[0]))
+        cur.execute("select count(*) from public.list_visible_crypto_entities('base',100,'date_desc')")
+        print("rpc_crypto_base_count=" + str(cur.fetchone()[0]))
+        cur.execute("select public.get_visible_crypto_entity_timeline('base',1,20) is null")
+        print("rpc_crypto_base_timeline_is_null=" + str(cur.fetchone()[0]))
+        cur.execute("select public.get_visible_crypto_matrix(null, 'week')")
+        payload = cur.fetchone()[0]
+        assets = payload.get("assets") or []
+        base_assets = [item for item in assets if item.get("asset_key") == "base"]
+        print("rpc_crypto_matrix_base_assets=" + str(len(base_assets)))
+        print("rpc_crypto_matrix_identity_keys=" + repr(sorted({key for item in assets[:5] for key in item.keys() if key in ('summary_status', 'identity_status')})))
 PY
 ```
 
@@ -408,6 +433,8 @@ important checks are:
 - theme entity list is empty
 - theme timeline is `null`
 - crypto RPCs return successfully after migration 015, even if there is no crypto data yet
+- blocklisted or admin-deleted assets such as `base` stay hidden from crypto list, detail, and matrix RPCs
+- matrix asset payload includes both `summary_status` and `identity_status`
 - `submit_x_account(..., domain_arg)` can insert or update a domain-scoped request after migration 017
 
 ## Restore Author Timeline History Window

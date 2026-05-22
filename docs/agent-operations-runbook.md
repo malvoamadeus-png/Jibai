@@ -214,11 +214,20 @@ git checkout origin/main -- backend/src/main.py backend/packages supabase/migrat
 
 根据实际项目替换路径，不要盲目 checkout 全仓库。
 
+如果本次改动涉及 crypto asset brief 或其他依赖 Playwright 的后端能力，部署时必须额外确认：
+
+- 已安装或更新 backend Python 依赖：`pip install -r backend/requirements.txt`
+- 已安装 Playwright Chromium：`python -m playwright install chromium`
+
+`Reference/` 下的脚本不能作为主线路运行时依赖。当前 crypto brief 的 X 搜索运行时已经内化在 backend 包内，Linux 部署不需要单独同步 `Reference/x-tweet-fetcher`，只需要保证 backend 依赖和 Chromium 就绪。
+
 ### Compile and restart
 
 ```bash
 ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 '
 cd /opt/Jibai
+.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/python -m playwright install chromium
 .venv/bin/python -m compileall backend/packages backend/src
 systemctl restart jibai-public-worker.service
 systemctl restart jibai-public-api.service
@@ -247,6 +256,7 @@ journalctl -u jibai-public-api.service -n 50 --no-pager
 - `Active: active (running)`。
 - journal 中有应用自己的启动日志。
 - 如果有数据库依赖，确认日志中有 DB 检查或实际任务输出。
+- 如果部署包含 crypto brief，确认日志里没有 `Reference/...` 路径依赖报错，并且 Playwright/Chromium 初始化正常。
 
 ## 5. Vercel/前端验证
 

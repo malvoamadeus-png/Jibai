@@ -44,7 +44,15 @@ function assetLabel(asset: CryptoMatrixAsset) {
 }
 
 function assetSummary(asset: CryptoMatrixAsset) {
+  if (asset.summaryStatus !== "succeeded") return "暂无说明";
   return asset.summary.trim() || "暂无说明";
+}
+
+function assetIdentityBadge(asset: CryptoMatrixAsset): { label: string; variant: "neutral" | "danger" } | null {
+  if (asset.summaryStatus !== "succeeded") return null;
+  if (asset.identityStatus === "fuzzy") return { label: "模糊说明", variant: "neutral" };
+  if (asset.identityStatus === "ambiguous") return { label: "高歧义", variant: "danger" };
+  return null;
 }
 
 function readGranularity(value: string | null): CryptoMatrixGranularity {
@@ -343,8 +351,10 @@ export function CryptoMatrixOverview() {
                     </tr>
                   </thead>
                   <tbody>
-                    {matrix.assets.map((asset) => (
-                      <tr key={asset.assetKey}>
+                    {matrix.assets.map((asset) => {
+                      const identityBadge = assetIdentityBadge(asset);
+                      return (
+                        <tr key={asset.assetKey}>
                         <th className="sticky left-0 z-10 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 text-left align-top">
                           <Link
                             href={`/crypto/assets?asset=${encodeURIComponent(asset.assetKey)}`}
@@ -357,6 +367,13 @@ export function CryptoMatrixOverview() {
                           </span>
                         </th>
                         <td className="sticky left-[220px] z-10 min-w-[320px] max-w-[320px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 align-top">
+                          {identityBadge ? (
+                            <div className="mb-2">
+                              <Badge variant={identityBadge.variant} className="normal-case">
+                                {identityBadge.label}
+                              </Badge>
+                            </div>
+                          ) : null}
                           <p className="text-sm leading-6 text-[color:var(--muted-ink)]">{assetSummary(asset)}</p>
                         </td>
                         {profile?.isAdmin ? (
@@ -402,8 +419,9 @@ export function CryptoMatrixOverview() {
                             </td>
                           );
                         })}
-                      </tr>
-                    ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -43,10 +43,17 @@ def postgres_connection(dsn: str | None = None) -> Iterator[psycopg.Connection[d
         yield conn
         conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            if not conn.closed:
+                conn.rollback()
+        except Exception:
+            pass
         raise
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _normalize_username(value: str) -> str:

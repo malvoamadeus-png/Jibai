@@ -142,6 +142,7 @@ def build_crypto_asset_brief_messages(payload: dict) -> list[dict[str, str]]:
                 "第一句说明这个代币或项目是干嘛的。"
                 "第二句说明 X 上当前主要叙事、社区认知或讨论焦点。"
                 "不要给买卖建议，不要编造链上数据，不要输出列表。"
+                "If payload.asset.identity_status is ambiguous, summary_text must explicitly say the project identity is not fully confirmed or may be mixed with same-name discussions."
                 "如果样本不足，也要直说信息不足。"
             ),
         },

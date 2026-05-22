@@ -228,6 +228,7 @@ function normalizeNarrativeSections(rawValue: unknown): StockNarrativeSections {
 
 function normalizeCryptoMatrixAsset(rawValue: unknown): CryptoMatrixAsset {
   const raw = asRecord(rawValue);
+  const identityStatusRaw = asString(raw.identity_status ?? raw.identityStatus);
   return {
     assetKey: asString(raw.asset_key ?? raw.assetKey),
     displayName: asString(raw.display_name ?? raw.displayName ?? raw.asset_key ?? raw.assetKey),
@@ -237,6 +238,10 @@ function normalizeCryptoMatrixAsset(rawValue: unknown): CryptoMatrixAsset {
     latestDate: raw.latest_date || raw.latestDate ? String(raw.latest_date || raw.latestDate) : null,
     summary: asString(raw.summary),
     summaryStatus: asNullableString(raw.summary_status ?? raw.summaryStatus),
+    identityStatus:
+      identityStatusRaw === "anchored" || identityStatusRaw === "fuzzy" || identityStatusRaw === "ambiguous"
+        ? identityStatusRaw
+        : null,
     summaryUpdatedAt: asNullableString(raw.summary_updated_at ?? raw.summaryUpdatedAt),
   };
 }

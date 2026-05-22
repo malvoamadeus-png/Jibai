@@ -18,6 +18,9 @@ python -m playwright install chromium
 
 `pip install -r requirements.txt` 只安装 Python 包，不会安装 Playwright Chromium。X 抓取强依赖 Playwright Chromium，不会回退使用本机 Chrome。
 
+crypto asset brief 的 X 搜索运行时也已经内化在 backend 主线中，直接依赖
+`backend/packages/public_app/x_search.py`。它不允许再从 `Reference/` 目录加载脚本，所以部署或新环境初始化时同样必须安装 Chromium。
+
 ## AI
 
 AI 层通过 `LiteLLM SDK` 统一调用：

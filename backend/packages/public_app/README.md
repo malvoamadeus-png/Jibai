@@ -85,6 +85,12 @@ bot protection or go offline, so keep this value configurable on the server
 instead of relying on the code defaults. Use comma-separated host names without
 `https://`.
 
+Crypto asset brief X search is a separate runtime from timeline crawling. It is
+now implemented inside `backend/packages/public_app/x_search.py`, uses
+Playwright Chromium in browser-only mode, and must not import or execute
+anything from `Reference/`. This brief search path also does not depend on
+Nitter.
+
 Market-data settings are optional. Backfill and manual market refresh default
 to at most 30 stocks and 180 days of daily candles. Scheduled crawls default to
 at most 10 recently visible stocks and only fetch the latest 7 days of daily
@@ -226,22 +232,31 @@ usage; they must not print the prompt payload, DSN, or AI key.
 crypto asset and pins the model to `gpt-5.4-mini`. The worker runs this stage at
 `PUBLIC_WORKER_CRYPTO_ASSET_BRIEF_TIME`, default `22:50` Asia/Shanghai.
 
+The brief pipeline now also writes `identity_status`:
+
+- `anchored`: CA or existing identifier match confirmed the project
+- `fuzzy`: summary is usable but not hard-pinned by CA
+- `ambiguous`: summary is intentionally conservative because same-name or
+  generic-word noise is high
+
 The crypto brief pipeline is:
 
 1. Reuse existing `crypto_entities.contract_addresses_json` and stored raw identifiers first.
 2. If unresolved, query OKX Onchain OS token search for up to five CA candidates.
-3. Build a name-group X search set from display name, symbol, aliases, project accounts, and AI-expanded short keywords.
+3. Build a name-group X search set from display name, symbol, aliases, project accounts, and AI-expanded short keywords through the backend-owned browser search runtime.
 4. Build a candidate-group X search set for each CA candidate from the CA itself, `"CA" + display_name`, and `"CA" + symbol`.
 5. Cheap-filter obvious mismatches by shared accounts, aliases, keywords, and project fragments.
 6. Let `gpt-5.4-mini` judge whether the surviving name-group and CA-group tweets are discussing the same project.
 7. Accept only candidates with `same_project=true`, `confidence >= 0.75`, and at least one stable shared-signal rule.
-8. Generate a 1-2 sentence Chinese summary answering what the token/project does and the current X narrative or crowd perception.
+8. Assess whether the asset is `anchored`, `fuzzy`, or `ambiguous`.
+9. Generate a 1-2 sentence Chinese summary answering what the token/project does and the current X narrative or crowd perception.
 
 Successful asset briefs are skipped on later runs unless `--force` is passed.
 If CA resolution fails, the job still tries to summarize from the name-group
 alone when enough X samples exist. The frontend only receives
-`summary`, `summary_status`, and `summary_updated_at` from the crypto matrix
-RPC; it does not expose CA candidates or internal similarity-judgment payloads.
+`summary`, `summary_status`, `identity_status`, and `summary_updated_at` from
+the crypto matrix RPC; it does not expose CA candidates or internal
+similarity-judgment payloads.
 
 Crypto admin controls add two more guards:
 

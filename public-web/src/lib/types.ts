@@ -227,6 +227,7 @@ export type StockMatrixView = EntityAuthorView & {
 
 export type StockMatrixGranularity = "day" | "week";
 export type CryptoMatrixGranularity = StockMatrixGranularity;
+export type CryptoBriefIdentityStatus = "anchored" | "fuzzy" | "ambiguous";
 
 export type StockMatrixCell = {
   securityKey: string;
@@ -279,6 +280,7 @@ export type CryptoMatrixAsset = {
   latestDate: string | null;
   summary: string;
   summaryStatus: string | null;
+  identityStatus: CryptoBriefIdentityStatus | null;
   summaryUpdatedAt: string | null;
 };
 

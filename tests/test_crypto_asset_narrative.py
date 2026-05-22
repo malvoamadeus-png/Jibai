@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import sys
+import types
 from contextlib import contextmanager
+
+import pytest
 
 from packages.onchain.gmgn_labels import OKXTokenSearchCandidate
 from packages.public_app.crypto_asset_narrative import (
     BlockedAssetMatch,
     CandidateDecision,
     CryptoAssetBriefTarget,
+    ExistingCAResolution,
     SearchGroup,
+    _assess_identity_status,
     _candidate_group_overlap,
     _decide_candidate_pass,
     _decision_rank_key,
@@ -272,3 +278,212 @@ def test_generate_skips_existing_success_without_force(monkeypatch) -> None:
     )
 
     assert generate_crypto_asset_briefs_once(force=False) == 0
+
+
+def test_identity_status_is_anchored_when_resolution_exists() -> None:
+    identity = _assess_identity_status(
+        _asset(),
+        name_group=SearchGroup(
+            label="name",
+            queries=["Orbiter"],
+            tweets=[_tweet("https://x.com/orbiter_finance/status/1", author="@orbiter_finance", text="Orbiter bridge update")],
+            warning_messages=[],
+            error_messages=[],
+        ),
+        resolution=ExistingCAResolution(
+            contract_address="0x123",
+            chain_index="1",
+            status="existing_identifier",
+            resolved_by="existing_identifier",
+        ),
+        decisions=[],
+    )
+
+    assert identity.status == "anchored"
+
+
+def test_identity_status_is_fuzzy_for_official_account_single_cluster() -> None:
+    asset = CryptoAssetBriefTarget(
+        asset_key="proj:aeon",
+        display_name="AEON",
+        symbol="AEON",
+        chain="Base",
+        identifier_type="project_name",
+        aliases=["OnchainOS"],
+        raw_identifiers=[],
+        contract_addresses=[],
+        x_accounts=["@aeon_xyz"],
+        first_seen_date="2026-05-01",
+        latest_seen_date="2026-05-21",
+        mention_count=20,
+    )
+    name_group = SearchGroup(
+        label="name",
+        queries=["AEON", "@aeon_xyz", "OnchainOS"],
+        tweets=[
+            _tweet("https://x.com/aeon_xyz/status/1", author="@aeon_xyz", text="AEON / OnchainOS agent framework update"),
+            _tweet("https://x.com/bob/status/2", author="@bob", text="OnchainOS is the AEON agent framework people are testing"),
+            _tweet("https://x.com/carol/status/3", author="@carol", text="AEON builders keep shipping new OnchainOS agent tooling"),
+        ],
+        warning_messages=[],
+        error_messages=[],
+    )
+
+    identity = _assess_identity_status(asset, name_group=name_group, resolution=None, decisions=[])
+
+    assert identity.status == "fuzzy"
+    assert identity.official_account_match is True
+
+
+@pytest.mark.parametrize(
+    ("asset", "tweets"),
+    [
+        (
+            CryptoAssetBriefTarget(
+                asset_key="tick:aeon",
+                display_name="AEON",
+                symbol="AEON",
+                chain="Base",
+                identifier_type="symbol",
+                aliases=["OnchainOS"],
+                raw_identifiers=[],
+                contract_addresses=[],
+                x_accounts=[],
+                first_seen_date="2026-05-01",
+                latest_seen_date="2026-05-21",
+                mention_count=20,
+            ),
+            [
+                _tweet("https://x.com/alice/status/11", author="@alice", text="AEON agent framework / OnchainOS shipped a new tool"),
+                _tweet("https://x.com/bob/status/12", author="@bob", text="Builders keep trying AEON with the OnchainOS agent stack"),
+                _tweet("https://x.com/carl/status/13", author="@carl", text="AEON meme ticker is ripping on Base today"),
+                _tweet("https://x.com/dan/status/14", author="@dan", text="Watching the AEON meme token chart on Base"),
+            ],
+        ),
+        (
+            CryptoAssetBriefTarget(
+                asset_key="tick:pitch",
+                display_name="PITCH",
+                symbol="PITCH",
+                chain="Base",
+                identifier_type="symbol",
+                aliases=[],
+                raw_identifiers=[],
+                contract_addresses=[],
+                x_accounts=[],
+                first_seen_date="2026-05-01",
+                latest_seen_date="2026-05-21",
+                mention_count=20,
+            ),
+            [
+                _tweet("https://x.com/alice/status/21", author="@alice", text="PITCH token community is rotating back on Base"),
+                _tweet("https://x.com/bob/status/22", author="@bob", text="New catalyst for PITCH meme traders"),
+                _tweet("https://x.com/carl/status/23", author="@carl", text="Great pitch from the founder at today's startup demo day"),
+                _tweet("https://x.com/dan/status/24", author="@dan", text="The baseball pitch count is getting wild tonight"),
+            ],
+        ),
+        (
+            CryptoAssetBriefTarget(
+                asset_key="tick:surplus",
+                display_name="Surplus",
+                symbol="SURPLUS",
+                chain="Base",
+                identifier_type="project_name",
+                aliases=[],
+                raw_identifiers=[],
+                contract_addresses=[],
+                x_accounts=[],
+                first_seen_date="2026-05-01",
+                latest_seen_date="2026-05-21",
+                mention_count=20,
+            ),
+            [
+                _tweet("https://x.com/alice/status/31", author="@alice", text="Surplus protocol fee switch is back in focus"),
+                _tweet("https://x.com/bob/status/32", author="@bob", text="Surplus token holders are debating the protocol treasury"),
+                _tweet("https://x.com/carl/status/33", author="@carl", text="China's trade surplus beat expectations again this month"),
+                _tweet("https://x.com/dan/status/34", author="@dan", text="Budget surplus headlines are everywhere this morning"),
+            ],
+        ),
+    ],
+)
+def test_identity_status_regression_samples_are_ambiguous(asset: CryptoAssetBriefTarget, tweets: list[XSearchTweet]) -> None:
+    identity = _assess_identity_status(
+        asset,
+        name_group=SearchGroup(
+            label="name",
+            queries=[asset.display_name],
+            tweets=tweets,
+            warning_messages=[],
+            error_messages=[],
+        ),
+        resolution=None,
+        decisions=[],
+    )
+
+    assert identity.status == "ambiguous"
+
+
+def test_generate_failure_persists_query_and_source_stats(monkeypatch) -> None:
+    captured: list[dict[str, object]] = []
+
+    class FakeConn:
+        pass
+
+    @contextmanager
+    def fake_postgres_connection():
+        yield FakeConn()
+
+    def fake_upsert(_conn, **kwargs):
+        captured.append(kwargs)
+
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative.postgres_connection",
+        fake_postgres_connection,
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative._fetch_targets",
+        lambda *_args, **_kwargs: [_asset()],
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative._fetch_existing_success",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative._fetch_blocked_terms",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative._generate_expanded_keywords",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative._search_group",
+        lambda label, queries, **_kwargs: SearchGroup(
+            label=label,
+            queries=list(queries),
+            tweets=[],
+            warning_messages=[],
+            error_messages=["Orbiter: x search runtime unavailable: Playwright Chromium is not installed"],
+        ),
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative._resolve_candidate_via_similarity",
+        lambda *_args, **_kwargs: (None, [], {}),
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative._upsert_brief",
+        fake_upsert,
+    )
+    sys.modules["packages.ai.client"] = types.SimpleNamespace(LLMJsonClient=lambda *_args, **_kwargs: object())
+
+    assert generate_crypto_asset_briefs_once(force=True) == 1
+    failed = captured[-1]
+
+    assert failed["status"] == "failed"
+    assert failed["query_set"] == {
+        "name_queries": ["Orbiter", "OBT", "@Orbiter_Finance", "Orbiter Finance"],
+        "expanded_keywords": [],
+        "candidate_queries": {},
+    }
+    assert failed["source_stats"]["name_group_errors"]
+    assert "not enough X samples for summary" in failed["error_text"]

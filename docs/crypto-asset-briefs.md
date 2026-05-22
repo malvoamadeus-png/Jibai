@@ -15,7 +15,10 @@ candidate contract addresses or internal CA-matching evidence.
 
 ## Storage
 
-Supabase migration: `supabase/migrations/023_crypto_asset_narrative_briefs.sql`
+Supabase migrations:
+
+- `supabase/migrations/023_crypto_asset_narrative_briefs.sql`
+- `supabase/migrations/025_crypto_matrix_identity_filters.sql`
 
 Primary table: `public.crypto_asset_narrative_briefs`
 
@@ -38,15 +41,43 @@ Important fields:
 - `prompt_version`
 - `status`
 - `error_text`
+- `identity_status`
 
 `get_visible_crypto_matrix(...)` merges these frontend-safe fields into each
 asset payload:
 
 - `summary`
 - `summary_status`
+- `identity_status`
 - `summary_updated_at`
 
+The frontend must treat `summary_status` and `identity_status` as two different
+axes:
+
+- `summary_status` answers whether a brief exists
+- `identity_status` answers how confidently the project identity was pinned
+
 ## Resolution Flow
+
+X search is now a backend-owned runtime under
+`backend/packages/public_app/x_search.py`. Mainline code must not import or
+execute scripts from `Reference/`.
+
+Search behavior is fixed to browser-only:
+
+- Playwright + Chromium
+- backend-internal search/fetch code
+- no Nitter dependency for this brief pipeline
+- `PUBLIC_X_SEARCH_BACKEND` is compatibility-read only; non-`browser` values are
+  downgraded to `browser` with a warning
+
+The backend builds explicit error reasons for:
+
+- Playwright import failure
+- Chromium missing or launch failure
+- search page open failure
+- zero search hits
+- tweet detail fetch failure
 
 The CA flow is fixed to four stages:
 
@@ -59,6 +90,35 @@ The CA flow is fixed to four stages:
 
 CA is helpful for disambiguation and extra recall, but it is not a hard
 prerequisite for generating the brief.
+
+## Identity Status
+
+Brief generation now separates "can we summarize" from "did we fully pin the
+project identity".
+
+Status values:
+
+- `anchored`: existing identifier or CA candidate passed the match rules
+- `fuzzy`: no hard CA anchor, but official account / alias / dominant cluster
+  still points to one likely project
+- `ambiguous`: samples contain multi-project or generic-word noise, so the
+  summary must stay conservative
+
+High-ambiguity triggers include:
+
+- short tickers
+- common English words
+- project names that overlap with generic terms
+- multiple candidate projects
+- tweets split across unrelated account/topic clusters
+
+Frontend behavior:
+
+- `anchored`: show normal summary
+- `fuzzy`: show normal summary with `模糊说明`
+- `ambiguous`: show conservative summary with `高歧义`, and the text itself must
+  explicitly mention that project identity is not fully confirmed or may be
+  mixed with same-name discussions
 
 ## Similarity Rules
 
@@ -121,6 +181,7 @@ Do not output full sentences as expansion keywords.
 - model is pinned to `gpt-5.4-mini`
 - successful rows are skipped on later runs unless `--force` is passed
 - unresolved CA is allowed as long as the name-group has enough X samples for summary generation
+- backend search requires Playwright Chromium to be installed in the runtime
 
 ## Commands
 
@@ -160,7 +221,17 @@ If summary generation itself fails:
 
 - write `status='failed'`
 - keep `error_text`
+- keep `query_set_json`, `source_stats_json`, and collected source URLs when
+  available
 - allow a later rerun with `--force`
+
+`error_text` should preserve the real cause when possible, instead of collapsing
+everything into a generic sample-shortage message. Common examples include:
+
+- search runtime unavailable
+- search returned zero matching X URLs
+- tweet detail fetch failed
+- not enough usable X samples after dedupe/filtering
 
 ## Admin Controls
 
@@ -185,7 +256,8 @@ The first default blocked term is:
 Admin delete behavior:
 
 - deleting an asset marks the `asset_key` in `crypto_asset_admin_deletions`
-- the asset is hidden from crypto list, detail, and overview surfaces
+- the asset is hidden from crypto list, detail, and overview surfaces,
+  including `get_visible_crypto_matrix(...)`
 - existing brief rows for that asset are removed immediately
 - later brief runs no longer pick that asset as a target
 
@@ -195,7 +267,7 @@ Backend checks:
 
 ```bash
 $env:PYTHONPATH='backend'
-python -m pytest tests/test_crypto_asset_narrative.py tests/test_gmgn_labels.py tests/test_stock_narrative.py tests/test_public_api.py -q
+python -m pytest tests/test_crypto_asset_narrative.py tests/test_public_x_search.py tests/test_gmgn_labels.py tests/test_stock_narrative.py tests/test_public_api.py -q
 python -m compileall backend/packages backend/src tests
 ```
 

@@ -12,6 +12,14 @@
 这个仓库在 Windows/WSL 混合环境里运行。不要假设默认 `ssh` 或 `git push`
 能自动拿到正确 key；按 runbook 里的 key 复制和 `GIT_SSH_COMMAND` 流程走。
 
+## Reference 目录规则
+
+`Reference/` 目录下的所有内容只用于阶段性参考、实验、可行性验证或方法对照。
+
+- 主线路代码、运行时、部署流程、测试流程不得直接依赖 `Reference/` 下的脚本、模块或路径。
+- 如果要吸收其中的方法，必须先迁入 `backend/` 或其他正式模块，再由主线路调用。
+- 不要在新的主线路实现里保留对 `Reference/...` 的 import、subprocess、路径拼接或部署假设。
+
 ## 操作原则
 
 - 不打印密钥、数据库 URL、token、cookie 或私钥内容。
