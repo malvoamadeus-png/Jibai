@@ -399,6 +399,7 @@ export function StockKlineCard({
   } | null>(null);
   const [viewportOverride, setViewportOverride] = useState<ViewportOverride | null>(null);
   const attemptedChartKeysRef = useRef<Set<string>>(new Set());
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -465,6 +466,19 @@ export function StockKlineCard({
       cancelled = true;
     };
   }, [chart, chartKey, identity, resolvedChart.candles.length, shouldRetryEastMoney]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      container.scrollLeft = container.scrollWidth;
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [chartKey]);
 
   const bannerMessage =
     resolvedChart.candles.length > 0 &&
@@ -737,7 +751,7 @@ export function StockKlineCard({
               <span>{selectedDate ?? visibleCandles.at(-1)?.date}</span>
             </div>
 
-            <div className="mt-3 overflow-x-auto">
+            <div ref={scrollContainerRef} className="mt-3 overflow-x-auto">
               <div
                 className={cn(
                   "select-none rounded-[18px]",

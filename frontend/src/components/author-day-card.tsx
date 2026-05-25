@@ -4,7 +4,7 @@ import type { AuthorTimelineDay } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
-import { entityTypeLabel, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
+import { entityTypeLabel, normalizeExternalUrl, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 
 export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
   if (day.viewpoints.length === 0) {
@@ -101,9 +101,11 @@ export function AuthorDayCard({ day }: { day: AuthorTimelineDay }) {
                 {viewpoint.noteUrls.map((url, index) => (
                   <a
                     key={`${url}-${index}`}
-                    href={url}
+                    href={normalizeExternalUrl(url)}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
+                    onClickCapture={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
                     className="inline-flex items-center whitespace-nowrap rounded-full border border-[color:var(--border-strong)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--muted-ink)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent-strong)]"
                   >
                     来源 {index + 1}

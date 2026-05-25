@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { EntityAuthorView } from "@/lib/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { makeAccountKey, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
+import { makeAccountKey, normalizeExternalUrl, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 
 export function EntityDayCard({
   day,
@@ -65,9 +65,11 @@ export function EntityDayCard({
                 {view.note_urls.map((url, index) => (
                   <a
                     key={`${url}-${index}`}
-                    href={url}
+                    href={normalizeExternalUrl(url)}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
+                    onClickCapture={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => event.stopPropagation()}
                     className="inline-flex items-center whitespace-nowrap rounded-full border border-[color:var(--border-strong)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--muted-ink)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--accent-strong)]"
                   >
                     来源 {index + 1}
