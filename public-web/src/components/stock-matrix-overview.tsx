@@ -20,7 +20,7 @@ import type {
   StockMatrixStock,
   StockMatrixView,
 } from "@/lib/types";
-import { cn, formatCount, viewSignalLabel } from "@/lib/utils";
+import { cn, formatCount, normalizeExternalUrl, viewSignalLabel } from "@/lib/utils";
 
 function isDateKey(value: string | null) {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
@@ -98,13 +98,16 @@ function ViewTooltip({
       {view.note_urls.length ? (
         <span className="mt-3 flex flex-wrap gap-1.5">
           {view.note_urls.map((url, index) => (
-            <span
+            <a
               key={`${url}-${index}`}
+              href={normalizeExternalUrl(url)}
+              target="_blank"
+              rel="noopener noreferrer"
               className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-[color:var(--border-strong)] px-2 py-1 text-[11px] text-[color:var(--muted-ink)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent-strong)]"
             >
               来源 {index + 1}
               <ExternalLink className="h-3 w-3" />
-            </span>
+            </a>
           ))}
         </span>
       ) : null}

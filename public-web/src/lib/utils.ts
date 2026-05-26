@@ -37,6 +37,15 @@ export function makeAccountKey(platform: string, accountName: string) {
   return `${platform}::${accountName}`;
 }
 
+export function normalizeExternalUrl(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  if (/^[a-z]+:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+}
+
 export function platformLabel(platform: string | null | undefined) {
   if (!platform) return "";
 
