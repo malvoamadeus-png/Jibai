@@ -113,6 +113,13 @@ subscription, analysis output, author timelines, and admin lists are isolated
 by this domain. The same X account can be approved in both domains; raw content
 is shared, but analysis and materialized results are not.
 
+`/crypto/admin` also writes a Supabase runtime switch for the crypto domain.
+When that switch is off, the worker does not enqueue new scheduled crypto
+jobs, admin manual crypto runs are rejected, pending crypto crawl jobs are
+marked as skipped, and crypto asset brief generation exits early. Existing
+public crypto pages and historical data remain visible; only new backend
+updates stop.
+
 Public stock browsing has two RPC-backed surfaces. `/stocks` uses
 `list_visible_entities` and `get_visible_entity_timeline` for the detail view;
 the stock list supports sorting by latest date or total visible mentions and

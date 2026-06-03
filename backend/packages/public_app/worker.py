@@ -18,7 +18,11 @@ from packages.ai.pipeline import (
 )
 from packages.common.models import CrawlAccountResult, RawNoteRecord
 from packages.common.paths import ensure_runtime_dirs, get_paths
-from packages.common.postgres_database import PostgresInsightStore, postgres_connection
+from packages.common.postgres_database import (
+    PostgresInsightStore,
+    is_domain_pipeline_enabled,
+    postgres_connection,
+)
 from packages.common.settings import load_settings
 from packages.common.time_utils import SHANGHAI_TZ, note_date_key, now_iso, today_date_key
 from packages.onchain.service import doctor_once as onchain_doctor_once
@@ -116,6 +120,12 @@ def _worker_domains() -> list[str]:
 
 def _normalize_domain(value: str | None) -> str:
     return "crypto" if value == "crypto" else "stock"
+
+
+def _domain_pipeline_enabled(domain: str) -> bool:
+    safe_domain = _normalize_domain(domain)
+    with postgres_connection() as conn:
+        return is_domain_pipeline_enabled(conn, safe_domain)
 
 
 def _recent_window(days: int) -> tuple[str, str]:
@@ -400,6 +410,11 @@ def _process_job(job: CrawlJob) -> None:
         )
 
 
+def _skip_job_for_disabled_domain(job: CrawlJob) -> None:
+    with postgres_connection() as conn:
+        mark_job_succeeded(conn, job.id, "加密板块已关闭，任务已跳过。")
+
+
 def process_pending_jobs(*, max_jobs: int | None = None) -> int:
     processed = 0
     while max_jobs is None or processed < max_jobs:
@@ -415,6 +430,11 @@ def process_pending_jobs(*, max_jobs: int | None = None) -> int:
                     job = claim_next_job(conn)
                 if job is None:
                     break
+                if job.domain == "crypto" and not _domain_pipeline_enabled(job.domain):
+                    _skip_job_for_disabled_domain(job)
+                    print(f"[public-worker] skipped_job job_id={job.id} kind={job.kind} domain={job.domain} reason=disabled")
+                    processed += 1
+                    continue
                 try:
                     _process_job(job)
                 except Exception as exc:
@@ -436,8 +456,11 @@ def process_pending_onchain_jobs(*, max_runs: int | None = 1) -> int:
         return 0
 
 
-def enqueue_scheduled_crawl_job(domain: str = "stock") -> str:
+def enqueue_scheduled_crawl_job(domain: str = "stock") -> str | None:
     safe_domain = _normalize_domain(domain)
+    if safe_domain == "crypto" and not _domain_pipeline_enabled(safe_domain):
+        print(f"[public-worker] scheduled_enqueue_skipped domain={safe_domain} reason=disabled")
+        return None
     dedupe_key = f"scheduled_crawl:{safe_domain}:" + datetime.now(SHANGHAI_TZ).strftime("%Y%m%d%H%M")
     with postgres_connection() as conn:
         job_id = insert_scheduled_crawl_job(conn, dedupe_key, domain=safe_domain)
@@ -445,8 +468,11 @@ def enqueue_scheduled_crawl_job(domain: str = "stock") -> str:
 
 
 def enqueue_scheduled_crawl() -> int:
-    job_ids = [enqueue_scheduled_crawl_job(domain) for domain in _worker_domains()]
-    print(f"[public-worker] enqueued scheduled crawl jobs {','.join(job_ids)}")
+    job_ids = [job_id for domain in _worker_domains() if (job_id := enqueue_scheduled_crawl_job(domain))]
+    if job_ids:
+        print(f"[public-worker] enqueued scheduled crawl jobs {','.join(job_ids)}")
+    else:
+        print("[public-worker] no scheduled crawl jobs enqueued")
     return 0
 
 
@@ -466,11 +492,13 @@ def _verify_worker_database_connection() -> None:
 
 def diagnose_worker_once() -> int:
     settings = load_settings()
+    crypto_pipeline_enabled = _domain_pipeline_enabled("crypto")
     print(
         "[public-worker] doctor "
         f"crawl_times={','.join(_crawl_times())} "
         f"onchain_times={','.join(_onchain_fetch_times()) if _onchain_enabled() else 'disabled'} "
         f"domains={','.join(_worker_domains())} "
+        f"crypto_pipeline_enabled={'yes' if crypto_pipeline_enabled else 'no'} "
         f"top_risk_sync_time={_top_risk_sync_time()} "
         f"stock_narrative_time={_stock_narrative_time()} "
         f"crypto_asset_brief_time={_crypto_asset_brief_time()} "
@@ -901,6 +929,7 @@ def run_worker(*, once: bool = False) -> int:
         return 0
 
     _verify_worker_database_connection()
+    crypto_pipeline_enabled = _domain_pipeline_enabled("crypto")
 
     scheduler = BlockingScheduler(timezone=SHANGHAI_TZ)
     for value in _crawl_times():
@@ -961,6 +990,7 @@ def run_worker(*, once: bool = False) -> int:
         + ", ".join(_crawl_times())
         + ("; onchain_times=" + ", ".join(_onchain_fetch_times()) if _onchain_enabled() else "; onchain=disabled")
         + f"; domains={','.join(_worker_domains())}"
+        + f"; crypto_pipeline_enabled={'yes' if crypto_pipeline_enabled else 'no'}"
         + f"; poll={_poll_seconds()}s; account_delay={_account_pause_seconds()}s"
         + f"; light_market_data_days={_light_market_data_days()}"
         + f"; light_market_data_max={_light_market_data_max_securities()}"

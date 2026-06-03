@@ -865,25 +865,12 @@ export async function setSubscription(
   subscribed: boolean,
   domain: Domain = "stock",
 ) {
-  if (subscribed) {
-    const { error } = await supabase.from("user_subscriptions").upsert(
-      {
-        account_id: accountId,
-        user_id: profile.id,
-        domain,
-      },
-      { onConflict: "user_id,account_id,domain" },
-    );
-    assertNoError(error);
-    return;
-  }
-
-  const { error } = await supabase
-    .from("user_subscriptions")
-    .delete()
-    .eq("user_id", profile.id)
-    .eq("account_id", accountId)
-    .eq("domain", domain);
+  if (!profile.id) throw new Error("Authentication required.");
+  const { error } = await supabase.rpc("set_x_account_subscription", {
+    account_id_arg: accountId,
+    subscribed_arg: subscribed,
+    domain_arg: domain,
+  });
   assertNoError(error);
 }
 
@@ -1028,7 +1015,14 @@ export async function listCryptoAdminControls(supabase: SupabaseClient): Promise
   const { data, error } = await supabase.rpc("list_crypto_admin_controls");
   assertNoError(error);
   const payload = asRecord(data);
+  const runtimeControl = asRecord(payload.runtime_control ?? payload.runtimeControl);
+  const runtimeEnabled = runtimeControl.pipeline_enabled ?? runtimeControl.pipelineEnabled;
   return {
+    runtimeControl: {
+      domain: asString(runtimeControl.domain, "crypto") as Domain,
+      pipelineEnabled: runtimeEnabled === undefined ? true : Boolean(runtimeEnabled),
+      updatedAt: asNullableString(runtimeControl.updated_at ?? runtimeControl.updatedAt),
+    },
     blockedTerms: asArray(payload.blocked_terms ?? payload.blockedTerms).map((item) => {
       const raw = asRecord(item);
       return {
@@ -1047,6 +1041,24 @@ export async function listCryptoAdminControls(supabase: SupabaseClient): Promise
         updatedAt: asNullableString(raw.updated_at ?? raw.updatedAt),
       };
     }),
+  };
+}
+
+export async function setDomainPipelineEnabled(
+  supabase: SupabaseClient,
+  domain: Domain,
+  enabled: boolean,
+): Promise<CryptoAdminControls["runtimeControl"]> {
+  const { data, error } = await supabase.rpc("set_domain_pipeline_enabled", {
+    domain_arg: domain,
+    enabled_arg: enabled,
+  });
+  assertNoError(error);
+  const raw = asRecord(data);
+  return {
+    domain: asString(raw.domain, domain) as Domain,
+    pipelineEnabled: Boolean(raw.pipeline_enabled ?? raw.pipelineEnabled),
+    updatedAt: asNullableString(raw.updated_at ?? raw.updatedAt),
   };
 }
 

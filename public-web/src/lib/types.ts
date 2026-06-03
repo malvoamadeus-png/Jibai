@@ -571,7 +571,14 @@ export type CryptoAdminDeletedAssetItem = {
   updatedAt: string | null;
 };
 
+export type DomainRuntimeControl = {
+  domain: Domain;
+  pipelineEnabled: boolean;
+  updatedAt: string | null;
+};
+
 export type CryptoAdminControls = {
+  runtimeControl: DomainRuntimeControl;
   blockedTerms: CryptoAdminBlockedTermItem[];
   deletedAssets: CryptoAdminDeletedAssetItem[];
 };

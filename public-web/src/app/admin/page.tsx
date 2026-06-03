@@ -9,6 +9,7 @@ import {
   ManualRunButton,
   RejectButton,
   RemoveCryptoBlockedTermButton,
+  ToggleDomainPipelineButton,
 } from "@/components/admin-actions";
 import { LoadingPanel, LoginRequired } from "@/components/page-states";
 import { useAuth } from "@/lib/auth-context";
@@ -19,6 +20,7 @@ import type {
   AdminRequestItem,
   CryptoAdminBlockedTermItem,
   CryptoAdminDeletedAssetItem,
+  DomainRuntimeControl,
 } from "@/lib/types";
 
 const JOB_LABELS: Record<string, string> = {
@@ -93,6 +95,11 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
   const [jobs, setJobs] = useState<AdminJobItem[]>([]);
   const [blockedTerms, setBlockedTerms] = useState<CryptoAdminBlockedTermItem[]>([]);
   const [deletedAssets, setDeletedAssets] = useState<CryptoAdminDeletedAssetItem[]>([]);
+  const [runtimeControl, setRuntimeControl] = useState<DomainRuntimeControl>({
+    domain: "crypto",
+    pipelineEnabled: true,
+    updatedAt: null,
+  });
   const [newBlockedTerm, setNewBlockedTerm] = useState("base");
 
   const reload = useCallback(async () => {
@@ -105,6 +112,7 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
     setApprovedAccounts(dashboard.approvedAccounts);
     setRequests(dashboard.requests);
     setJobs(dashboard.jobs);
+    setRuntimeControl(cryptoControls?.runtimeControl ?? { domain: "crypto", pipelineEnabled: true, updatedAt: null });
     setBlockedTerms(cryptoControls?.blockedTerms ?? []);
     setDeletedAssets(cryptoControls?.deletedAssets ?? []);
   }, [domain, profile, supabase]);
@@ -124,6 +132,7 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
   }
 
   const runningJobs = jobs.filter((job) => job.status === "running").length;
+  const cryptoPipelineEnabled = runtimeControl.pipelineEnabled;
 
   return (
     <main className="page">
@@ -132,7 +141,14 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
           <h1>管理</h1>
           <p className="muted">审批账号请求。通过后会创建首次回填任务，worker 会定时轮询并串行执行。</p>
         </div>
-        <ManualRunButton onChanged={reload} domain={domain} />
+        <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+          <ManualRunButton onChanged={reload} domain={domain} disabled={domain === "crypto" && !cryptoPipelineEnabled} />
+          {domain === "crypto" && !cryptoPipelineEnabled ? (
+            <span className="muted" style={{ fontSize: 12 }}>
+              加密板块已关闭，暂不允许手动抓取。
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <section className="metric-row">
@@ -152,6 +168,33 @@ export default function AdminPage({ domain = "stock" }: { domain?: "stock" | "cr
 
       {domain === "crypto" ? (
         <>
+          <section className="table-panel" style={{ marginTop: 18 }}>
+            <div className="section-head" style={{ marginBottom: 12 }}>
+              <div>
+                <h2>运行开关</h2>
+                <p className="muted">关闭后会停掉加密板块的新定时任务、手动任务和待执行任务，并跳过资产简报生成。</p>
+              </div>
+              <ToggleDomainPipelineButton domain="crypto" enabled={cryptoPipelineEnabled} onChanged={reload} />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <strong>{cryptoPipelineEnabled ? "运行中" : "已关闭"}</strong>
+                <p className="muted" style={{ marginTop: 6 }}>
+                  {cryptoPipelineEnabled ? "新的加密采集和分析任务会继续执行。" : "已有公开数据继续可见，但后端不会继续更新。"}
+                </p>
+              </div>
+              <span className="muted">最近更新：{formatTime(runtimeControl.updatedAt)}</span>
+            </div>
+          </section>
+
           <section className="table-panel" style={{ marginTop: 18 }}>
             <div className="section-head" style={{ marginBottom: 12 }}>
               <div>

@@ -269,6 +269,10 @@ def test_generate_skips_existing_success_without_force(monkeypatch) -> None:
         fake_postgres_connection,
     )
     monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative.is_domain_pipeline_enabled",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
         "packages.public_app.crypto_asset_narrative._fetch_targets",
         lambda *_args, **_kwargs: [_asset()],
     )
@@ -439,6 +443,10 @@ def test_generate_failure_persists_query_and_source_stats(monkeypatch) -> None:
     monkeypatch.setattr(
         "packages.public_app.crypto_asset_narrative.postgres_connection",
         fake_postgres_connection,
+    )
+    monkeypatch.setattr(
+        "packages.public_app.crypto_asset_narrative.is_domain_pipeline_enabled",
+        lambda *_args, **_kwargs: True,
     )
     monkeypatch.setattr(
         "packages.public_app.crypto_asset_narrative._fetch_targets",

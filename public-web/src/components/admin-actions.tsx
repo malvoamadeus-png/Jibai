@@ -15,6 +15,7 @@ import {
   enqueueManualCrawl,
   rejectRequest,
   removeCryptoBlockedTerm,
+  setDomainPipelineEnabled,
 } from "@/lib/direct-data";
 
 function AdminButton({
@@ -23,12 +24,14 @@ function AdminButton({
   kind = "secondary",
   icon,
   onChanged,
+  disabled = false,
 }: {
   action: () => Promise<void>;
   label: string;
   kind?: "primary" | "secondary" | "danger";
   icon: ReactNode;
   onChanged?: () => void;
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -50,7 +53,7 @@ function AdminButton({
   const variant = kind === "primary" ? "primary" : kind === "danger" ? "destructive" : "secondary";
   return (
     <span className="inline-action">
-      <Button variant={variant} type="button" disabled={pending} onClick={submit}>
+      <Button variant={variant} type="button" disabled={pending || disabled} onClick={submit}>
         {icon}
         {label}
       </Button>
@@ -109,9 +112,11 @@ export function DisableButton({
 export function ManualRunButton({
   onChanged,
   domain = "stock",
+  disabled = false,
 }: {
   onChanged?: () => void;
   domain?: "stock" | "crypto";
+  disabled?: boolean;
 }) {
   const { supabase } = useAuth();
   return (
@@ -120,6 +125,30 @@ export function ManualRunButton({
       label="手动抓取"
       kind="primary"
       icon={<Play size={16} />}
+      onChanged={onChanged}
+      disabled={disabled}
+    />
+  );
+}
+
+export function ToggleDomainPipelineButton({
+  domain,
+  enabled,
+  onChanged,
+}: {
+  domain: "stock" | "crypto";
+  enabled: boolean;
+  onChanged?: () => void;
+}) {
+  const { supabase } = useAuth();
+  return (
+    <AdminButton
+      action={async () => {
+        await setDomainPipelineEnabled(supabase, domain, !enabled);
+      }}
+      label={enabled ? "关闭运行" : "恢复运行"}
+      kind={enabled ? "danger" : "primary"}
+      icon={enabled ? <Ban size={16} /> : <Play size={16} />}
       onChanged={onChanged}
     />
   );

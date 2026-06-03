@@ -169,6 +169,18 @@ For crypto matrix filtering parity and brief `identity_status`, use:
 sql_path = Path("supabase/migrations/025_crypto_matrix_identity_filters.sql")
 ```
 
+For the crypto runtime enable/disable switch used by `/crypto/admin`, use:
+
+```python
+sql_path = Path("supabase/migrations/026_crypto_runtime_controls.sql")
+```
+
+For the X account subscription RPC used by public-web subscription buttons, use:
+
+```python
+sql_path = Path("supabase/migrations/027_x_account_subscription_rpc.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally

@@ -90,6 +90,20 @@ def _crypto_symbol(value: str | None) -> str | None:
     return cleaned.lstrip("$").upper()
 
 
+def is_domain_pipeline_enabled(
+    conn: psycopg.Connection[dict[str, Any]],
+    domain: str = "stock",
+) -> bool:
+    safe_domain = _normalize_domain(domain)
+    row = conn.execute(
+        """
+        SELECT public.is_domain_pipeline_enabled(%s) AS pipeline_enabled
+        """,
+        (safe_domain,),
+    ).fetchone()
+    return bool(row["pipeline_enabled"]) if row is not None else True
+
+
 @dataclass(slots=True)
 class PostgresInsightStore:
     conn: psycopg.Connection[dict[str, Any]]

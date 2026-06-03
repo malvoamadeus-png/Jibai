@@ -17,7 +17,7 @@ from packages.ai.prompts import (
     build_crypto_asset_keyword_messages,
     build_crypto_ca_match_messages,
 )
-from packages.common.postgres_database import postgres_connection
+from packages.common.postgres_database import is_domain_pipeline_enabled, postgres_connection
 from packages.common.settings import load_settings
 from packages.common.time_utils import SHANGHAI_TZ
 from packages.onchain.gmgn_labels import OKXTokenSearchCandidate, search_token_candidates
@@ -1182,6 +1182,10 @@ def generate_crypto_asset_briefs_once(
     asset_keys: Sequence[str] | None = None,
     force: bool = False,
 ) -> int:
+    with postgres_connection() as conn:
+        if not is_domain_pipeline_enabled(conn, "crypto"):
+            print("[public-worker] crypto_asset_brief skipped reason=disabled")
+            return 0
     settings = _model_settings()
     with postgres_connection() as conn:
         targets = _fetch_targets(conn, days=days, limit=limit, asset_keys=asset_keys)
