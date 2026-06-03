@@ -46,6 +46,18 @@ ssh -i ~/.ssh/id_rsa_A_github \
 Hi <github-user>! You've successfully authenticated, but GitHub does not provide shell access.
 ```
 
+If GitHub SSH on port `22` hangs or times out, use GitHub SSH over port `443`.
+This is the preferred fallback from WSL on networks that throttle or block
+port `22`:
+
+```bash
+GIT_SSH_COMMAND='ssh -i ~/.ssh/id_rsa_A_github -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -p 443' \
+  git push ssh://git@ssh.github.com/malvoamadeus-png/Jibai.git main
+
+GIT_SSH_COMMAND='ssh -i ~/.ssh/id_rsa_A_github -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -p 443' \
+  git fetch ssh://git@ssh.github.com/malvoamadeus-png/Jibai.git main:refs/remotes/origin/main
+```
+
 ### Linux server key
 
 ```bash
@@ -56,6 +68,19 @@ chmod 600 ~/.ssh/id_ed25519_prod
 ssh -i ~/.ssh/id_ed25519_prod \
   -o BatchMode=yes \
   -o ConnectTimeout=10 \
+  -o StrictHostKeyChecking=accept-new \
+  root@47.76.243.147 "hostname && uptime"
+```
+
+If WSL `ssh` to the Linux server times out, call Windows OpenSSH directly from
+WSL instead. On this machine that path has been more reliable than WSL's own
+network route:
+
+```bash
+/mnt/c/Windows/System32/OpenSSH/ssh.exe \
+  -i C:/Users/Windows/.ssh/id_ed25519 \
+  -o BatchMode=yes \
+  -o ConnectTimeout=20 \
   -o StrictHostKeyChecking=accept-new \
   root@47.76.243.147 "hostname && uptime"
 ```
@@ -83,16 +108,18 @@ git status --short
 git commit -m "Short imperative message"
 ```
 
-从 WSL 推送 GitHub 时，显式指定 key：
+从 WSL 推送 GitHub 时，优先使用 GitHub SSH over `443`，并显式指定 key：
 
 ```bash
-GIT_SSH_COMMAND='ssh -i ~/.ssh/id_rsa_A_github -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new' \
-  git push origin main
+GIT_SSH_COMMAND='ssh -i ~/.ssh/id_rsa_A_github -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -p 443' \
+  git push ssh://git@ssh.github.com/malvoamadeus-png/Jibai.git main
 ```
 
 如果仍失败：
 
 - 先跑上面的 `ssh -T git@github.com` 验证 key。
+- 如果普通 `git@github.com` 的 `22` 端口超时，继续使用
+  `ssh://git@ssh.github.com/...` 加 `-p 443`，不要反复重试 `22`。
 - 不要改 remote URL，除非确认当前 remote 错了。
 - 不要把私钥内容贴到聊天或文档里。
 
@@ -178,9 +205,10 @@ PY
 先只读检查，不要直接覆盖。
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_prod \
+/mnt/c/Windows/System32/OpenSSH/ssh.exe \
+  -i C:/Users/Windows/.ssh/id_ed25519 \
   -o BatchMode=yes \
-  -o ConnectTimeout=10 \
+  -o ConnectTimeout=20 \
   -o StrictHostKeyChecking=accept-new \
   root@47.76.243.147 \
   "cd /opt/Jibai && git rev-parse --short HEAD && git status --short && systemctl is-active jibai-public-worker.service && (systemctl is-active jibai-public-api.service || true)"
@@ -189,7 +217,12 @@ ssh -i ~/.ssh/id_ed25519_prod \
 如果服务器工作区是干净的，可以正常拉取：
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 \
+/mnt/c/Windows/System32/OpenSSH/ssh.exe \
+  -i C:/Users/Windows/.ssh/id_ed25519 \
+  -o BatchMode=yes \
+  -o ConnectTimeout=20 \
+  -o StrictHostKeyChecking=accept-new \
+  root@47.76.243.147 \
   "cd /opt/Jibai && git pull --ff-only origin main"
 ```
 
@@ -202,7 +235,12 @@ ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 \
 示例：
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 '
+/mnt/c/Windows/System32/OpenSSH/ssh.exe \
+  -i C:/Users/Windows/.ssh/id_ed25519 \
+  -o BatchMode=yes \
+  -o ConnectTimeout=20 \
+  -o StrictHostKeyChecking=accept-new \
+  root@47.76.243.147 '
 cd /opt/Jibai
 GIT_SSH_COMMAND="ssh -i /root/.ssh/id_rsa_A -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" git fetch origin main
 ts=$(date +%Y%m%d-%H%M%S)
@@ -224,7 +262,12 @@ git checkout origin/main -- backend/src/main.py backend/packages supabase/migrat
 ### Compile and restart
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 '
+/mnt/c/Windows/System32/OpenSSH/ssh.exe \
+  -i C:/Users/Windows/.ssh/id_ed25519 \
+  -o BatchMode=yes \
+  -o ConnectTimeout=20 \
+  -o StrictHostKeyChecking=accept-new \
+  root@47.76.243.147 '
 cd /opt/Jibai
 .venv/bin/pip install -r backend/requirements.txt
 .venv/bin/python -m playwright install chromium
@@ -243,7 +286,12 @@ journalctl -u jibai-public-api.service -n 50 --no-pager
 后先执行：
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_prod root@47.76.243.147 '
+/mnt/c/Windows/System32/OpenSSH/ssh.exe \
+  -i C:/Users/Windows/.ssh/id_ed25519 \
+  -o BatchMode=yes \
+  -o ConnectTimeout=20 \
+  -o StrictHostKeyChecking=accept-new \
+  root@47.76.243.147 '
 systemctl daemon-reload
 systemctl enable --now jibai-public-api.service
 systemctl status jibai-public-api.service --no-pager -l

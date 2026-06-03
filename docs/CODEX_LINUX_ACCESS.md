@@ -69,6 +69,18 @@ from PowerShell:
 ssh -i C:\Users\Windows\.ssh\id_ed25519 -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new root@47.76.243.147 "pwd && hostname && uptime"
 ```
 
+From WSL, if native `ssh` times out, call Windows OpenSSH directly. This keeps
+the Windows key path and avoids copying keys into WSL:
+
+```bash
+/mnt/c/Windows/System32/OpenSSH/ssh.exe \
+  -i C:/Users/Windows/.ssh/id_ed25519 \
+  -o BatchMode=yes \
+  -o ConnectTimeout=20 \
+  -o StrictHostKeyChecking=accept-new \
+  root@47.76.243.147 "pwd && hostname && uptime"
+```
+
 For multiline diagnostics, pass the script through stdin to avoid quoting
 problems:
 
