@@ -82,6 +82,10 @@ def _stock_blogger_score_time() -> str:
     return os.getenv("PUBLIC_WORKER_STOCK_BLOGGER_SCORE_TIME", "23:10").strip() or "23:10"
 
 
+def _stock_blogger_score_enabled() -> bool:
+    return os.getenv("PUBLIC_STOCK_BLOGGER_SCORE_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+
+
 def _crypto_asset_brief_time() -> str:
     return os.getenv("PUBLIC_WORKER_CRYPTO_ASSET_BRIEF_TIME", "22:50").strip() or "22:50"
 
@@ -510,7 +514,7 @@ def diagnose_worker_once() -> int:
         f"crypto_pipeline_enabled={'yes' if crypto_pipeline_enabled else 'no'} "
         f"top_risk_sync_time={_top_risk_sync_time()} "
         f"stock_narrative_time={_stock_narrative_time()} "
-        f"stock_blogger_score_time={_stock_blogger_score_time()} "
+        f"stock_blogger_score={'enabled' if _stock_blogger_score_enabled() else 'disabled'} "
         f"crypto_asset_brief_time={_crypto_asset_brief_time()} "
         f"poll={_poll_seconds()}s "
         f"stale_job_minutes={_stale_running_job_minutes()} "
@@ -988,13 +992,14 @@ def run_worker(*, once: bool = False) -> int:
         id="public-stock-narrative",
         replace_existing=True,
     )
-    score_hour, score_minute = _stock_blogger_score_time().split(":", 1)
-    scheduler.add_job(
-        lambda: rebuild_stock_blogger_scores_once(),
-        CronTrigger(hour=int(score_hour), minute=int(score_minute), timezone=SHANGHAI_TZ),
-        id="public-stock-blogger-score",
-        replace_existing=True,
-    )
+    if _stock_blogger_score_enabled():
+        score_hour, score_minute = _stock_blogger_score_time().split(":", 1)
+        scheduler.add_job(
+            lambda: rebuild_stock_blogger_scores_once(),
+            CronTrigger(hour=int(score_hour), minute=int(score_minute), timezone=SHANGHAI_TZ),
+            id="public-stock-blogger-score",
+            replace_existing=True,
+        )
     crypto_brief_hour, crypto_brief_minute = _crypto_asset_brief_time().split(":", 1)
     scheduler.add_job(
         lambda: generate_crypto_asset_briefs_once(),
@@ -1013,7 +1018,11 @@ def run_worker(*, once: bool = False) -> int:
         + f"; light_market_data_max={_light_market_data_max_securities()}"
         + f"; top_risk_sync_time={_top_risk_sync_time()}"
         + f"; stock_narrative_time={_stock_narrative_time()}"
-        + f"; stock_blogger_score_time={_stock_blogger_score_time()}"
+        + (
+            f"; stock_blogger_score_time={_stock_blogger_score_time()}"
+            if _stock_blogger_score_enabled()
+            else "; stock_blogger_score=disabled"
+        )
         + f"; crypto_asset_brief_time={_crypto_asset_brief_time()}"
     )
     scheduler.start()

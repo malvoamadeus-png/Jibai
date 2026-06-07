@@ -21,6 +21,7 @@ import type { StockBloggerAuthorScore, StockBloggerGoldData, StockBloggerHorizon
 import { cn, formatCount } from "@/lib/utils";
 
 const HORIZONS = ["1d", "5d", "20d"] as const;
+const GOLD_RANKINGS_FETCH_ENABLED = process.env.NEXT_PUBLIC_STOCK_BLOGGER_GOLD_FETCH_ENABLED === "true";
 
 function formatScore(value: number | null) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "暂无";
@@ -218,6 +219,7 @@ export function StockBloggerGoldRankings() {
 
   useEffect(() => {
     if (loading || !profile) return;
+    if (!GOLD_RANKINGS_FETCH_ENABLED) return;
     let cancelled = false;
     Promise.resolve().then(() => {
       if (!cancelled) setRankingLoading(true);
@@ -306,6 +308,14 @@ export function StockBloggerGoldRankings() {
         </Card>
       ) : null}
 
+      {!GOLD_RANKINGS_FETCH_ENABLED ? (
+        <Card variant="muted">
+          <CardContent className="py-8 text-sm text-[color:var(--muted-ink)]">
+            点金榜数据暂未开启。
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card variant="elevated">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-2xl">
@@ -315,7 +325,11 @@ export function StockBloggerGoldRankings() {
           <CardDescription>样本量只作为提示，不参与排序分。</CardDescription>
         </CardHeader>
         <CardContent>
-          {rankingLoading ? (
+          {!GOLD_RANKINGS_FETCH_ENABLED ? (
+            <div className="rounded-[8px] border border-[color:var(--border)] bg-white/62 p-6 text-sm text-[color:var(--muted-ink)]">
+              当前不拉取点金榜后端数据，其他页面和组件不受影响。
+            </div>
+          ) : rankingLoading ? (
             <div className="rounded-[8px] border border-[color:var(--border)] bg-white/62 p-6 text-sm text-[color:var(--muted-ink)]">
               正在加载点金榜。
             </div>

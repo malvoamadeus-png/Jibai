@@ -29,6 +29,9 @@ def _normalize_domain(value: str | None) -> str:
 
 
 def _stock_blogger_score_accounts() -> list[str]:
+    enabled = os.getenv("PUBLIC_STOCK_BLOGGER_SCORE_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    if not enabled:
+        return []
     raw = os.getenv("PUBLIC_STOCK_BLOGGER_SCORE_ACCOUNTS", "labubu_trader,hicagr,xiaomustock")
     values: list[str] = []
     for item in raw.split(","):

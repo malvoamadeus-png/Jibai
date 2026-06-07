@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 from packages.public_app.crypto_asset_narrative import generate_crypto_asset_briefs_once
-from packages.public_app.jobs import CrawlJob
+from packages.public_app.jobs import CrawlJob, _stock_blogger_score_accounts
 from packages.public_app.worker import enqueue_scheduled_crawl_job, process_pending_jobs
 
 
@@ -15,6 +15,17 @@ def test_enqueue_scheduled_crawl_job_skips_disabled_crypto(monkeypatch) -> None:
     )
 
     assert enqueue_scheduled_crawl_job("crypto") is None
+
+
+def test_stock_blogger_score_accounts_are_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("PUBLIC_STOCK_BLOGGER_SCORE_ENABLED", raising=False)
+    monkeypatch.setenv("PUBLIC_STOCK_BLOGGER_SCORE_ACCOUNTS", "labubu_trader,hicagr,xiaomustock")
+
+    assert _stock_blogger_score_accounts() == []
+
+    monkeypatch.setenv("PUBLIC_STOCK_BLOGGER_SCORE_ENABLED", "true")
+
+    assert _stock_blogger_score_accounts() == ["labubu_trader", "hicagr", "xiaomustock"]
 
 
 def test_process_pending_jobs_marks_disabled_crypto_job_skipped(monkeypatch) -> None:
