@@ -44,6 +44,11 @@ import type {
   StockKlineCandle,
   StockKlineData,
   StockKlineMarker,
+  StockBloggerAuthorScore,
+  StockBloggerGoldData,
+  StockBloggerGoldRun,
+  StockBloggerHorizonScore,
+  StockBloggerScoreEvent,
   StockMatrixAuthor,
   StockMatrixCell,
   StockMatrixData,
@@ -214,6 +219,90 @@ function normalizeStockMatrixCell(rawValue: unknown): StockMatrixCell {
     accountName,
     authorNickname: asString(raw.author_nickname ?? raw.authorNickname, accountName),
     views: asArray(raw.views).map(normalizeStockMatrixView),
+  };
+}
+
+function normalizeStockBloggerHorizonScore(rawValue: unknown): StockBloggerHorizonScore {
+  const raw = asRecord(rawValue);
+  return {
+    status: asString(raw.status),
+    score: asNullableNumber(raw.score),
+    directionalExcess: asNullableNumber(raw.directional_excess ?? raw.directionalExcess),
+    stockReturn: asNullableNumber(raw.stock_return ?? raw.stockReturn),
+    benchmarkReturn: asNullableNumber(raw.benchmark_return ?? raw.benchmarkReturn),
+    excessReturn: asNullableNumber(raw.excess_return ?? raw.excessReturn),
+    targetDate: asNullableString(raw.target_date ?? raw.targetDate),
+    message: asString(raw.message),
+  };
+}
+
+function normalizeStockBloggerHorizonMap(rawValue: unknown): Record<string, StockBloggerHorizonScore> {
+  const raw = asRecord(rawValue);
+  const result: Record<string, StockBloggerHorizonScore> = {};
+  for (const label of ["1d", "5d", "20d"]) {
+    result[label] = normalizeStockBloggerHorizonScore(raw[label]);
+  }
+  return result;
+}
+
+function normalizeStockBloggerEvent(rawValue: unknown): StockBloggerScoreEvent {
+  const raw = asRecord(rawValue);
+  return {
+    id: asString(raw.id),
+    securityKey: asString(raw.security_key ?? raw.securityKey),
+    displayName: asString(raw.display_name ?? raw.displayName),
+    ticker: asNullableString(raw.ticker),
+    market: asNullableString(raw.market),
+    eventTradingDay: asString(raw.event_trading_day ?? raw.eventTradingDay),
+    publishedAt: asNullableString(raw.published_at ?? raw.publishedAt),
+    direction: asString(raw.direction, "unknown") as StockBloggerScoreEvent["direction"],
+    conviction: asString(raw.conviction, "unknown") as StockBloggerScoreEvent["conviction"],
+    evidenceType: asString(raw.evidence_type ?? raw.evidenceType),
+    anchorTradingDay: asNullableString(raw.anchor_trading_day ?? raw.anchorTradingDay),
+    anchorPriceKind: asNullableString(raw.anchor_price_kind ?? raw.anchorPriceKind),
+    benchmarkSymbol: asNullableString(raw.benchmark_symbol ?? raw.benchmarkSymbol),
+    horizonScores: normalizeStockBloggerHorizonMap(raw.horizon_scores ?? raw.horizonScores),
+  };
+}
+
+function normalizeStockBloggerAuthor(rawValue: unknown): StockBloggerAuthorScore {
+  const raw = asRecord(rawValue);
+  return {
+    accountId: asString(raw.account_id ?? raw.accountId),
+    accountName: asString(raw.account_name ?? raw.accountName),
+    authorNickname: asString(raw.author_nickname ?? raw.authorNickname),
+    overallScore: asNullableNumber(raw.overall_score ?? raw.overallScore),
+    score1d: asNullableNumber(raw.score_1d ?? raw.score1d),
+    score5d: asNullableNumber(raw.score_5d ?? raw.score5d),
+    score20d: asNullableNumber(raw.score_20d ?? raw.score20d),
+    scoredDayCount: asNumber(raw.scored_day_count ?? raw.scoredDayCount),
+    eventCount: asNumber(raw.event_count ?? raw.eventCount),
+    scoredEventCount: asNumber(raw.scored_event_count ?? raw.scoredEventCount),
+    pendingCount: asNumber(raw.pending_count ?? raw.pendingCount),
+    positiveCount: asNumber(raw.positive_count ?? raw.positiveCount),
+    negativeCount: asNumber(raw.negative_count ?? raw.negativeCount),
+    directionCounts: asRecord(raw.direction_counts ?? raw.directionCounts) as Record<string, number>,
+    convictionCounts: asRecord(raw.conviction_counts ?? raw.convictionCounts) as Record<string, number>,
+    bestHorizon: asNullableString(raw.best_horizon ?? raw.bestHorizon),
+    worstHorizon: asNullableString(raw.worst_horizon ?? raw.worstHorizon),
+    events: asArray(raw.events).map(normalizeStockBloggerEvent),
+  };
+}
+
+function normalizeStockBloggerRun(rawValue: unknown): StockBloggerGoldRun | null {
+  const raw = asRecord(rawValue);
+  const id = asString(raw.id);
+  if (!id) return null;
+  return {
+    id,
+    runDate: asString(raw.run_date ?? raw.runDate),
+    windowStart: asNullableString(raw.window_start ?? raw.windowStart),
+    windowEnd: asNullableString(raw.window_end ?? raw.windowEnd),
+    config: asRecord(raw.config),
+    eventCount: asNumber(raw.event_count ?? raw.eventCount),
+    authorCount: asNumber(raw.author_count ?? raw.authorCount),
+    errorText: asString(raw.error_text ?? raw.errorText),
+    updatedAt: asNullableString(raw.updated_at ?? raw.updatedAt),
   };
 }
 
@@ -797,6 +886,19 @@ export async function getLatestStockNarrativeBrief(
     usage: asRecord(payload.usage),
     createdAt: asNullableString(payload.created_at ?? payload.createdAt),
     updatedAt: asNullableString(payload.updated_at ?? payload.updatedAt),
+  };
+}
+
+export async function getStockBloggerGoldRankings(
+  supabase: SupabaseClient,
+): Promise<StockBloggerGoldData> {
+  const { data, error } = await supabase.rpc("get_stock_blogger_gold_rankings");
+  assertNoError(error);
+  const payload = asRecord(data);
+  return {
+    requiresLogin: Boolean(payload.requires_login ?? payload.requiresLogin),
+    run: normalizeStockBloggerRun(payload.run),
+    authors: asArray(payload.authors).map(normalizeStockBloggerAuthor),
   };
 }
 

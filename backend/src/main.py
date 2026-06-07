@@ -189,6 +189,25 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Regenerate even if a successful brief already exists for the date.",
     )
+    public_stock_blogger_parser = subparsers.add_parser(
+        "public-rebuild-stock-blogger-scores",
+        help="Rebuild public stock blogger gold ranking scores.",
+    )
+    public_stock_blogger_parser.add_argument(
+        "--days",
+        type=int,
+        default=90,
+        help="Recent Shanghai natural days to score. Defaults to 90.",
+    )
+    public_stock_blogger_parser.add_argument(
+        "--no-refresh-market",
+        action="store_true",
+        help="Use existing market-data cache without refreshing stock or benchmark candles.",
+    )
+    subparsers.add_parser(
+        "public-ensure-stock-blogger-accounts",
+        help="Ensure default stock blogger score accounts exist and are approved for stock.",
+    )
     public_crypto_asset_brief_parser = subparsers.add_parser(
         "public-generate-crypto-asset-briefs",
         help="Generate crypto asset narrative briefs for recent visible assets.",
@@ -322,6 +341,14 @@ def main() -> int:
         from packages.public_app.stock_narrative import generate_stock_narrative_once  # noqa: PLC0415
 
         return generate_stock_narrative_once(brief_date=args.date, force=args.force)
+    if args.command == "public-rebuild-stock-blogger-scores":
+        from packages.public_app.stock_blogger_scoring import rebuild_stock_blogger_scores_once  # noqa: PLC0415
+
+        return rebuild_stock_blogger_scores_once(days=args.days, refresh_market=not args.no_refresh_market)
+    if args.command == "public-ensure-stock-blogger-accounts":
+        from packages.public_app.stock_blogger_scoring import ensure_stock_blogger_accounts_once  # noqa: PLC0415
+
+        return ensure_stock_blogger_accounts_once()
     if args.command == "public-generate-crypto-asset-briefs":
         from packages.public_app.crypto_asset_narrative import generate_crypto_asset_briefs_once  # noqa: PLC0415
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,6 +26,16 @@ class CrawlJob:
 
 def _normalize_domain(value: str | None) -> str:
     return "crypto" if value == "crypto" else "stock"
+
+
+def _stock_blogger_score_accounts() -> list[str]:
+    raw = os.getenv("PUBLIC_STOCK_BLOGGER_SCORE_ACCOUNTS", "labubu_trader,hicagr,xiaomustock")
+    values: list[str] = []
+    for item in raw.split(","):
+        account = item.strip().lstrip("@").lower()
+        if account and account not in values:
+            values.append(account)
+    return values
 
 
 def enqueue_scheduled_crawl(conn: Connection[dict[str, Any]], dedupe_key: str, domain: str = "stock") -> str:
@@ -159,6 +170,7 @@ def list_accounts_for_job(conn: Connection[dict[str, Any]], job: CrawlJob) -> li
             (job.account_id, job.domain),
         ).fetchall()
     else:
+        score_accounts = _stock_blogger_score_accounts() if job.domain == "stock" else []
         rows = conn.execute(
             """
             SELECT a.id, a.username, a.display_name, a.profile_url
@@ -166,16 +178,19 @@ def list_accounts_for_job(conn: Connection[dict[str, Any]], job: CrawlJob) -> li
             JOIN account_domains ad ON ad.account_id = a.id
             WHERE ad.domain = %s
               AND ad.status = 'approved'
-              AND EXISTS (
+              AND (
+                lower(a.username::text) = ANY(%s)
+                OR EXISTS (
                 SELECT 1
                 FROM user_subscriptions s
                 WHERE s.account_id = a.id
                   AND s.domain = %s
+                )
               )
             ORDER BY a.approved_at NULLS LAST, a.created_at ASC
             LIMIT 100
             """,
-            (job.domain, job.domain),
+            (job.domain, score_accounts, job.domain),
         ).fetchall()
     return [
         PublicXAccount(

@@ -271,6 +271,73 @@ export type StockNarrativeBrief = {
   updatedAt: string | null;
 };
 
+export type StockBloggerHorizonScore = {
+  status: string;
+  score: number | null;
+  directionalExcess: number | null;
+  stockReturn: number | null;
+  benchmarkReturn: number | null;
+  excessReturn: number | null;
+  targetDate: string | null;
+  message: string;
+};
+
+export type StockBloggerScoreEvent = {
+  id: string;
+  securityKey: string;
+  displayName: string;
+  ticker: string | null;
+  market: string | null;
+  eventTradingDay: string;
+  publishedAt: string | null;
+  direction: ViewDirection;
+  conviction: ViewConviction;
+  evidenceType: string;
+  anchorTradingDay: string | null;
+  anchorPriceKind: string | null;
+  benchmarkSymbol: string | null;
+  horizonScores: Record<string, StockBloggerHorizonScore>;
+};
+
+export type StockBloggerAuthorScore = {
+  accountId: string;
+  accountName: string;
+  authorNickname: string;
+  overallScore: number | null;
+  score1d: number | null;
+  score5d: number | null;
+  score20d: number | null;
+  scoredDayCount: number;
+  eventCount: number;
+  scoredEventCount: number;
+  pendingCount: number;
+  positiveCount: number;
+  negativeCount: number;
+  directionCounts: Record<string, number>;
+  convictionCounts: Record<string, number>;
+  bestHorizon: string | null;
+  worstHorizon: string | null;
+  events: StockBloggerScoreEvent[];
+};
+
+export type StockBloggerGoldRun = {
+  id: string;
+  runDate: string;
+  windowStart: string | null;
+  windowEnd: string | null;
+  config: Record<string, unknown>;
+  eventCount: number;
+  authorCount: number;
+  errorText: string;
+  updatedAt: string | null;
+};
+
+export type StockBloggerGoldData = {
+  requiresLogin: boolean;
+  run: StockBloggerGoldRun | null;
+  authors: StockBloggerAuthorScore[];
+};
+
 export type CryptoMatrixAsset = {
   assetKey: string;
   displayName: string;
