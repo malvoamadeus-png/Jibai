@@ -187,6 +187,13 @@ For the stock news/event parallel channel, use:
 sql_path = Path("supabase/migrations/029_stock_news_timeline.sql")
 ```
 
+If `get_visible_stock_news_timeline(...)` raises an error about
+`visible_days` during rollout, apply the RPC fix immediately after `029`:
+
+```python
+sql_path = Path("supabase/migrations/030_fix_stock_news_timeline_rpc.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -203,6 +210,14 @@ AI_MODEL_RETRY_ATTEMPTS=2 \
 AI_MODEL_RETRY_DELAY_SECONDS=1.5 \
 AI_API_TIMEOUT_SECONDS=90 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
+```
+
+For a lightweight stock-news backfill when only fresh timeline data matters,
+reduce the window explicitly:
+
+```bash
+AI_API_TIMEOUT_SECONDS=90 \
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --days 1 --clear-analysis
 ```
 
 For crypto, keep the domain explicit:

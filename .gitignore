@@ -10,6 +10,7 @@ client_secret*.json
 .idea/
 .venv/
 .venv-codex/
+.venv312-codex/
 
 __pycache__/
 *.pyc
