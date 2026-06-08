@@ -182,39 +182,29 @@ export function StockNewsTimeline() {
                 {day.events.map((event, index) => (
                   <article
                     key={`${day.date}-${event.noteId}-${index}`}
-                    className="rounded-[28px] border border-[color:var(--border)] bg-white/75 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)]"
+                    className="space-y-2 border-b border-[color:var(--border)]/70 py-3 last:border-b-0 last:pb-0 first:pt-0"
                   >
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-[color:var(--soft-ink)]">
-                      <span>@{event.accountName}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[color:var(--soft-ink)] sm:text-sm">
                       <span>{stripTime(event.publishTime)}</span>
-                      <Badge variant="neutral">{eventTypeLabel(event.eventType)}</Badge>
-                      <Badge variant="warm">{eventNatureLabel(event.eventNature)}</Badge>
-                    </div>
-                    <h3 className="mt-3 text-lg font-semibold text-[color:var(--ink)]">{event.headline}</h3>
-                    {event.eventSummary ? <p className="mt-2 text-sm leading-7 text-[color:var(--muted-ink)]">{event.eventSummary}</p> : null}
-                    {event.evidence ? (
-                      <div className="mt-3 rounded-2xl bg-[color:var(--paper-strong)] px-4 py-3 text-sm leading-6 text-[color:var(--muted-ink)]">
-                        依据：{event.evidence}
-                      </div>
-                    ) : null}
-                    {event.linkedEntities.length ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {event.linkedEntities.map((entity) => (
-                          <Badge key={`${event.noteId}-${entity.entityType}-${entity.entityKey}`} variant="neutral">
-                            {entityTypeLabel(entity.entityType)} · {entity.entityName}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-                      <span className="text-[color:var(--soft-ink)]">{event.authorNickname || event.accountName}</span>
+                      <span>{event.authorNickname || event.accountName}</span>
                       {event.noteUrl ? (
                         <Link href={event.noteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[color:var(--accent-strong)] hover:underline">
                           查看原文
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                       ) : null}
+                      <Badge variant="neutral">{eventTypeLabel(event.eventType)}</Badge>
+                      <Badge variant="warm">{eventNatureLabel(event.eventNature)}</Badge>
+                      {event.linkedEntities.map((entity) => (
+                        <Badge key={`${event.noteId}-${entity.entityType}-${entity.entityKey}`} variant="neutral">
+                          {entityTypeLabel(entity.entityType)} · {entity.entityName}
+                        </Badge>
+                      ))}
                     </div>
+                    <p className="text-sm leading-6 text-[color:var(--muted-ink)] sm:text-[15px]">
+                      <span className="font-semibold text-[color:var(--ink)]">{event.headline}</span>
+                      {event.eventSummary ? <span className="ml-2">{event.eventSummary}</span> : null}
+                    </p>
                   </article>
                 ))}
               </CardContent>

@@ -564,7 +564,6 @@ class InsightStore:
                   event_summary,
                   event_type,
                   event_nature,
-                  evidence,
                   sort_order,
                   metadata_json
                 FROM content_events
@@ -596,7 +595,6 @@ class InsightStore:
                         event_summary=str(event_row["event_summary"] or ""),
                         event_type=str(event_row["event_type"] or "other"),
                         event_nature=str(event_row["event_nature"] or "reported"),
-                        evidence=str(event_row["evidence"] or ""),
                         sort_order=int(event_row["sort_order"] or 0),
                         linked_entities=[
                             EventLinkedEntity(
@@ -899,7 +897,7 @@ class InsightStore:
                     event.event_summary,
                     event.event_type,
                     event.event_nature,
-                    event.evidence,
+                    "",
                     extract.publish_time,
                     event.sort_order,
                     json_dumps(event.metadata),

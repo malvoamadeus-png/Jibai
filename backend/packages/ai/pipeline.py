@@ -618,7 +618,6 @@ def _parse_event(
         event_summary=event_summary,
         event_type=str(raw.get("event_type") or "other").strip().lower().replace(" ", "_") or "other",
         event_nature=str(raw.get("event_nature") or "reported").strip().lower().replace(" ", "_") or "reported",
-        evidence=str(raw.get("evidence") or "").strip(),
         sort_order=order,
         linked_entities=linked_entities,
         metadata=metadata,
@@ -1635,7 +1634,6 @@ def _materialize_stock_news_timelines(
                 event_summary=event.event_summary,
                 event_type=event.event_type,
                 event_nature=event.event_nature,
-                evidence=event.evidence,
                 linked_entities=list(event.linked_entities),
                 metadata=dict(event.metadata),
             )

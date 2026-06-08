@@ -396,7 +396,6 @@ export type StockNewsItem = {
   eventSummary: string;
   eventType: string;
   eventNature: string;
-  evidence: string;
   linkedEntities: StockNewsLinkedEntity[];
   metadata: Record<string, unknown>;
 };

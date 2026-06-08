@@ -14,7 +14,6 @@ def test_parse_event_normalizes_stock_and_theme_entities() -> None:
             "event_summary": "报道称 2nm 与 HBM base die 产量改善，推动 foundry 盈利修复。",
             "event_type": "profitability_outlook",
             "event_nature": "exclusive",
-            "evidence": "Expected to Return to Profit in Q3 This Year",
             "linked_entities": [
                 {
                     "entity_type": "stock",
@@ -126,7 +125,6 @@ def test_sqlite_store_roundtrips_stock_events() -> None:
                 event_summary="独家报道指出三季度有望转盈。",
                 event_type="exclusive_report",
                 event_nature="exclusive",
-                evidence="Return to Profit in Q3",
                 linked_entities=[
                     EventLinkedEntity(entity_type="stock", entity_key="005930.ks", entity_name="Samsung Electronics", entity_code_or_name="005930.KS"),
                     EventLinkedEntity(entity_type="theme", entity_key="2nm", entity_name="2nm", entity_code_or_name="2nm"),

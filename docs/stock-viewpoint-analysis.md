@@ -122,7 +122,6 @@ AI 配置优先级：
   - `event_summary`
   - `event_type`
   - `event_nature`
-  - `evidence`
   - `linked_entities`
 - 如果作者既在报道事件，又明确表达自己的买卖方向，应同时输出 `event` 和 `viewpoint`。
 

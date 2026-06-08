@@ -27,7 +27,6 @@
 | `event_summary` | 1 到 2 句中文说明发生了什么。 |
 | `event_type` | 事件类型，如 `earnings_update`、`policy_update`、`profitability_outlook`。 |
 | `event_nature` | 事件性质，如 `reported`、`announced`、`exclusive`、`expected`。 |
-| `evidence` | 贴近原文的依据。 |
 | `linked_entities` | 该事件关联的对象列表。 |
 
 当前 `linked_entities` 只允许两类：
@@ -53,7 +52,8 @@
 
 - 按日期倒序展示。
 - 每个日期块显示当天全部新闻详情。
-- 单条新闻展示作者、发布时间、原文链接、标题、摘要、事件标签和关联实体 badge。
+- 单条新闻压缩展示为紧凑时间线行，聚合作者、发布时间、原文链接、事件标签和关联实体 badge。
+- 正文只保留标题和事件摘要，不单独展示依据字段。
 
 第一版限制：
 

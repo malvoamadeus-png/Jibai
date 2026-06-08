@@ -127,7 +127,6 @@ class EventRecord(BaseModel):
     event_summary: str = ""
     event_type: str = "other"
     event_nature: str = "reported"
-    evidence: str = ""
     sort_order: int = 0
     linked_entities: list[EventLinkedEntity] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -265,7 +264,6 @@ class NewsTimelineItem(BaseModel):
     event_summary: str = ""
     event_type: str = "other"
     event_nature: str = "reported"
-    evidence: str = ""
     linked_entities: list[EventLinkedEntity] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

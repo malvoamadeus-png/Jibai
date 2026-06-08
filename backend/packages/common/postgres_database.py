@@ -341,7 +341,6 @@ class PostgresInsightStore:
                   ce.event_summary,
                   ce.event_type,
                   ce.event_nature,
-                  ce.evidence,
                   ce.sort_order,
                   ce.metadata_json
                 FROM content_events ce
@@ -385,7 +384,6 @@ class PostgresInsightStore:
                     event_summary=str(item["event_summary"] or ""),
                     event_type=str(item["event_type"] or "other"),
                     event_nature=str(item["event_nature"] or "reported"),
-                    evidence=str(item["evidence"] or ""),
                     sort_order=int(item["sort_order"] or 0),
                     linked_entities=linked_by_event_id.get(str(item["id"]), []),
                     metadata=item.get("metadata_json") or {},
@@ -812,7 +810,7 @@ class PostgresInsightStore:
                     event.event_summary,
                     event.event_type,
                     event.event_nature,
-                    event.evidence,
+                    "",
                     extract.publish_time,
                     event.sort_order,
                     _json(event.metadata),

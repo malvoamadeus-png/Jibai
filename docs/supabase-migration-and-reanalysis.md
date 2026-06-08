@@ -194,6 +194,13 @@ If `get_visible_stock_news_timeline(...)` raises an error about
 sql_path = Path("supabase/migrations/030_fix_stock_news_timeline_rpc.sql")
 ```
 
+To scrub previously generated stock-news evidence text from the database and
+timeline JSON after the compact news rollout, apply:
+
+```python
+sql_path = Path("supabase/migrations/031_remove_stock_news_evidence.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally

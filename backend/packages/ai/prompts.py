@@ -71,7 +71,7 @@ def build_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
                 "同一对象如果在文中只有一个判断，就只输出一条，不要拆碎。"
                 "events 用于承载非作者观点的客观信息，例如新闻、事件、独家报道、公告、管理层表述、分析师预期、产能/订单/产品/政策/供应链更新、业绩事实、数据播报。"
                 "event 不代表作者本人立场，禁止把事件自动升级成观点。"
-                "每条 event 必须包含字段：headline, event_summary, event_type, event_nature, evidence, linked_entities。"
+                "每条 event 必须包含字段：headline, event_summary, event_type, event_nature, linked_entities。"
                 "headline 用一句中文短标题概括事件。"
                 "event_summary 用 1 到 2 句中文说明发生了什么，不写作者态度。"
                 "event_type 可使用 earnings_update, guidance_update, management_commentary, product_update, policy_update, supply_chain_update, profitability_outlook, analyst_report, exclusive_report, data_point, rumor, other。"

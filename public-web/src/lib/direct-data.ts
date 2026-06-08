@@ -250,7 +250,6 @@ function normalizeStockNewsItem(rawValue: unknown): StockNewsItem {
     eventSummary: asString(raw.event_summary ?? raw.eventSummary),
     eventType: asString(raw.event_type ?? raw.eventType, "other"),
     eventNature: asString(raw.event_nature ?? raw.eventNature, "reported"),
-    evidence: asString(raw.evidence),
     linkedEntities: asArray(raw.linked_entities ?? raw.linkedEntities).map(normalizeStockNewsLinkedEntity),
     metadata: asRecord(raw.metadata),
   };
