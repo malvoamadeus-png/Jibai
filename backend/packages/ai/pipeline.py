@@ -19,6 +19,10 @@ from packages.common.models import (
     CryptoDayRecord,
     CrawlAccountResult,
     EntityAuthorView,
+    EventLinkedEntity,
+    EventRecord,
+    NewsTimelineDay,
+    NewsTimelineItem,
     NoteExtractRecord,
     RawNoteRecord,
     StockDayRecord,
@@ -57,7 +61,7 @@ from .prompts import (
 )
 
 
-ANALYSIS_VERSION = "stock_signals_v1"
+ANALYSIS_VERSION = "stock_signals_v2"
 CRYPTO_ANALYSIS_VERSION = "crypto_signals_v1"
 MARKET_DATA_WINDOW_DAYS = 180
 LIGHT_MARKET_DATA_WINDOW_DAYS = 7
@@ -525,6 +529,102 @@ def _coerce_viewpoint_payloads(payload: dict[str, object]) -> list[dict[str, obj
     return []
 
 
+def _coerce_event_payloads(payload: dict[str, object]) -> list[dict[str, object]]:
+    raw_events = payload.get("events")
+    if isinstance(raw_events, list):
+        return [item for item in raw_events if isinstance(item, dict)]
+    return []
+
+
+def _normalize_theme_key(entity_name: str, entity_code_or_name: str | None = None) -> str:
+    base = (entity_code_or_name or entity_name).strip() or entity_name.strip()
+    return _normalize_entity_key(base, default="theme")
+
+
+def _parse_event_linked_entity(
+    raw: dict[str, object],
+    *,
+    aliases: dict[str, SecurityIdentity],
+) -> EventLinkedEntity | None:
+    entity_type = str(raw.get("entity_type") or "").strip().casefold()
+    entity_name = str(raw.get("entity_name") or raw.get("theme_name") or "").strip()
+    entity_code_or_name = str(raw.get("entity_code_or_name") or "").strip() or None
+    if entity_type == "stock":
+        if not entity_name and not entity_code_or_name:
+            return None
+        identity = resolve_security_identity(
+            raw_name=(entity_code_or_name or entity_name).strip(),
+            stock_name=entity_name or None,
+            aliases=aliases,
+        )
+        if identity is None:
+            return None
+        return EventLinkedEntity(
+            entity_type="stock",
+            entity_key=identity.security_key,
+            entity_name=identity.display_name,
+            entity_code_or_name=identity.ticker or entity_code_or_name or entity_name,
+        )
+    if entity_type == "theme":
+        display_name = entity_name or entity_code_or_name or ""
+        if not display_name:
+            return None
+        return EventLinkedEntity(
+            entity_type="theme",
+            entity_key=_normalize_theme_key(display_name, entity_code_or_name),
+            entity_name=display_name,
+            entity_code_or_name=entity_code_or_name,
+        )
+    return None
+
+
+def _parse_event(
+    raw: dict[str, object],
+    *,
+    order: int,
+    aliases: dict[str, SecurityIdentity],
+) -> EventRecord | None:
+    headline = str(raw.get("headline") or raw.get("title") or "").strip()
+    event_summary = str(raw.get("event_summary") or raw.get("summary") or "").strip()
+    if not headline:
+        headline = event_summary[:80]
+    if not headline:
+        return None
+    linked_entities: list[EventLinkedEntity] = []
+    seen_entities: set[tuple[str, str]] = set()
+    raw_entities = raw.get("linked_entities")
+    if isinstance(raw_entities, list):
+        for item in raw_entities:
+            if not isinstance(item, dict):
+                continue
+            parsed = _parse_event_linked_entity(item, aliases=aliases)
+            if parsed is None:
+                continue
+            dedupe_key = (parsed.entity_type, parsed.entity_key)
+            if dedupe_key in seen_entities:
+                continue
+            seen_entities.add(dedupe_key)
+            linked_entities.append(parsed)
+    if not linked_entities:
+        return None
+    metadata = {
+        key: value
+        for key, value in raw.items()
+        if key not in {"headline", "title", "event_summary", "summary", "event_type", "event_nature", "evidence", "linked_entities"}
+        and value not in (None, "", [], {})
+    }
+    return EventRecord(
+        headline=headline,
+        event_summary=event_summary,
+        event_type=str(raw.get("event_type") or "other").strip().lower().replace(" ", "_") or "other",
+        event_nature=str(raw.get("event_nature") or "reported").strip().lower().replace(" ", "_") or "reported",
+        evidence=str(raw.get("evidence") or "").strip(),
+        sort_order=order,
+        linked_entities=linked_entities,
+        metadata=metadata,
+    )
+
+
 def _parse_viewpoint(
     raw: dict[str, object],
     *,
@@ -816,6 +916,7 @@ def _normalize_extract(
     aliases: dict[str, SecurityIdentity],
 ) -> tuple[NoteExtractRecord, bool]:
     normalized_viewpoints: list[ViewpointRecord] = []
+    normalized_events: list[EventRecord] = []
     changed = False
 
     for index, viewpoint in enumerate(extract.viewpoints):
@@ -827,10 +928,37 @@ def _normalize_extract(
             changed = True
         normalized_viewpoints.append(normalized)
 
+    for event in extract.events:
+        linked_entities: list[EventLinkedEntity] = []
+        seen_entities: set[tuple[str, str]] = set()
+        for linked in event.linked_entities:
+            parsed = _parse_event_linked_entity(linked.model_dump(mode="json"), aliases=aliases)
+            if parsed is None:
+                changed = True
+                continue
+            dedupe_key = (parsed.entity_type, parsed.entity_key)
+            if dedupe_key in seen_entities:
+                changed = True
+                continue
+            seen_entities.add(dedupe_key)
+            linked_entities.append(parsed)
+        if not linked_entities:
+            changed = True
+            continue
+        normalized_event = event.model_copy(
+            update={
+                "sort_order": len(normalized_events),
+                "linked_entities": linked_entities,
+            }
+        )
+        if normalized_event.model_dump(mode="json") != event.model_dump(mode="json"):
+            changed = True
+        normalized_events.append(normalized_event)
+
     if not changed:
         return extract, False
 
-    return extract.model_copy(update={"viewpoints": normalized_viewpoints}), True
+    return extract.model_copy(update={"viewpoints": normalized_viewpoints, "events": normalized_events}), True
 
 
 def _normalize_crypto_extract(
@@ -1004,6 +1132,12 @@ def _analyze_missing_notes(
                 )
                 if parsed is not None:
                     viewpoints.append(parsed)
+            events = []
+            if safe_domain == "stock":
+                for event_index, raw_event in enumerate(_coerce_event_payloads(payload)):
+                    parsed_event = _parse_event(raw_event, order=event_index, aliases=aliases)
+                    if parsed_event is not None:
+                        events.append(parsed_event)
             summary_text = str(payload.get("summary_text") or "").strip() or _fallback_note_summary(note)
             raw_response = dict(payload)
             raw_response["analysis_version"] = analysis_version
@@ -1027,6 +1161,7 @@ def _analyze_missing_notes(
                     [str(item).strip() for item in (payload.get("key_points") or []) if str(item).strip()]
                 )[:5],
                 viewpoints=viewpoints,
+                events=events,
                 model_name=result.model_name,
                 request_id=result.request_id,
                 usage=result.usage,
@@ -1463,6 +1598,71 @@ def _materialize_stock_timelines(
     return updated_records
 
 
+def _materialize_stock_news_timelines(
+    *,
+    store: Any,
+    extracts: dict[str, NoteExtractRecord],
+    progress_label: str | None = None,
+) -> list[NewsTimelineDay]:
+    grouped: dict[str, list[tuple[NoteExtractRecord, EventRecord]]] = {}
+    for extract in extracts.values():
+        for event in extract.events:
+            if not event.linked_entities:
+                continue
+            grouped.setdefault(extract.date, []).append((extract, event))
+
+    if hasattr(store, "clear_stock_news_daily_timeline"):
+        store.clear_stock_news_daily_timeline()
+    updated_records: list[NewsTimelineDay] = []
+    total_days = len(grouped)
+    for index, date in enumerate(sorted(grouped.keys(), reverse=True), start=1):
+        if progress_label:
+            print(
+                f"{progress_label} materializing_stock_news_day={index}/{total_days} "
+                f"date={date}",
+                flush=True,
+            )
+        items = grouped[date]
+        events = [
+            NewsTimelineItem(
+                note_id=extract.note_id,
+                note_url=extract.note_url,
+                note_title=extract.note_title,
+                account_name=extract.account_name,
+                author_nickname=extract.author_nickname,
+                publish_time=extract.publish_time,
+                headline=event.headline,
+                event_summary=event.event_summary,
+                event_type=event.event_type,
+                event_nature=event.event_nature,
+                evidence=event.evidence,
+                linked_entities=list(event.linked_entities),
+                metadata=dict(event.metadata),
+            )
+            for extract, event in sorted(
+                items,
+                key=lambda item: (item[0].publish_time or "", item[0].note_id, item[1].sort_order),
+                reverse=True,
+            )
+        ]
+        record = NewsTimelineDay(
+            date=date,
+            event_count=len(events),
+            events=events,
+            content_hash=_hash_payload(
+                {
+                    "date": date,
+                    "events": [item.model_dump(mode="json") for item in events],
+                }
+            ),
+            updated_at=now_iso(),
+        )
+        if hasattr(store, "upsert_stock_news_day"):
+            store.upsert_stock_news_day(record)
+        updated_records.append(record)
+    return updated_records
+
+
 def _materialize_crypto_timelines(
     *,
     store: InsightStore,
@@ -1857,7 +2057,7 @@ def run_analysis_with_store(
         paths=paths,
         force=force_reanalysis,
         progress_label=progress_label,
-        commit_each=force_reanalysis,
+        commit_each=hasattr(store, "conn"),
         analysis_domain=safe_domain,
     )
     note_scope = {_note_key(note.platform, note.note_id) for note in notes}
@@ -1886,6 +2086,7 @@ def run_analysis_with_store(
     if force_reanalysis and hasattr(store, "conn"):
         store.conn.commit()
     stock_records: list[StockDayRecord] = []
+    stock_news_records: list[NewsTimelineDay] = []
     crypto_records: list[CryptoDayRecord] = []
     if safe_domain == "crypto":
         crypto_records = _materialize_crypto_timelines(
@@ -1895,6 +2096,11 @@ def run_analysis_with_store(
         )
     else:
         stock_records = _materialize_stock_timelines(
+            store=store,
+            extracts=extracts,
+            progress_label=progress_label,
+        )
+        stock_news_records = _materialize_stock_news_timelines(
             store=store,
             extracts=extracts,
             progress_label=progress_label,
@@ -1938,6 +2144,7 @@ def run_analysis_with_store(
         note_extracts=created_extracts,
         author_summaries=author_records,
         stock_views=stock_records,
+        stock_news=stock_news_records,
         theme_views=theme_records,
         crypto_views=crypto_records,
         errors=[*crawl_errors, *extract_errors, *author_errors],

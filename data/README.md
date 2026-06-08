@@ -14,6 +14,7 @@
 - `runtime_settings.example.json`: 调度时间示例
 - `security_aliases.json`: 股票别名映射，不进入 Git
 - `security_aliases.example.json`: 股票别名映射示例
+- `stock_blogger_scoring.example.json`: 股票博主观点验证评分示例配置，默认测试 `@labubu_trader`、`@hicagr`、`@xiaomustock`，A 股基准 fallback 链为 `000688` / `588000`
 
 ## runtime
 
@@ -24,3 +25,4 @@
 - `x/`: X 抓取调试数据
 - `xhs/`: 小红书原始抓取数据
 - `ai/`: AI 快照与物化产物
+- `stock_blogger_scoring/`: 股票博主观点验证评分离线运行结果

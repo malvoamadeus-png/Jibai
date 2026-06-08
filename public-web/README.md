@@ -14,9 +14,14 @@ Copy `.env.example` to `.env.local` and set:
 Run locally:
 
 ```bash
-npm install
-npm run dev
+..\install.cmd
+..\dev.cmd public-web run dev
 ```
+
+On Windows PowerShell, prefer `..\dev.cmd public-web ...` or `npm.cmd ...`
+instead of bare `npm ...`, because some machines block `npm.ps1` via execution
+policy. `..\install.cmd` also creates the repo-local Python virtualenv used by
+backend tooling and tests.
 
 ## Supabase setup
 
@@ -56,6 +61,10 @@ python backend/src/main.py public-worker
 ```
 
 Approving a new account creates an `initial_backfill` job in Supabase. The worker picks it up and writes content plus analysis back into the public tables.
+
+For the crypto domain, `/crypto/admin` includes a runtime switch stored in
+Supabase. Turning it off stops new crypto crawl/analysis work on the backend
+but does not hide the existing crypto pages or historical data.
 
 `/onchain/gmgn-labels` calls the Linux public API with the logged-in Supabase
 access token. User-pasted GMGN labels are parsed locally in the browser and are

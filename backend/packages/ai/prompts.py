@@ -5,7 +5,7 @@ import json
 from packages.common.models import NoteExtractRecord, RawNoteRecord
 
 
-NOTE_EXTRACT_REQUIRED_KEYS = ["summary_text", "viewpoints"]
+NOTE_EXTRACT_REQUIRED_KEYS = ["summary_text", "viewpoints", "events"]
 CRYPTO_NOTE_EXTRACT_REQUIRED_KEYS = ["summary_text", "viewpoints"]
 AUTHOR_SUMMARY_REQUIRED_KEYS = ["summary_text"]
 STOCK_NARRATIVE_REQUIRED_KEYS = [
@@ -36,10 +36,11 @@ def build_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
             "content": (
                 "你是一个中文投研观点抽取助手。"
                 "请只输出 JSON 对象，不要输出 markdown。"
-                "目标不是复述帖子内容，而是抽取可以落到投研面板里的观点条目。"
-                "JSON 顶层必须包含以下字段：summary_text, viewpoints。"
-                "summary_text 是一句简洁中文概括，说明这篇内容中有效股票观点的主判断；如果没有有效股票观点，写“未形成有效股票观点”。"
+                "目标不是复述帖子内容，而是拆出可以落到投研面板里的股票观点和新闻事件。"
+                "JSON 顶层必须包含以下字段：summary_text, viewpoints, events。"
+                "summary_text 是一句简洁中文概括；有有效股票观点时优先概括主判断；没有有效股票观点但有有效新闻事件时概括主要事件；两者都没有时写“未形成有效股票观点或新闻事件”。"
                 "viewpoints 是数组，每个元素代表一条独立股票观点；没有有效股票观点时必须返回空数组。"
+                "events 是数组，每个元素代表一条独立新闻事件；没有有效新闻事件时必须返回空数组。"
                 "每条观点必须包含字段："
                 "entity_type, entity_name, entity_code_or_name, stance, direction, signal_type, judgment_type, conviction, evidence_type, logic, evidence, time_horizon。"
                 "entity_type 只能是 stock；非股票、Theme、行业、板块、赛道、宏观、指数、市场风格、纯新闻和其他对象都忽略，不要输出。"
@@ -68,6 +69,19 @@ def build_note_extract_messages(note: RawNoteRecord) -> list[dict[str, str]]:
                 "logic 对 explicit_stance 只需简短说明作者明确表态；对 logic_based 必须写出“基于什么证据 -> 得出什么股票结论”的逻辑链。"
                 "evidence 必须写出能支撑该判断的原文依据，尽量贴近原文表达，但不要大段照抄。"
                 "同一对象如果在文中只有一个判断，就只输出一条，不要拆碎。"
+                "events 用于承载非作者观点的客观信息，例如新闻、事件、独家报道、公告、管理层表述、分析师预期、产能/订单/产品/政策/供应链更新、业绩事实、数据播报。"
+                "event 不代表作者本人立场，禁止把事件自动升级成观点。"
+                "每条 event 必须包含字段：headline, event_summary, event_type, event_nature, evidence, linked_entities。"
+                "headline 用一句中文短标题概括事件。"
+                "event_summary 用 1 到 2 句中文说明发生了什么，不写作者态度。"
+                "event_type 可使用 earnings_update, guidance_update, management_commentary, product_update, policy_update, supply_chain_update, profitability_outlook, analyst_report, exclusive_report, data_point, rumor, other。"
+                "event_nature 可使用 reported, announced, exclusive, quoted, expected, rumored, other。"
+                "linked_entities 是数组，每个元素必须包含 entity_type, entity_name, entity_code_or_name。"
+                "linked_entities.entity_type 只能是 stock 或 theme。"
+                "能明确挂到上市公司/证券主体的事件，entity_type 用 stock，并尽量写规范公司名和 ticker/股票代码。"
+                "行业、主题、赛道、产业链类客观事件可用 theme，但不要把宏观市场风格、指数或纯宽泛概念塞进 theme。"
+                "同一条事件可以关联多个实体；不要为了多个实体重复生成多条几乎相同的 event。"
+                "如果作者既在报道事件，又明确表达自己的买卖方向，应同时输出 event 和 viewpoint。"
             ),
         },
         {

@@ -1,7 +1,7 @@
 {
   "provider": "openai-compatible",
   "model": "gpt-5.4",
-  "fallback_models": ["gpt-4.1"],
+  "fallback_models": ["gpt-5.5"],
   "reasoning_effort": "medium",
   "base_url": "https://api.openai.com/v1",
   "api_key": "YOUR_API_KEY_HERE"

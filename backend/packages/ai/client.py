@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,6 +12,8 @@ from litellm import completion
 from packages.common.settings import AppSettings
 
 API_TIMEOUT = 300
+DEFAULT_RETRY_ATTEMPTS = 2
+DEFAULT_RETRY_DELAY_SECONDS = 1.5
 
 
 def _api_timeout_seconds() -> int:
@@ -21,6 +24,31 @@ def _api_timeout_seconds() -> int:
         return max(15, int(raw))
     except ValueError:
         return API_TIMEOUT
+
+
+def _retry_attempts_per_model() -> int:
+    raw = os.getenv("AI_MODEL_RETRY_ATTEMPTS")
+    if not raw:
+        return DEFAULT_RETRY_ATTEMPTS
+    try:
+        return max(1, min(5, int(raw)))
+    except ValueError:
+        return DEFAULT_RETRY_ATTEMPTS
+
+
+def _retry_delay_seconds() -> float:
+    raw = os.getenv("AI_MODEL_RETRY_DELAY_SECONDS")
+    if not raw:
+        return DEFAULT_RETRY_DELAY_SECONDS
+    try:
+        return max(0.0, min(30.0, float(raw)))
+    except ValueError:
+        return DEFAULT_RETRY_DELAY_SECONDS
+
+
+def _skip_models() -> set[str]:
+    raw = os.getenv("AI_SKIP_MODELS") or ""
+    return {item.strip() for item in raw.split(",") if item.strip()}
 
 
 @dataclass(slots=True)
@@ -40,11 +68,12 @@ class LLMJsonClient:
 
     def _candidate_models(self) -> list[str]:
         values = [self.settings.model, *self.settings.fallback_models]
+        skipped = _skip_models()
         deduped: list[str] = []
         for value in values:
-            if value and value not in deduped:
+            if value and value not in deduped and value not in skipped:
                 deduped.append(value)
-        return deduped or [self.settings.model]
+        return deduped or [value for value in values if value] or [self.settings.model]
 
     def _to_litellm_model(self, model_name: str) -> str:
         if "/" in model_name:
@@ -82,68 +111,98 @@ class LLMJsonClient:
         max_tokens: int,
     ) -> tuple[str, str | None, dict[str, int], str]:
         candidate_models = self._candidate_models()
-        response_payload: dict[str, Any] | None = None
-        selected_model = candidate_models[0]
+        attempts_per_model = _retry_attempts_per_model()
+        retry_delay = _retry_delay_seconds()
+        last_status: int | None = None
+        last_error = "unknown error"
 
-        for index, model_name in enumerate(candidate_models, start=1):
-            try:
-                response = completion(
-                    **self._request_kwargs(
-                        model_name,
-                        messages,
-                        max_tokens=max_tokens,
-                        include_reasoning_effort=True,
-                    )
-                )
-            except Exception as exc:
-                status_code, err_text = self._extract_error_details(exc)
-                if (
-                    index < len(candidate_models)
-                    and self._is_model_unavailable_error(status_code, err_text)
-                ):
-                    continue
-
-                if self.settings.reasoning_effort and self._is_reasoning_unsupported_error(
-                    status_code, err_text
-                ):
-                    try:
-                        response = completion(
-                            **self._request_kwargs(
-                                model_name,
-                                messages,
-                                max_tokens=max_tokens,
-                                include_reasoning_effort=False,
-                            )
+        for model_name in candidate_models:
+            for attempt in range(1, attempts_per_model + 1):
+                try:
+                    response = completion(
+                        **self._request_kwargs(
+                            model_name,
+                            messages,
+                            max_tokens=max_tokens,
+                            include_reasoning_effort=True,
                         )
-                    except Exception as retry_exc:
-                        retry_status, retry_text = self._extract_error_details(retry_exc)
-                        if (
-                            index < len(candidate_models)
-                            and self._is_model_unavailable_error(retry_status, retry_text)
-                        ):
+                    )
+                except Exception as exc:
+                    status_code, err_text = self._extract_error_details(exc)
+                    if self.settings.reasoning_effort and self._is_reasoning_unsupported_error(
+                        status_code, err_text
+                    ):
+                        try:
+                            response = completion(
+                                **self._request_kwargs(
+                                    model_name,
+                                    messages,
+                                    max_tokens=max_tokens,
+                                    include_reasoning_effort=False,
+                                )
+                            )
+                        except Exception as retry_exc:
+                            status_code, err_text = self._extract_error_details(retry_exc)
+                        else:
+                            payload = self._response_to_payload(response)
+                            text = self._extract_text(payload)
+                            if text:
+                                selected_model = str(payload.get("model") or model_name).strip() or model_name
+                                request_id = str(payload.get("id") or "").strip() or None
+                                usage = self._extract_usage(payload)
+                                return text, request_id, usage, selected_model
+                            status_code, err_text = None, "AI response returned empty output"
+
+                    last_status, last_error = status_code, err_text
+                    if self._is_model_unavailable_error(status_code, err_text):
+                        break
+                    if self._is_retryable_error(status_code, err_text):
+                        if attempt < attempts_per_model:
+                            self._sleep_before_retry(retry_delay, attempt)
                             continue
-                        raise RuntimeError(
-                            f"AI API call failed ({retry_status or 'error'}): {retry_text}"
-                        ) from retry_exc
-                else:
+                        break
                     raise RuntimeError(
                         f"AI API call failed ({status_code or 'error'}): {err_text}"
                     ) from exc
 
-            response_payload = self._response_to_payload(response)
-            selected_model = str(response_payload.get("model") or model_name).strip() or model_name
-            break
+                payload = self._response_to_payload(response)
+                text = self._extract_text(payload)
+                if text:
+                    selected_model = str(payload.get("model") or model_name).strip() or model_name
+                    request_id = str(payload.get("id") or "").strip() or None
+                    usage = self._extract_usage(payload)
+                    return text, request_id, usage, selected_model
 
-        if response_payload is None:
-            raise RuntimeError("AI API call failed: no successful response")
+                last_status, last_error = None, "AI response returned empty output"
+                if attempt < attempts_per_model:
+                    self._sleep_before_retry(retry_delay, attempt)
+                    continue
+                break
 
-        text = self._extract_text(response_payload)
-        if not text:
-            raise RuntimeError("AI response returned empty output")
+        raise RuntimeError(f"AI API call failed ({last_status or 'error'}): {last_error}")
 
-        request_id = str(response_payload.get("id") or "").strip() or None
-        usage = self._extract_usage(response_payload)
-        return text, request_id, usage, selected_model
+    @staticmethod
+    def _sleep_before_retry(base_delay: float, attempt: int) -> None:
+        if base_delay <= 0:
+            return
+        time.sleep(base_delay * attempt)
+
+    @staticmethod
+    def _is_retryable_error(status_code: int | None, err_text: str) -> bool:
+        if status_code in {408, 409, 425, 429, 500, 502, 503, 504}:
+            return True
+        msg = (err_text or "").lower()
+        markers = (
+            "empty or invalid response",
+            "empty output",
+            "server error",
+            "internalservererror",
+            "internal server error",
+            "timeout",
+            "temporarily unavailable",
+            "rate limit",
+        )
+        return any(marker in msg for marker in markers)
 
     @staticmethod
     def _extract_error_details(exc: Exception) -> tuple[int | None, str]:

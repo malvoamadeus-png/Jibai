@@ -35,6 +35,7 @@
 | 我的订阅 | `/feed` | 按账号查看订阅作者的观点时间线。 |
 | 按股票（详情） | `/stocks` | 按单只股票查看 K 线、日线观点标记和作者观点。 |
 | 按股票（一览表） | `/stocks/overview` | 查看股票 x 作者观点矩阵，支持按周或按日切换，并自动隐藏当前窗口里完全空白的行列。 |
+| 新闻 | `/stocks/news` | 按日期查看股票与主题相关的客观新闻、事件、公告、引述和数据播报。 |
 | 叙事简报 | `/stocks/narrative` | 展示全站可见的主流叙事、新风向和少见负面声音。 |
 | 顶部风险 | `/risk` | 展示美股顶部风险状态，不给个股买卖指令。 |
 | 管理 | `/admin` | 管理员处理账号请求和任务，只对管理员邮箱显示。 |
@@ -80,11 +81,12 @@ AI 配置优先级：
 单条内容抽取使用 `build_note_extract_messages`，核心口径是：
 
 - 输出必须是 JSON 对象，不输出 markdown。
-- 顶层字段必须包含 `summary_text` 和 `viewpoints`。
-- `summary_text` 是一句中文概括，说明该内容里的有效股票观点；没有有效股票观点时写“未形成有效股票观点”。
+- 顶层字段必须包含 `summary_text`、`viewpoints` 和 `events`。
+- `summary_text` 是一句中文概括；有有效股票观点时优先概括观点，没有有效观点但有新闻事件时概括主要事件。
 - `viewpoints` 是独立股票观点数组；没有有效股票观点时返回空数组。
+- `events` 是独立新闻事件数组；没有有效新闻事件时返回空数组。
 - `entity_type` 当前只允许 `stock`。
-- 非股票、Theme、行业、板块、赛道、宏观、指数、市场风格、纯新闻和其他对象都忽略。
+- `viewpoints` 中非股票、Theme、行业、板块、赛道、宏观、指数、市场风格、纯新闻和其他对象都忽略。
 - 股票字段必须规范化：`entity_name` 写公司或证券名称，`entity_code_or_name` 写 ticker 或股票代码。
 - 美股 ticker 使用普通代码，例如 `NVDA`、`AMD`、`INTC`；A 股和台股可以保留市场后缀或原始代码。
 
@@ -108,6 +110,22 @@ AI 配置优先级：
 - 供应链、产品线、业务部门只有在作者明确转成上市公司股票结论时才输出。
 - 同一对象只有一个判断时，只输出一条，不拆碎。
 
+新闻事件 `events` 的抽取口径：
+
+- 用于承载非作者观点的客观信息，例如新闻、事件、独家报道、公告、管理层表述、分析师预期、产能/订单/产品/政策/供应链更新、业绩事实和数据播报。
+- 不允许把事件自动升级成观点。
+- 一条事件可以同时关联多个对象，当前对象只允许：
+  - `stock`
+  - `theme`
+- 事件对象至少包含：
+  - `headline`
+  - `event_summary`
+  - `event_type`
+  - `event_nature`
+  - `evidence`
+  - `linked_entities`
+- 如果作者既在报道事件，又明确表达自己的买卖方向，应同时输出 `event` 和 `viewpoint`。
+
 日总结使用 `build_author_day_summary_messages`，基于同一作者某一天的多篇结构化结果生成一句时间线标题，突出当天最核心的股票方向。
 
 ## 分析流程
@@ -119,10 +137,12 @@ AI 配置优先级：
 5. 解析结构化观点为 `ViewpointRecord`。
 6. 用 `security_aliases.json` 归一化股票名称、ticker 和市场。
 7. 写入 `content_analyses` 和 `content_viewpoints`。
-8. 按作者、日期聚合为 `author_daily_summaries`。
-9. 按股票、日期聚合为 `security_daily_views`。
-10. 轻量刷新相关股票近期行情，写入 `security_daily_prices`。
-11. 生成本地 snapshot，写入 `data/runtime/ai/snapshots/`。
+8. 同步写入 `content_events` 和 `content_event_entities`。
+9. 按作者、日期聚合为 `author_daily_summaries`。
+10. 按股票、日期聚合为 `security_daily_views`。
+11. 按日期聚合为 `stock_news_daily_timeline`。
+12. 轻量刷新相关股票近期行情，写入 `security_daily_prices`。
+13. 生成本地 snapshot，写入 `data/runtime/ai/snapshots/`。
 
 公开 Supabase worker 的分析重建窗口默认是 30 个上海自然日，和初始回填的 30 天内容窗口一致。定时抓取可以只抓较少新帖，但清空并重建分析表时不能只用 1 到 3 天窗口，否则作者时间线会被重建成只剩最近几天。
 
@@ -144,14 +164,18 @@ AI 配置优先级：
 | --- | --- |
 | `content_analyses` | 单条内容的 AI 摘要和原始响应。 |
 | `content_viewpoints` | 单条内容拆出的结构化观点。 |
+| `content_events` | 单条内容拆出的结构化新闻事件。 |
+| `content_event_entities` | 事件和股票/主题实体的关联。 |
 | `security_entities` | 股票实体、ticker、市场和展示名。 |
 | `security_mentions` | 兼容旧结构的股票提及记录。 |
 | `author_daily_summaries` | 作者每天的观点摘要。 |
 | `security_daily_views` | 股票每天被哪些作者如何看待。 |
+| `stock_news_daily_timeline` | 股票板块新闻按日期聚合后的时间线。 |
 | `security_daily_prices` | 股票日线价格缓存，公开 K 线按 180 天窗口读取。 |
 | `analysis_runs` | 每次分析运行记录。 |
 
 当前股票聚合是 stock-signal-only 口径。`theme_daily_views` 不承载公开产品数据。
+新闻页是平行通道，不进入作者时间线、观点矩阵、点金榜、叙事简报和顶部风险。
 
 ## 前端数据口径
 

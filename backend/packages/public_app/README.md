@@ -48,6 +48,9 @@ PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS=30
 PUBLIC_WORKER_DOMAINS=stock,crypto
 PUBLIC_WORKER_MARKET_DATA_DELAY_SECONDS=0.25
 PUBLIC_WORKER_CRYPTO_ASSET_BRIEF_TIME=22:50
+PUBLIC_STOCK_BLOGGER_SCORE_ENABLED=false
+PUBLIC_WORKER_STOCK_BLOGGER_SCORE_TIME=23:10
+PUBLIC_STOCK_BLOGGER_SCORE_ACCOUNTS=labubu_trader,hicagr,xiaomustock
 PUBLIC_ONCHAIN_ENABLED=true
 PUBLIC_ONCHAIN_FETCH_TIMES=04:20,10:20,16:20,22:20
 PUBLIC_ONCHAIN_MIN_VALUE_USD=200
@@ -57,6 +60,9 @@ AI_API_KEY='your-openai-compatible-api-key'
 AI_BASE_URL='https://your-openai-compatible-endpoint/v1'
 AI_MODEL='your-analysis-model'
 AI_FALLBACK_MODELS='optional-fallback-model-1,optional-fallback-model-2'
+AI_SKIP_MODELS='optional,comma-separated,temporary-skip-list'
+AI_MODEL_RETRY_ATTEMPTS=2
+AI_MODEL_RETRY_DELAY_SECONDS=1.5
 
 OKX_API_KEY='your-okx-web3-api-key'
 OKX_SECRET_KEY='your-okx-web3-secret-key'
@@ -77,6 +83,14 @@ worker can still crawl X content and write daily fallback summaries, but it
 cannot generate structured stock viewpoints, crypto signals, or stock/crypto
 pages from new content. `public-worker-doctor` prints `api_key_configured=yes/no`
 so this is visible during diagnosis.
+
+For OpenAI-compatible relays that occasionally return empty or invalid streamed
+responses, configure `AI_FALLBACK_MODELS` with a stronger backup chain such as
+`gpt-5.5`. The AI client retries each model a small number of times for
+transient 5xx, timeout, or empty-output failures before falling through to the
+next fallback model. For incident recovery, `AI_SKIP_MODELS` can temporarily
+remove a flaky primary model from the candidate list without editing code or
+permanently changing the normal model order.
 
 The X crawler discovers user timelines through FxTwitter's statuses endpoint
 first. Nitter is now only a fallback for cases where that API is unavailable.
@@ -107,6 +121,10 @@ analysis tables are cleared and rebuilt, the public timelines should be
 rebuilt from this 30-day window rather than only the latest scheduled crawl
 window.
 
+The worker now commits raw `content_items` immediately after crawling and before
+starting AI analysis. This prevents a later per-note AI rollback from erasing
+newly fetched posts in the same scheduled run.
+
 Scheduled enqueue uses `PUBLIC_WORKER_DOMAINS`, defaulting to `stock,crypto`.
 Each queued job carries `crawl_jobs.domain`. Stock and crypto account approval,
 subscription, analysis output, author timelines, and admin lists are isolated
@@ -135,6 +153,19 @@ anonymous and logged-in users. The brief is generated from all approved stock
 domain accounts, not from the current user's subscriptions. The long-running
 worker runs this once per day at `PUBLIC_WORKER_STOCK_NARRATIVE_TIME`, default
 `22:40` Asia/Shanghai, after the last default scheduled X crawl time.
+
+`/stocks/gold` is currently wired as a placeholder and does not request
+`get_stock_blogger_gold_rankings` unless
+`NEXT_PUBLIC_STOCK_BLOGGER_GOLD_FETCH_ENABLED=true` is set for `public-web`.
+The backend scoring job is also disabled by default:
+`PUBLIC_STOCK_BLOGGER_SCORE_ENABLED=false`. When enabled, the first version
+scores the comma-separated `PUBLIC_STOCK_BLOGGER_SCORE_ACCOUNTS`, defaulting to
+`labubu_trader,hicagr,xiaomustock`; scheduled stock crawls include those
+accounts even when no user subscribes to them, and the long-running worker
+rebuilds the snapshot once per day at `PUBLIC_WORKER_STOCK_BLOGGER_SCORE_TIME`,
+default `23:10` Asia/Shanghai. The manual
+`public-ensure-stock-blogger-accounts` command idempotently creates or
+re-approves the default accounts for the stock domain.
 
 Public crypto browsing has three RPC-backed surfaces. `/crypto/feed` uses the
 domain-aware author RPC and suppresses the author daily summary sentence; cards
@@ -183,6 +214,8 @@ python backend/src/main.py normalize-crypto-assets --days 30
 python backend/src/main.py public-refresh-market-data --query AMD --limit 1
 python backend/src/main.py public-generate-stock-narrative
 python backend/src/main.py public-generate-stock-narrative --date 2026-05-18 --force
+python backend/src/main.py public-ensure-stock-blogger-accounts
+python backend/src/main.py public-rebuild-stock-blogger-scores --days 90
 python backend/src/main.py public-generate-crypto-asset-briefs
 python backend/src/main.py public-generate-crypto-asset-briefs --asset-key orbiter --force
 python backend/src/main.py public-import-sqlite
@@ -199,8 +232,9 @@ behind Nginx or another TLS reverse proxy, and point
 `NEXT_PUBLIC_GMGN_LABEL_API_URL` in `public-web` at that public HTTPS origin.
 
 `public-reanalyze-recent --days 30 --clear-analysis` keeps raw `content_items`,
-clears analysis/materialized outputs, and force-runs the current stock-only
-signal extraction over the latest thirty Asia/Shanghai natural days.
+clears only the selected recent notes' analysis rows, and force-runs the
+current stock-only signal extraction over the latest thirty Asia/Shanghai
+natural days.
 
 `public-reanalyze-recent --domain crypto --days 30 --clear-analysis` does the
 same for crypto analysis only. It does not clear or rewrite stock analysis

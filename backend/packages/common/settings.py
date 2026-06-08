@@ -12,7 +12,7 @@ from .paths import get_paths
 AIProvider = Literal["openai-compatible", "anthropic"]
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL = "gpt-5.4"
-DEFAULT_OPENAI_FALLBACK_MODELS = ["gpt-4.1"]
+DEFAULT_OPENAI_FALLBACK_MODELS = ["gpt-5.5"]
 
 
 class AppSettings(BaseModel):

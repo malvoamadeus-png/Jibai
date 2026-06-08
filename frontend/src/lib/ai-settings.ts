@@ -9,7 +9,7 @@ import { getServerEnv } from "@/lib/server-env";
 import type { AiProvider, AiSavePayload, AiSettings } from "@/lib/types";
 
 const DEFAULT_OPENAI_MODEL = "gpt-5.4";
-const DEFAULT_OPENAI_FALLBACK_MODELS = ["gpt-4.1"];
+const DEFAULT_OPENAI_FALLBACK_MODELS = ["gpt-5.5"];
 
 const aiProviderSchema = z.enum(["openai-compatible", "anthropic"]);
 

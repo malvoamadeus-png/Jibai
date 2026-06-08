@@ -181,6 +181,12 @@ For the X account subscription RPC used by public-web subscription buttons, use:
 sql_path = Path("supabase/migrations/027_x_account_subscription_rpc.sql")
 ```
 
+For the stock news/event parallel channel, use:
+
+```python
+sql_path = Path("supabase/migrations/029_stock_news_timeline.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally
@@ -191,6 +197,10 @@ The public reanalysis command now runs locally as long as `.env` has
 For the current 30-day public stock history window:
 
 ```bash
+AI_FALLBACK_MODELS=gpt-5.5 \
+AI_SKIP_MODELS=gpt-5.4 \
+AI_MODEL_RETRY_ATTEMPTS=2 \
+AI_MODEL_RETRY_DELAY_SECONDS=1.5 \
 AI_API_TIMEOUT_SECONDS=90 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
 ```
@@ -205,9 +215,10 @@ AI_API_TIMEOUT_SECONDS=90 \
 What it does:
 
 - keeps raw `content_items`
-- clears analysis/materialized outputs
+- clears only the selected recent notes' analysis rows before rerunning them
 - reanalyzes recent X content using current prompt and parser logic
 - rebuilds author daily summaries and stock or crypto daily views for the selected domain
+- for stock, also rebuilds `content_events`, `content_event_entities`, and `stock_news_daily_timeline`
 - for stock, refreshes lightweight stock market data and leaves `theme_daily_views` empty for the stock-signal-only product
 - for crypto, writes no market data or K-line cache
 
@@ -215,9 +226,22 @@ If only a few notes failed or timed out, do not clear again. Rebuild timelines
 and fill missing analyses:
 
 ```bash
+AI_FALLBACK_MODELS=gpt-5.5 \
+AI_SKIP_MODELS=gpt-5.4 \
+AI_MODEL_RETRY_ATTEMPTS=2 \
+AI_MODEL_RETRY_DELAY_SECONDS=1.5 \
 AI_API_TIMEOUT_SECONDS=180 \
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-rebuild-timelines
 ```
+
+For relays that intermittently return empty streamed chunks or LiteLLM 500
+errors, prefer setting `AI_FALLBACK_MODELS=gpt-5.5` before reanalysis.
+The backend retries each configured model for transient 5xx, timeout, or
+empty-output responses before moving on to the next fallback. If one primary
+model is especially unstable during an incident, add `AI_SKIP_MODELS=gpt-5.4`
+or another comma-separated skip list for that recovery run. Raw crawled
+`content_items` are committed before AI analysis begins, so a later per-note AI
+rollback should no longer erase newly fetched posts from that run.
 
 Crypto timeline rebuild and alias normalization:
 
@@ -244,6 +268,23 @@ AI_API_TIMEOUT_SECONDS=180 \
 
 Use `--date YYYY-MM-DD --force` only when intentionally replacing an existing
 successful brief for that date.
+
+Apply `supabase/migrations/028_stock_blogger_gold_rankings.sql` before enabling
+the public stock blogger gold rankings. The feature is currently disabled by
+default: `public-web` does not request the rankings unless
+`NEXT_PUBLIC_STOCK_BLOGGER_GOLD_FETCH_ENABLED=true`, and the public worker does
+not schedule score rebuilds unless `PUBLIC_STOCK_BLOGGER_SCORE_ENABLED=true`.
+After applying the migration, seed the first scoring accounts and build the
+first snapshot only when intentionally preparing the feature:
+
+```bash
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-ensure-stock-blogger-accounts
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-rebuild-stock-blogger-scores --days 90
+```
+
+Verify `public.get_stock_blogger_gold_rankings()` with an authenticated session.
+The payload should include the latest successful run and must not include
+legacy `hit`, `hit_rate`, `confidence_factor`, or `raw_overall_score` fields.
 
 Generate or refresh crypto asset briefs after the crypto migration or resolver
 change:

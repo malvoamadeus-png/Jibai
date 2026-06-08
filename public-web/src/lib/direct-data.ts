@@ -43,6 +43,10 @@ import type {
   RequestListItem,
   StockKlineCandle,
   StockKlineData,
+  StockNewsItem,
+  StockNewsLinkedEntity,
+  StockNewsTimelineDay,
+  StockNewsTimelineResponse,
   StockKlineMarker,
   StockBloggerAuthorScore,
   StockBloggerGoldData,
@@ -219,6 +223,46 @@ function normalizeStockMatrixCell(rawValue: unknown): StockMatrixCell {
     accountName,
     authorNickname: asString(raw.author_nickname ?? raw.authorNickname, accountName),
     views: asArray(raw.views).map(normalizeStockMatrixView),
+  };
+}
+
+function normalizeStockNewsLinkedEntity(rawValue: unknown): StockNewsLinkedEntity {
+  const raw = asRecord(rawValue);
+  return {
+    entityType: asString(raw.entity_type ?? raw.entityType, "theme") as StockNewsLinkedEntity["entityType"],
+    entityKey: asString(raw.entity_key ?? raw.entityKey),
+    entityName: asString(raw.entity_name ?? raw.entityName),
+    entityCodeOrName: asNullableString(raw.entity_code_or_name ?? raw.entityCodeOrName),
+    metadata: asRecord(raw.metadata),
+  };
+}
+
+function normalizeStockNewsItem(rawValue: unknown): StockNewsItem {
+  const raw = asRecord(rawValue);
+  return {
+    noteId: asString(raw.note_id ?? raw.noteId),
+    noteUrl: asString(raw.note_url ?? raw.noteUrl),
+    noteTitle: asString(raw.note_title ?? raw.noteTitle),
+    accountName: asString(raw.account_name ?? raw.accountName),
+    authorNickname: asString(raw.author_nickname ?? raw.authorNickname),
+    publishTime: asNullableString(raw.publish_time ?? raw.publishTime),
+    headline: asString(raw.headline),
+    eventSummary: asString(raw.event_summary ?? raw.eventSummary),
+    eventType: asString(raw.event_type ?? raw.eventType, "other"),
+    eventNature: asString(raw.event_nature ?? raw.eventNature, "reported"),
+    evidence: asString(raw.evidence),
+    linkedEntities: asArray(raw.linked_entities ?? raw.linkedEntities).map(normalizeStockNewsLinkedEntity),
+    metadata: asRecord(raw.metadata),
+  };
+}
+
+function normalizeStockNewsDay(rawValue: unknown): StockNewsTimelineDay {
+  const raw = asRecord(rawValue);
+  return {
+    date: asString(raw.date),
+    eventCount: asNumber(raw.event_count ?? raw.eventCount),
+    events: asArray(raw.events).map(normalizeStockNewsItem),
+    updatedAt: asNullableString(raw.updated_at ?? raw.updatedAt) ?? "",
   };
 }
 
@@ -857,6 +901,22 @@ export async function getVisibleStockMatrix(
     authors: asArray(payload.authors).map(normalizeStockMatrixAuthor),
     stocks: asArray(payload.stocks).map(normalizeStockMatrixStock),
     cells: asArray(payload.cells).map(normalizeStockMatrixCell),
+  };
+}
+
+export async function getVisibleStockNewsTimeline(
+  supabase: SupabaseClient,
+  profile: UserProfile | null,
+  page = 1,
+): Promise<StockNewsTimelineResponse> {
+  const { data, error } = await supabase.rpc("get_visible_stock_news_timeline", {
+    page_arg: page,
+    page_size_arg: profile ? 20 : 3,
+  });
+  assertNoError(error);
+  const payload = asRecord(data);
+  return {
+    timeline: normalizePaged(payload.timeline, normalizeStockNewsDay),
   };
 }
 

@@ -377,6 +377,41 @@ export type StockTimelineDay = {
   updatedAt: string;
 };
 
+export type StockNewsLinkedEntity = {
+  entityType: "stock" | "theme";
+  entityKey: string;
+  entityName: string;
+  entityCodeOrName: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type StockNewsItem = {
+  noteId: string;
+  noteUrl: string;
+  noteTitle: string;
+  accountName: string;
+  authorNickname: string;
+  publishTime: string | null;
+  headline: string;
+  eventSummary: string;
+  eventType: string;
+  eventNature: string;
+  evidence: string;
+  linkedEntities: StockNewsLinkedEntity[];
+  metadata: Record<string, unknown>;
+};
+
+export type StockNewsTimelineDay = {
+  date: string;
+  eventCount: number;
+  events: StockNewsItem[];
+  updatedAt: string;
+};
+
+export type StockNewsTimelineResponse = {
+  timeline: PagedResult<StockNewsTimelineDay>;
+};
+
 export type EntityDetailData = {
   key: string;
   displayName: string;

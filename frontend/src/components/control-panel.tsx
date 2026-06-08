@@ -863,7 +863,7 @@ export function ControlPanel({ initialData }: { initialData: ControlPanelData })
             >
               <Input
                 value={formatModelList(data.ai.config.fallbackModels)}
-                placeholder="gpt-4.1, gpt-4o-mini"
+                placeholder="gpt-5.5"
                 onChange={(event) =>
                   setAiConfig((current) => ({
                     ...current,

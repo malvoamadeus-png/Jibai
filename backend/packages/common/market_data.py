@@ -11,6 +11,10 @@ import requests
 A_SHARE_MARKETS = {"SSE", "SZSE", "BJSE"}
 US_MARKETS = {"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS", "IEX", "OTC", "US"}
 YAHOO_SUFFIX_BY_MARKET = {
+    "HK": ".HK",
+    "HKEX": ".HK",
+    "SEHK": ".HK",
+    "HKG": ".HK",
     "KRX": ".KS",
     "KOSDAQ": ".KQ",
     "LSE": ".L",
@@ -114,6 +118,17 @@ def _to_yahoo_us_symbol(ticker: str) -> str:
     return ticker.replace(".", "-")
 
 
+def _to_yahoo_a_share_symbol(ticker: str, market: str) -> str | None:
+    normalized_market = _normalize_market(market)
+    if normalized_market == "SSE":
+        return f"{ticker}.SS"
+    if normalized_market == "SZSE":
+        return f"{ticker}.SZ"
+    if normalized_market == "BJSE":
+        return f"{ticker}.BJ"
+    return None
+
+
 def build_market_data_target(
     *,
     ticker: str | None,
@@ -160,6 +175,14 @@ def build_market_data_target(
             "symbol": f"{normalized_ticker}{suffix}",
             "ticker": normalized_ticker,
             "market": normalized_market,
+        }
+
+    if _PLAIN_US_TICKER_RE.fullmatch(normalized_ticker):
+        return {
+            "provider": "yahoo",
+            "symbol": _to_yahoo_us_symbol(normalized_ticker),
+            "ticker": normalized_ticker,
+            "market": "US",
         }
 
     return None
@@ -429,15 +452,51 @@ def fetch_security_daily(
         }
 
     if target["provider"] == "eastmoney":
-        payload = fetch_eastmoney_daily(
-            ticker=target["ticker"],
-            market=target["market"],
-            days=days,
-        )
+        yahoo_symbol = _to_yahoo_a_share_symbol(target["ticker"], target["market"])
+        eastmoney_error: Exception | None = None
+        try:
+            payload = fetch_eastmoney_daily(
+                ticker=target["ticker"],
+                market=target["market"],
+                days=days,
+            )
+            if payload.get("candles"):
+                return {
+                    **payload,
+                    "sourceLabel": "EastMoney",
+                    "sourceSymbol": f"{target['market']}:{target['ticker']}",
+                }
+        except Exception as exc:
+            eastmoney_error = exc
+
+        if yahoo_symbol:
+            try:
+                yahoo_payload = fetch_yahoo_daily(symbol=yahoo_symbol, days=days)
+                if yahoo_payload.get("candles"):
+                    message = yahoo_payload.get("message")
+                    if eastmoney_error is not None:
+                        message = f"EastMoney failed, used Yahoo Finance fallback: {eastmoney_error}"
+                    return {
+                        **yahoo_payload,
+                        "sourceLabel": "Yahoo Finance",
+                        "sourceSymbol": yahoo_symbol,
+                        "message": message,
+                    }
+            except Exception as exc:
+                if eastmoney_error is not None:
+                    return {
+                        "sourceLabel": "EastMoney / Yahoo Finance",
+                        "sourceSymbol": f"{target['market']}:{target['ticker']} / {yahoo_symbol}",
+                        "message": f"EastMoney 和 Yahoo Finance 都没有返回可用日线：{eastmoney_error}; {exc}",
+                        "candles": [],
+                    }
+                raise
+
         return {
-            **payload,
             "sourceLabel": "EastMoney",
             "sourceSymbol": f"{target['market']}:{target['ticker']}",
+            "message": str(eastmoney_error) if eastmoney_error is not None else "EastMoney did not return daily candles for this symbol.",
+            "candles": [],
         }
 
     yahoo_error: Exception | None = None

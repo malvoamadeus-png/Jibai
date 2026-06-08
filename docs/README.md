@@ -6,6 +6,7 @@
 
 - [X 账号内容抓取](x-account-capture.md)
 - [股票观点分析方案](stock-viewpoint-analysis.md)
+- [股票博主观点验证评分方案](stock-blogger-scoring.md)
 - [Crypto 观点分析方案](crypto-viewpoint-analysis.md)
 - [链上埋伏分析方案](onchain-ambush-analysis.md)
 - [账号内容观点分析](account-viewpoint-analysis.md)

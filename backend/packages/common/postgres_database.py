@@ -17,7 +17,10 @@ from .models import (
     CryptoDayRecord,
     CryptoEntityIdentity,
     CrawlAccountResult,
+    EventLinkedEntity,
+    EventRecord,
     MarketTopRiskSnapshot,
+    NewsTimelineDay,
     NoteExtractRecord,
     RawNoteRecord,
     StockDayRecord,
@@ -292,11 +295,14 @@ class PostgresInsightStore:
             sql += " AND c.platform = %s"
             params.append(platform)
         rows = self.conn.execute(sql, params).fetchall()
-        result: dict[str, NoteExtractRecord] = {}
-        for row in rows:
+        content_ids = [str(row["content_id"]) for row in rows]
+        viewpoints_by_content_id: dict[str, list[dict[str, Any]]] = {}
+        events_by_content_id: dict[str, list[EventRecord]] = {}
+        if content_ids:
             viewpoint_rows = self.conn.execute(
                 """
                 SELECT
+                  content_id,
                   entity_type,
                   entity_key,
                   entity_name,
@@ -317,13 +323,78 @@ class PostgresInsightStore:
                   COALESCE(metadata_json ->> 'normalized_status', 'canonical') AS normalized_status,
                   COALESCE(metadata_json ->> 'source_signal_level', 'strong') AS source_signal_level
                 FROM content_viewpoints
-                WHERE content_id = %s
-                  AND analysis_domain = %s
-                ORDER BY sort_order ASC, id ASC
+                WHERE analysis_domain = %s
+                  AND content_id = ANY(%s)
+                ORDER BY content_id ASC, sort_order ASC, id ASC
                 """,
-                (row["content_id"], safe_domain),
+                (safe_domain, content_ids),
             ).fetchall()
+            for item in viewpoint_rows:
+                payload = dict(item)
+                viewpoints_by_content_id.setdefault(str(payload["content_id"]), []).append(payload)
+            event_rows = self.conn.execute(
+                """
+                SELECT
+                  ce.id,
+                  ce.content_id,
+                  ce.headline,
+                  ce.event_summary,
+                  ce.event_type,
+                  ce.event_nature,
+                  ce.evidence,
+                  ce.sort_order,
+                  ce.metadata_json
+                FROM content_events ce
+                WHERE ce.analysis_domain = %s
+                  AND ce.content_id = ANY(%s)
+                ORDER BY ce.content_id ASC, ce.sort_order ASC, ce.id ASC
+                """,
+                (safe_domain, content_ids),
+            ).fetchall()
+            event_ids = [str(row["id"]) for row in event_rows]
+            linked_by_event_id: dict[str, list[EventLinkedEntity]] = {}
+            if event_ids:
+                linked_rows = self.conn.execute(
+                    """
+                    SELECT
+                      event_id,
+                      entity_type,
+                      entity_key,
+                      entity_name,
+                      entity_code_or_name,
+                      metadata_json
+                    FROM content_event_entities
+                    WHERE event_id = ANY(%s)
+                    ORDER BY event_id ASC, entity_type ASC, entity_key ASC, id ASC
+                    """,
+                    (event_ids,),
+                ).fetchall()
+                for item in linked_rows:
+                    linked_by_event_id.setdefault(str(item["event_id"]), []).append(
+                        EventLinkedEntity(
+                            entity_type=str(item["entity_type"]),  # type: ignore[arg-type]
+                            entity_key=str(item["entity_key"] or ""),
+                            entity_name=str(item["entity_name"] or ""),
+                            entity_code_or_name=str(item["entity_code_or_name"]).strip() if item["entity_code_or_name"] else None,
+                            metadata=item.get("metadata_json") or {},
+                        )
+                    )
+            for item in event_rows:
+                event = EventRecord(
+                    headline=str(item["headline"] or ""),
+                    event_summary=str(item["event_summary"] or ""),
+                    event_type=str(item["event_type"] or "other"),
+                    event_nature=str(item["event_nature"] or "reported"),
+                    evidence=str(item["evidence"] or ""),
+                    sort_order=int(item["sort_order"] or 0),
+                    linked_entities=linked_by_event_id.get(str(item["id"]), []),
+                    metadata=item.get("metadata_json") or {},
+                )
+                events_by_content_id.setdefault(str(item["content_id"]), []).append(event)
+        result: dict[str, NoteExtractRecord] = {}
+        for row in rows:
             payload = row["raw_response_json"] or {}
+            content_id = str(row["content_id"])
             result[f"{row['platform']}::{row['note_id']}"] = NoteExtractRecord(
                 platform=str(row["platform"]),
                 note_id=str(row["note_id"]),
@@ -344,12 +415,13 @@ class PostgresInsightStore:
                 viewpoints=[
                     ViewpointRecord.model_validate(
                         {
-                            **dict(item),
-                            "metadata": dict(item).get("metadata_json") or {},
+                            **item,
+                            "metadata": item.get("metadata_json") or {},
                         }
                     )
-                    for item in viewpoint_rows
+                    for item in viewpoints_by_content_id.get(content_id, [])
                 ],
+                events=events_by_content_id.get(content_id, []),
                 model_name=row["model_name"],
                 request_id=row["request_id"],
                 usage=row["usage_json"] or {},
@@ -539,6 +611,20 @@ class PostgresInsightStore:
             "DELETE FROM content_viewpoints WHERE content_id = %s AND analysis_domain = %s",
             (content_id, safe_domain),
         )
+        event_rows = self.conn.execute(
+            "SELECT id FROM content_events WHERE content_id = %s AND analysis_domain = %s",
+            (content_id, safe_domain),
+        ).fetchall()
+        event_ids = [str(row["id"]) for row in event_rows]
+        if event_ids:
+            self.conn.execute(
+                "DELETE FROM content_event_entities WHERE event_id = ANY(%s)",
+                (event_ids,),
+            )
+        self.conn.execute(
+            "DELETE FROM content_events WHERE content_id = %s AND analysis_domain = %s",
+            (content_id, safe_domain),
+        )
         if safe_domain == "stock":
             self.conn.execute("DELETE FROM security_mentions WHERE content_id = %s", (content_id,))
         alias_map = aliases or {}
@@ -694,6 +780,90 @@ class PostgresInsightStore:
                 ),
             )
 
+        if safe_domain != "stock":
+            return
+
+        for event in extract.events:
+            linked_entities = [item for item in event.linked_entities if item.entity_type in {"stock", "theme"}]
+            if not linked_entities:
+                continue
+            event_row = self.conn.execute(
+                """
+                INSERT INTO content_events (
+                  content_id, analysis_domain, headline, event_summary, event_type, event_nature,
+                  evidence, publish_time, sort_order, metadata_json, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT(content_id, analysis_domain, sort_order) DO UPDATE SET
+                  headline = EXCLUDED.headline,
+                  event_summary = EXCLUDED.event_summary,
+                  event_type = EXCLUDED.event_type,
+                  event_nature = EXCLUDED.event_nature,
+                  evidence = EXCLUDED.evidence,
+                  publish_time = EXCLUDED.publish_time,
+                  metadata_json = EXCLUDED.metadata_json,
+                  updated_at = now()
+                RETURNING id
+                """,
+                (
+                    content_id,
+                    safe_domain,
+                    event.headline,
+                    event.event_summary,
+                    event.event_type,
+                    event.event_nature,
+                    event.evidence,
+                    extract.publish_time,
+                    event.sort_order,
+                    _json(event.metadata),
+                ),
+            ).fetchone()
+            if event_row is None:
+                raise RuntimeError(f"Failed to upsert content event: {extract.note_id}:{event.sort_order}")
+            event_id = str(event_row["id"])
+            for linked in linked_entities:
+                security_id: str | None = None
+                theme_id: str | None = None
+                raw_name = (linked.entity_code_or_name or linked.entity_name).strip()
+                if linked.entity_type == "stock":
+                    identity = resolve_security_identity(
+                        raw_name=raw_name or linked.entity_name,
+                        stock_name=linked.entity_name,
+                        aliases=alias_map,
+                    ) or SecurityIdentity(
+                        security_key=linked.entity_key,
+                        display_name=linked.entity_name,
+                    )
+                    security_id = self.ensure_security(identity, raw_name or linked.entity_name)
+                else:
+                    theme_id = self.ensure_theme(linked.entity_key, linked.entity_name, raw_name or linked.entity_name)
+                self.conn.execute(
+                    """
+                    INSERT INTO content_event_entities (
+                      event_id, entity_type, entity_key, entity_name, entity_code_or_name,
+                      security_id, theme_id, metadata_json, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+                    ON CONFLICT(event_id, entity_type, entity_key) DO UPDATE SET
+                      entity_name = EXCLUDED.entity_name,
+                      entity_code_or_name = EXCLUDED.entity_code_or_name,
+                      security_id = EXCLUDED.security_id,
+                      theme_id = EXCLUDED.theme_id,
+                      metadata_json = EXCLUDED.metadata_json,
+                      updated_at = now()
+                    """,
+                    (
+                        event_id,
+                        linked.entity_type,
+                        linked.entity_key,
+                        linked.entity_name,
+                        linked.entity_code_or_name,
+                        security_id,
+                        theme_id,
+                        _json(linked.metadata),
+                    ),
+                )
+
     def prune_orphan_securities(self) -> int:
         cursor = self.conn.execute(
             """
@@ -703,6 +873,8 @@ class PostgresInsightStore:
               UNION
               SELECT security_id FROM content_viewpoints WHERE security_id IS NOT NULL
               UNION
+              SELECT security_id FROM content_event_entities WHERE security_id IS NOT NULL
+              UNION
               SELECT security_id FROM security_daily_views
             )
             """
@@ -711,15 +883,67 @@ class PostgresInsightStore:
 
     def clear_analysis_outputs(self, analysis_domain: str = "stock") -> None:
         safe_domain = _normalize_domain(analysis_domain)
+        event_rows = self.conn.execute(
+            "SELECT id FROM content_events WHERE analysis_domain = %s",
+            (safe_domain,),
+        ).fetchall()
+        event_ids = [str(row["id"]) for row in event_rows]
+        if event_ids:
+            self.conn.execute("DELETE FROM content_event_entities WHERE event_id = ANY(%s)", (event_ids,))
+        self.conn.execute("DELETE FROM content_events WHERE analysis_domain = %s", (safe_domain,))
         self.conn.execute("DELETE FROM author_daily_summaries WHERE analysis_domain = %s", (safe_domain,))
         self.conn.execute("DELETE FROM content_viewpoints WHERE analysis_domain = %s", (safe_domain,))
         self.conn.execute("DELETE FROM content_analyses WHERE analysis_domain = %s", (safe_domain,))
         if safe_domain == "crypto":
             self.conn.execute("DELETE FROM crypto_entity_daily_views")
             return
+        self.conn.execute("DELETE FROM stock_news_daily_timeline")
         self.conn.execute("DELETE FROM security_daily_views")
         self.conn.execute("DELETE FROM theme_daily_views")
         self.conn.execute("DELETE FROM security_mentions")
+
+    def clear_content_analysis_for_notes(
+        self,
+        notes: list[RawNoteRecord],
+        *,
+        analysis_domain: str = "stock",
+    ) -> int:
+        safe_domain = _normalize_domain(analysis_domain)
+        cleared = 0
+        for note in notes:
+            row = self.conn.execute(
+                "SELECT id FROM content_items WHERE platform = %s AND external_content_id = %s",
+                (note.platform, note.note_id),
+            ).fetchone()
+            if row is None:
+                continue
+            content_id = str(row["id"])
+            event_rows = self.conn.execute(
+                "SELECT id FROM content_events WHERE content_id = %s AND analysis_domain = %s",
+                (content_id, safe_domain),
+            ).fetchall()
+            event_ids = [str(item["id"]) for item in event_rows]
+            if event_ids:
+                self.conn.execute(
+                    "DELETE FROM content_event_entities WHERE event_id = ANY(%s)",
+                    (event_ids,),
+                )
+            self.conn.execute(
+                "DELETE FROM content_events WHERE content_id = %s AND analysis_domain = %s",
+                (content_id, safe_domain),
+            )
+            self.conn.execute(
+                "DELETE FROM content_viewpoints WHERE content_id = %s AND analysis_domain = %s",
+                (content_id, safe_domain),
+            )
+            if safe_domain == "stock":
+                self.conn.execute("DELETE FROM security_mentions WHERE content_id = %s", (content_id,))
+            deleted = self.conn.execute(
+                "DELETE FROM content_analyses WHERE content_id = %s AND analysis_domain = %s",
+                (content_id, safe_domain),
+            )
+            cleared += int(deleted.rowcount or 0)
+        return cleared
 
     def get_author_daily_summary(
         self,
@@ -823,8 +1047,33 @@ class PostgresInsightStore:
     def clear_security_daily_views(self) -> None:
         self.conn.execute("DELETE FROM security_daily_views")
 
+    def clear_stock_news_daily_timeline(self) -> None:
+        self.conn.execute("DELETE FROM stock_news_daily_timeline")
+
     def clear_crypto_entity_daily_views(self) -> None:
         self.conn.execute("DELETE FROM crypto_entity_daily_views")
+
+    def upsert_stock_news_day(self, record: NewsTimelineDay) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO stock_news_daily_timeline (
+              date_key, event_count, events_json, content_hash, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT(date_key) DO UPDATE SET
+              event_count = EXCLUDED.event_count,
+              events_json = EXCLUDED.events_json,
+              content_hash = EXCLUDED.content_hash,
+              updated_at = EXCLUDED.updated_at
+            """,
+            (
+                record.date,
+                record.event_count,
+                _json([item.model_dump(mode="json") for item in record.events]),
+                record.content_hash,
+                record.updated_at,
+            ),
+        )
 
     def upsert_crypto_entity_daily_view(self, asset_key: str, record: CryptoDayRecord) -> None:
         identity = CryptoIdentity(

@@ -8,6 +8,8 @@ client_secret*.json
 .git-history-backup*/
 .vscode/
 .idea/
+.venv/
+.venv-codex/
 
 __pycache__/
 *.pyc

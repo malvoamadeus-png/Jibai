@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 TimelineStatus = Literal["has_update_today", "no_update_today", "crawl_failed"]
 AnalysisDomain = Literal["stock", "crypto"]
 ViewEntityType = Literal["stock", "theme", "macro", "other", "crypto_entity"]
+EventEntityType = Literal["stock", "theme"]
 ViewStance = Literal[
     "strong_bullish",
     "bullish",
@@ -113,6 +114,25 @@ class ViewpointRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class EventLinkedEntity(BaseModel):
+    entity_type: EventEntityType
+    entity_key: str = ""
+    entity_name: str
+    entity_code_or_name: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EventRecord(BaseModel):
+    headline: str
+    event_summary: str = ""
+    event_type: str = "other"
+    event_nature: str = "reported"
+    evidence: str = ""
+    sort_order: int = 0
+    linked_entities: list[EventLinkedEntity] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class NoteExtractRecord(BaseModel):
     platform: str = "xiaohongshu"
     note_id: str
@@ -131,6 +151,7 @@ class NoteExtractRecord(BaseModel):
     summary_text: str = ""
     key_points: list[str] = Field(default_factory=list)
     viewpoints: list[ViewpointRecord] = Field(default_factory=list)
+    events: list[EventRecord] = Field(default_factory=list)
     model_name: str | None = None
     request_id: str | None = None
     usage: dict[str, int] = Field(default_factory=dict)
@@ -233,6 +254,30 @@ class StockTimelineFile(BaseModel):
     records: list[StockDayRecord] = Field(default_factory=list)
 
 
+class NewsTimelineItem(BaseModel):
+    note_id: str
+    note_url: str = ""
+    note_title: str = ""
+    account_name: str
+    author_nickname: str = ""
+    publish_time: str | None = None
+    headline: str
+    event_summary: str = ""
+    event_type: str = "other"
+    event_nature: str = "reported"
+    evidence: str = ""
+    linked_entities: list[EventLinkedEntity] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class NewsTimelineDay(BaseModel):
+    date: str
+    event_count: int
+    events: list[NewsTimelineItem] = Field(default_factory=list)
+    content_hash: str = ""
+    updated_at: str
+
+
 class CryptoEntityIdentity(BaseModel):
     asset_key: str
     display_name: str
@@ -312,6 +357,7 @@ class AnalysisSnapshot(BaseModel):
     note_extracts: list[NoteExtractRecord] = Field(default_factory=list)
     author_summaries: list[AuthorDayRecord] = Field(default_factory=list)
     stock_views: list[StockDayRecord] = Field(default_factory=list)
+    stock_news: list[NewsTimelineDay] = Field(default_factory=list)
     theme_views: list[ThemeDayRecord] = Field(default_factory=list)
     crypto_views: list[CryptoDayRecord] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)

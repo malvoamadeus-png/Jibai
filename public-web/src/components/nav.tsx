@@ -73,6 +73,7 @@ export function Nav() {
           { href: "/feed", label: "我的订阅", icon: Bell },
           { href: "/stocks", label: "按股票（详情）", icon: CircleDollarSign, exact: true },
           { href: "/stocks/overview", label: "按股票（一览表）", icon: Grid3X3 },
+          { href: "/stocks/news", label: "新闻", icon: Newspaper },
           { href: "/stocks/gold", label: "点金榜", icon: Trophy },
           { href: "/stocks/narrative", label: "叙事简报", icon: Newspaper },
           { href: "/risk", label: "顶部风险", icon: Activity },

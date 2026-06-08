@@ -10,6 +10,9 @@ from typing import Any, Iterator
 from .models import (
     AuthorDayRecord,
     CrawlAccountResult,
+    EventLinkedEntity,
+    EventRecord,
+    NewsTimelineDay,
     NoteExtractRecord,
     RawNoteRecord,
     StockDayRecord,
@@ -200,6 +203,37 @@ def init_db(conn: sqlite3.Connection) -> None:
           UNIQUE(content_id, entity_type, entity_key, sort_order)
         );
 
+        CREATE TABLE IF NOT EXISTS content_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          content_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+          headline TEXT NOT NULL,
+          event_summary TEXT NOT NULL DEFAULT '',
+          event_type TEXT NOT NULL DEFAULT 'other',
+          event_nature TEXT NOT NULL DEFAULT 'reported',
+          evidence TEXT NOT NULL DEFAULT '',
+          publish_time TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          metadata_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(content_id, sort_order)
+        );
+
+        CREATE TABLE IF NOT EXISTS content_event_entities (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id INTEGER NOT NULL REFERENCES content_events(id) ON DELETE CASCADE,
+          entity_type TEXT NOT NULL,
+          entity_key TEXT NOT NULL,
+          entity_name TEXT NOT NULL,
+          entity_code_or_name TEXT,
+          security_id INTEGER REFERENCES security_entities(id) ON DELETE SET NULL,
+          theme_id INTEGER REFERENCES theme_entities(id) ON DELETE SET NULL,
+          metadata_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(event_id, entity_type, entity_key)
+        );
+
         CREATE TABLE IF NOT EXISTS author_daily_summaries (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -255,6 +289,15 @@ def init_db(conn: sqlite3.Connection) -> None:
           UNIQUE(theme_id, date_key)
         );
 
+        CREATE TABLE IF NOT EXISTS stock_news_daily_timeline (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date_key TEXT NOT NULL UNIQUE,
+          event_count INTEGER NOT NULL DEFAULT 0,
+          events_json TEXT NOT NULL DEFAULT '[]',
+          content_hash TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_content_items_account_publish
           ON content_items(account_id, publish_time DESC);
         CREATE INDEX IF NOT EXISTS idx_author_daily_summaries_account_date
@@ -271,6 +314,12 @@ def init_db(conn: sqlite3.Connection) -> None:
           ON content_viewpoints(content_id, sort_order ASC);
         CREATE INDEX IF NOT EXISTS idx_content_viewpoints_entity
           ON content_viewpoints(entity_type, entity_key, content_id);
+        CREATE INDEX IF NOT EXISTS idx_content_events_content
+          ON content_events(content_id, sort_order ASC);
+        CREATE INDEX IF NOT EXISTS idx_content_event_entities_entity
+          ON content_event_entities(entity_type, entity_key, event_id);
+        CREATE INDEX IF NOT EXISTS idx_stock_news_daily_timeline_date
+          ON stock_news_daily_timeline(date_key DESC);
         """
     )
     _ensure_column(
@@ -507,7 +556,61 @@ class InsightStore:
                 """,
                 (row["content_id"],),
             ).fetchall()
+            event_rows = self.conn.execute(
+                """
+                SELECT
+                  id,
+                  headline,
+                  event_summary,
+                  event_type,
+                  event_nature,
+                  evidence,
+                  sort_order,
+                  metadata_json
+                FROM content_events
+                WHERE content_id = ?
+                ORDER BY sort_order ASC, id ASC
+                """,
+                (row["content_id"],),
+            ).fetchall()
             payload = json_loads(row["raw_response_json"], {})
+            events: list[EventRecord] = []
+            for event_row in event_rows:
+                linked_rows = self.conn.execute(
+                    """
+                    SELECT
+                      entity_type,
+                      entity_key,
+                      entity_name,
+                      entity_code_or_name,
+                      metadata_json
+                    FROM content_event_entities
+                    WHERE event_id = ?
+                    ORDER BY entity_type ASC, entity_key ASC, id ASC
+                    """,
+                    (event_row["id"],),
+                ).fetchall()
+                events.append(
+                    EventRecord(
+                        headline=str(event_row["headline"] or ""),
+                        event_summary=str(event_row["event_summary"] or ""),
+                        event_type=str(event_row["event_type"] or "other"),
+                        event_nature=str(event_row["event_nature"] or "reported"),
+                        evidence=str(event_row["evidence"] or ""),
+                        sort_order=int(event_row["sort_order"] or 0),
+                        linked_entities=[
+                            EventLinkedEntity(
+                                entity_type=str(item["entity_type"]),
+                                entity_key=str(item["entity_key"] or ""),
+                                entity_name=str(item["entity_name"] or ""),
+                                entity_code_or_name=str(item["entity_code_or_name"]).strip() if item["entity_code_or_name"] else None,
+                                metadata=json_loads(item["metadata_json"], {}),
+                            )
+                            for item in linked_rows
+                        ],
+                        metadata=json_loads(event_row["metadata_json"], {}),
+                    )
+                )
             result[f"{row['platform']}::{row['note_id']}"] = NoteExtractRecord(
                 platform=str(row["platform"]),
                 note_id=str(row["note_id"]),
@@ -525,6 +628,7 @@ class InsightStore:
                 summary_text=str(row["summary_text"] or ""),
                 key_points=json_loads(row["key_points_json"], []),
                 viewpoints=[ViewpointRecord.model_validate(dict(item)) for item in viewpoint_rows],
+                events=events,
                 model_name=row["model_name"],
                 request_id=row["request_id"],
                 usage=json_loads(row["usage_json"], {}),
@@ -650,6 +754,16 @@ class InsightStore:
         )
         self.conn.execute("DELETE FROM content_viewpoints WHERE content_id = ?", (content_id,))
         self.conn.execute("DELETE FROM security_mentions WHERE content_id = ?", (content_id,))
+        event_rows = self.conn.execute(
+            "SELECT id FROM content_events WHERE content_id = ?",
+            (content_id,),
+        ).fetchall()
+        if event_rows:
+            self.conn.executemany(
+                "DELETE FROM content_event_entities WHERE event_id = ?",
+                [(int(row["id"]),) for row in event_rows],
+            )
+        self.conn.execute("DELETE FROM content_events WHERE content_id = ?", (content_id,))
         alias_map = aliases or {}
 
         for index, viewpoint in enumerate(extract.viewpoints):
@@ -758,6 +872,89 @@ class InsightStore:
                 ),
             )
 
+        for event in extract.events:
+            linked_entities = [item for item in event.linked_entities if item.entity_type in {"stock", "theme"}]
+            if not linked_entities:
+                continue
+            self.conn.execute(
+                """
+                INSERT INTO content_events (
+                  content_id, headline, event_summary, event_type, event_nature,
+                  evidence, publish_time, sort_order, metadata_json, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(content_id, sort_order) DO UPDATE SET
+                  headline = excluded.headline,
+                  event_summary = excluded.event_summary,
+                  event_type = excluded.event_type,
+                  event_nature = excluded.event_nature,
+                  evidence = excluded.evidence,
+                  publish_time = excluded.publish_time,
+                  metadata_json = excluded.metadata_json,
+                  updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    content_id,
+                    event.headline,
+                    event.event_summary,
+                    event.event_type,
+                    event.event_nature,
+                    event.evidence,
+                    extract.publish_time,
+                    event.sort_order,
+                    json_dumps(event.metadata),
+                ),
+            )
+            event_row = self.conn.execute(
+                "SELECT id FROM content_events WHERE content_id = ? AND sort_order = ?",
+                (content_id, event.sort_order),
+            ).fetchone()
+            if event_row is None:
+                raise RuntimeError(f"Failed to upsert content event: {extract.note_id}:{event.sort_order}")
+            event_id = int(event_row["id"])
+            for linked in linked_entities:
+                security_id: int | None = None
+                theme_id: int | None = None
+                raw_name = (linked.entity_code_or_name or linked.entity_name).strip()
+                if linked.entity_type == "stock":
+                    identity = resolve_security_identity(
+                        raw_name=raw_name or linked.entity_name,
+                        stock_name=linked.entity_name,
+                        aliases=alias_map,
+                    ) or SecurityIdentity(
+                        security_key=linked.entity_key,
+                        display_name=linked.entity_name,
+                    )
+                    security_id = self.ensure_security(identity, raw_name or linked.entity_name)
+                else:
+                    theme_id = self.ensure_theme(linked.entity_key, linked.entity_name, raw_name or linked.entity_name)
+                self.conn.execute(
+                    """
+                    INSERT INTO content_event_entities (
+                      event_id, entity_type, entity_key, entity_name, entity_code_or_name,
+                      security_id, theme_id, metadata_json, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(event_id, entity_type, entity_key) DO UPDATE SET
+                      entity_name = excluded.entity_name,
+                      entity_code_or_name = excluded.entity_code_or_name,
+                      security_id = excluded.security_id,
+                      theme_id = excluded.theme_id,
+                      metadata_json = excluded.metadata_json,
+                      updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        event_id,
+                        linked.entity_type,
+                        linked.entity_key,
+                        linked.entity_name,
+                        linked.entity_code_or_name,
+                        security_id,
+                        theme_id,
+                        json_dumps(linked.metadata),
+                    ),
+                )
+
     def prune_orphan_securities(self) -> int:
         cursor = self.conn.execute(
             """
@@ -766,6 +963,8 @@ class InsightStore:
               SELECT security_id FROM security_mentions
               UNION
               SELECT security_id FROM content_viewpoints WHERE security_id IS NOT NULL
+              UNION
+              SELECT security_id FROM content_event_entities WHERE security_id IS NOT NULL
               UNION
               SELECT security_id FROM security_daily_views
             )
@@ -779,9 +978,46 @@ class InsightStore:
         self.conn.execute("DELETE FROM author_daily_summaries")
         self.conn.execute("DELETE FROM security_daily_views")
         self.conn.execute("DELETE FROM theme_daily_views")
+        self.conn.execute("DELETE FROM stock_news_daily_timeline")
+        self.conn.execute("DELETE FROM content_event_entities")
+        self.conn.execute("DELETE FROM content_events")
         self.conn.execute("DELETE FROM security_mentions")
         self.conn.execute("DELETE FROM content_viewpoints")
         self.conn.execute("DELETE FROM content_analyses")
+
+    def clear_content_analysis_for_notes(
+        self,
+        notes: list[RawNoteRecord],
+        *,
+        analysis_domain: str = "stock",
+    ) -> int:
+        cleared = 0
+        for note in notes:
+            row = self.conn.execute(
+                "SELECT id FROM content_items WHERE platform = ? AND external_content_id = ?",
+                (note.platform, note.note_id),
+            ).fetchone()
+            if row is None:
+                continue
+            content_id = int(row["id"])
+            event_rows = self.conn.execute(
+                "SELECT id FROM content_events WHERE content_id = ?",
+                (content_id,),
+            ).fetchall()
+            event_ids = [int(item["id"]) for item in event_rows]
+            if event_ids:
+                placeholders = ",".join("?" for _ in event_ids)
+                self.conn.execute(
+                    f"DELETE FROM content_event_entities WHERE event_id IN ({placeholders})",
+                    tuple(event_ids),
+                )
+            self.conn.execute("DELETE FROM content_events WHERE content_id = ?", (content_id,))
+            self.conn.execute("DELETE FROM content_viewpoints WHERE content_id = ?", (content_id,))
+            if analysis_domain != "crypto":
+                self.conn.execute("DELETE FROM security_mentions WHERE content_id = ?", (content_id,))
+            deleted = self.conn.execute("DELETE FROM content_analyses WHERE content_id = ?", (content_id,))
+            cleared += int(deleted.rowcount or 0)
+        return cleared
 
     def get_author_daily_summary(
         self,
@@ -876,6 +1112,31 @@ class InsightStore:
 
     def clear_security_daily_views(self) -> None:
         self.conn.execute("DELETE FROM security_daily_views")
+
+    def clear_stock_news_daily_timeline(self) -> None:
+        self.conn.execute("DELETE FROM stock_news_daily_timeline")
+
+    def upsert_stock_news_day(self, record: NewsTimelineDay) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO stock_news_daily_timeline (
+              date_key, event_count, events_json, content_hash, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(date_key) DO UPDATE SET
+              event_count = excluded.event_count,
+              events_json = excluded.events_json,
+              content_hash = excluded.content_hash,
+              updated_at = excluded.updated_at
+            """,
+            (
+                record.date,
+                record.event_count,
+                json_dumps([item.model_dump(mode="json") for item in record.events]),
+                record.content_hash,
+                record.updated_at,
+            ),
+        )
 
     def upsert_security_daily_view(self, security_key: str, record: StockDayRecord) -> None:
         row = self.conn.execute(

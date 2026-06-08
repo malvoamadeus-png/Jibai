@@ -192,6 +192,54 @@ _BUILT_IN_SECURITY_ALIASES: dict[str, dict[str, str | None]] = {
         "ticker": "SIVE",
         "market": "STO",
     },
+    "湖南裕能": {
+        "security_key": "301358.sz",
+        "display_name": "湖南裕能",
+        "ticker": "301358",
+        "market": "SZSE",
+    },
+    "湖南裕能新能源": {
+        "security_key": "301358.sz",
+        "display_name": "湖南裕能",
+        "ticker": "301358",
+        "market": "SZSE",
+    },
+    "Hunan Yuneng": {
+        "security_key": "301358.sz",
+        "display_name": "湖南裕能",
+        "ticker": "301358",
+        "market": "SZSE",
+    },
+    "Hunan Yuneng New Energy Battery Material": {
+        "security_key": "301358.sz",
+        "display_name": "湖南裕能",
+        "ticker": "301358",
+        "market": "SZSE",
+    },
+    "Marvell": {
+        "security_key": "marvell",
+        "display_name": "Marvell Technology",
+        "ticker": "MRVL",
+        "market": "NASDAQ",
+    },
+    "Marvell Technology": {
+        "security_key": "marvell",
+        "display_name": "Marvell Technology",
+        "ticker": "MRVL",
+        "market": "NASDAQ",
+    },
+    "Marvell Technology Group": {
+        "security_key": "marvell",
+        "display_name": "Marvell Technology",
+        "ticker": "MRVL",
+        "market": "NASDAQ",
+    },
+    "MRVL": {
+        "security_key": "marvell",
+        "display_name": "Marvell Technology",
+        "ticker": "MRVL",
+        "market": "NASDAQ",
+    },
 }
 
 

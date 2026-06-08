@@ -897,13 +897,22 @@ def reanalyze_recent_public_content_once(
         recent_notes, start_date, end_date = _filter_recent_notes(all_notes, days=safe_days)
         notes = _filter_notes_for_domain(conn, recent_notes, domain=safe_domain)
         if not notes:
-            if clear_analysis:
-                store.clear_analysis_outputs(analysis_domain=safe_domain)
             print(
                 "[public-worker] no public X content in date window "
                 f"domain={safe_domain} start={start_date} end={end_date}"
             )
             return 1
+        if clear_analysis and hasattr(store, "clear_content_analysis_for_notes"):
+            cleared = store.clear_content_analysis_for_notes(
+                notes,
+                analysis_domain=safe_domain,
+            )
+            print(
+                "[public-worker] cleared_recent_analysis "
+                f"domain={safe_domain} "
+                f"notes={len(notes)} "
+                f"cleared={cleared}"
+            )
         summary = run_analysis_with_store(
             store=store,
             paths=paths,
@@ -911,7 +920,7 @@ def reanalyze_recent_public_content_once(
             crawl_results=_synthetic_crawl_results(notes),
             crawl_errors=[],
             force_reanalysis=True,
-            clear_analysis_outputs=clear_analysis,
+            clear_analysis_outputs=False,
             market_data_days=None if safe_domain == "crypto" else _light_market_data_days(),
             market_data_max_securities=None if safe_domain == "crypto" else _light_market_data_max_securities(),
             analysis_domain=safe_domain,
