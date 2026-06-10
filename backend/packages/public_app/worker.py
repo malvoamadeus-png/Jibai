@@ -51,7 +51,7 @@ from .stock_narrative import generate_stock_narrative_once
 from .stock_blogger_scoring import rebuild_stock_blogger_scores_once
 
 
-DEFAULT_CRAWL_TIMES = ("04:00", "10:00", "16:00", "22:00")
+DEFAULT_CRAWL_TIMES = tuple(f"{hour:02d}:00" for hour in range(24))
 DEFAULT_ONCHAIN_FETCH_TIMES = ("04:20", "10:20", "16:20", "22:20")
 WORKER_LOCK_KEY = "jibai_public_x_worker"
 _MARKET_ERROR_RE = re.compile(r"^\[market ([^\]]+)\]\s*(.*)$")

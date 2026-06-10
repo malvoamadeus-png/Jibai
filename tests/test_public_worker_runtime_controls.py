@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 
 from packages.public_app.crypto_asset_narrative import generate_crypto_asset_briefs_once
 from packages.public_app.jobs import CrawlJob, PublicXAccount, _stock_blogger_score_accounts
 from packages.public_app.worker import (
     _account_timeout_seconds,
+    _crawl_times,
     _timeout_result,
     enqueue_scheduled_crawl_job,
     process_pending_jobs,
@@ -20,6 +22,43 @@ def test_enqueue_scheduled_crawl_job_skips_disabled_crypto(monkeypatch) -> None:
     )
 
     assert enqueue_scheduled_crawl_job("crypto") is None
+
+
+def test_default_crawl_times_are_hourly(monkeypatch) -> None:
+    monkeypatch.delenv("PUBLIC_WORKER_CRAWL_TIMES", raising=False)
+
+    assert _crawl_times() == [f"{hour:02d}:00" for hour in range(24)]
+
+
+def test_scheduled_crawl_dedupes_same_domain_minute(monkeypatch) -> None:
+    class FakeDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return cls(2026, 6, 10, 8, 0, 12, tzinfo=tz)
+
+    class FakeConn:
+        pass
+
+    inserted: list[tuple[str, str]] = []
+
+    @contextmanager
+    def fake_postgres_connection():
+        yield FakeConn()
+
+    def fake_insert(_conn, dedupe_key: str, *, domain: str) -> str:
+        inserted.append((dedupe_key, domain))
+        return f"job-{len(inserted)}"
+
+    monkeypatch.setattr("packages.public_app.worker.datetime", FakeDateTime)
+    monkeypatch.setattr("packages.public_app.worker.postgres_connection", fake_postgres_connection)
+    monkeypatch.setattr("packages.public_app.worker.insert_scheduled_crawl_job", fake_insert)
+
+    assert enqueue_scheduled_crawl_job("stock") == "job-1"
+    assert enqueue_scheduled_crawl_job("stock") == "job-2"
+    assert inserted == [
+        ("scheduled_crawl:stock:202606100800", "stock"),
+        ("scheduled_crawl:stock:202606100800", "stock"),
+    ]
 
 
 def test_stock_blogger_score_accounts_are_disabled_by_default(monkeypatch) -> None:

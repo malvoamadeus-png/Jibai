@@ -33,6 +33,25 @@ export function stripTime(value: string | null | undefined) {
   return value.replace("T", " ").replace("+08:00", "");
 }
 
+export function formatShanghaiDateTime(value: string | null | undefined) {
+  if (!value) return "暂无时间";
+  const normalized = value.includes("T") ? value : value.replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T");
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return stripTime(value).replace("+00:00", "");
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day} ${byType.hour}:${byType.minute}:${byType.second}`;
+}
+
 export function makeAccountKey(platform: string, accountName: string) {
   return `${platform}::${accountName}`;
 }

@@ -5,7 +5,8 @@ Public web uses Supabase as the primary database. Vercel only serves `public-web
 ## What It Does
 
 - Polls `crawl_jobs` every 30 seconds.
-- Enqueues scheduled crawl jobs at `04:00,10:00,16:00,22:00` Asia/Shanghai.
+- Enqueues scheduled crawl jobs hourly at `00:00` through `23:00`
+  Asia/Shanghai by default.
 - Fetches approved onchain wallet holdings at
   `04:20,10:20,16:20,22:20` Asia/Shanghai by default.
 - Processes only one crawl job at a time with a Postgres advisory lock.
@@ -34,7 +35,8 @@ Create `/etc/jibai/public-worker.env` on the server:
 SUPABASE_URL='https://your-project.supabase.co'
 SUPABASE_ANON_KEY='your-supabase-anon-key'
 SUPABASE_DB_URL='postgresql://USER:PASSWORD@HOST:5432/postgres?sslmode=require'
-PUBLIC_WORKER_CRAWL_TIMES=04:00,10:00,16:00,22:00
+# Optional. Omit for hourly default from 00:00 through 23:00 Asia/Shanghai.
+# PUBLIC_WORKER_CRAWL_TIMES=00:00,06:00,12:00,18:00
 PUBLIC_WORKER_ACCOUNT_DELAY_SECONDS=5
 PUBLIC_WORKER_POLL_SECONDS=30
 PUBLIC_WORKER_HEADLESS=true

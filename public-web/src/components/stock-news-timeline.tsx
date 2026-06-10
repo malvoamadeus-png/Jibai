@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageHeader } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
 import { getVisibleStockNewsTimeline } from "@/lib/direct-data";
-import { cn, formatCount, stripTime } from "@/lib/utils";
+import { cn, formatCount, formatShanghaiDateTime } from "@/lib/utils";
 import type { StockNewsTimelineResponse } from "@/lib/types";
 
 function parsePage(value: string | null) {
@@ -181,7 +181,7 @@ export function StockNewsTimeline() {
                     <CardTitle className="text-2xl">{day.date}</CardTitle>
                     <CardDescription>当天共有 {formatCount(day.eventCount)} 条新闻事件</CardDescription>
                   </div>
-                  <Badge variant="neutral">更新于 {stripTime(day.updatedAt)}</Badge>
+                  <Badge variant="neutral">更新于 {formatShanghaiDateTime(day.updatedAt)}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 pt-6">
@@ -196,7 +196,7 @@ export function StockNewsTimeline() {
                   >
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[color:var(--soft-ink)] sm:text-sm">
                       {isSupplyRisk(event.eventType) ? <AlertTriangle className="h-4 w-4 text-[color:var(--danger)]" /> : null}
-                      <span>{stripTime(event.publishTime)}</span>
+                      <span>{formatShanghaiDateTime(event.publishTime)}</span>
                       <span>{event.authorNickname || event.accountName}</span>
                       {event.noteUrl ? (
                         <Link href={event.noteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[color:var(--accent-strong)] hover:underline">
