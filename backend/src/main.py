@@ -14,6 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from src.jobs import (  # noqa: E402
+    run_export_daily_author_viewpoints_job,
     run_login,
     run_migration_job,
     run_normalize_securities_job,
@@ -67,6 +68,22 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser(
         "reanalyze-existing",
         help="Regenerate AI viewpoint extraction for all stored content.",
+    )
+    export_daily_parser = subparsers.add_parser(
+        "export-daily-author-viewpoints",
+        help="Export one day of author stock viewpoints to CSV for content production.",
+    )
+    export_daily_parser.add_argument(
+        "--date",
+        help="Date in YYYY-MM-DD. Defaults to the latest date that has exportable stock viewpoints.",
+    )
+    export_daily_parser.add_argument(
+        "--platform",
+        help="Optional platform filter, for example x or xiaohongshu.",
+    )
+    export_daily_parser.add_argument(
+        "--output",
+        help="Optional output .csv path. Defaults to data/runtime/exports/daily-author-viewpoints-<date>.csv.",
     )
     public_worker_parser = subparsers.add_parser(
         "public-worker",
@@ -286,6 +303,12 @@ def main() -> int:
         return run_normalize_securities_job()
     if args.command == "reanalyze-existing":
         return run_reanalyze_existing_job()
+    if args.command == "export-daily-author-viewpoints":
+        return run_export_daily_author_viewpoints_job(
+            date_key=args.date,
+            output_path=args.output,
+            platform=args.platform,
+        )
     if args.command == "public-worker":
         from packages.public_app.worker import run_worker  # noqa: PLC0415
 

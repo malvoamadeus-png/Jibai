@@ -201,6 +201,15 @@ timeline JSON after the compact news rollout, apply:
 sql_path = Path("supabase/migrations/031_remove_stock_news_evidence.sql")
 ```
 
+If stock detail and stock overview suddenly become empty while
+`content_viewpoints.analysis_domain='stock'` still has rows, verify that
+`author_daily_summaries` has the domain-aware unique index required by the
+current upsert path. Apply this migration before rebuilding stock timelines:
+
+```python
+sql_path = Path("supabase/migrations/032_fix_author_daily_summary_domain_unique.sql")
+```
+
 For another migration, change only `sql_path`.
 
 ## Run Recent Reanalysis Locally

@@ -126,6 +126,79 @@ VALID_EVIDENCE_TYPES: set[ViewEvidenceType] = {
     "unknown",
 }
 VALID_HORIZONS: set[ViewHorizon] = {"short_term", "medium_term", "long_term", "unspecified"}
+STOCK_NEWS_SUPPLY_RISK_TYPE = "supply_risk"
+
+SUPPLY_RISK_KEYWORDS = (
+    "短缺",
+    "缺货",
+    "断供",
+    "供应中断",
+    "供应无法保障",
+    "供应不足",
+    "供应受限",
+    "库存仅可支撑",
+    "库存只够",
+    "产能供应无法保障",
+    "建议客户积极拓展多元化采购",
+    "多元化采购",
+    "原料库存",
+    "材料涨价",
+    "原材料涨价",
+    "材料价格",
+    "上调价格",
+    "价格上调",
+    "涨价",
+    "price increase",
+    "price hike",
+    "shortage",
+    "supply shortage",
+    "supply disruption",
+)
+PRICE_ACTION_EVENT_KEYWORDS = (
+    "股价",
+    "股票",
+    "指数",
+    "etf",
+    "行情",
+    "盘前",
+    "盘后",
+    "开盘",
+    "收盘",
+    "收涨",
+    "收跌",
+    "涨幅",
+    "跌幅",
+    "创历史新高",
+    "创历史新低",
+    "创阶段新高",
+    "创阶段新低",
+)
+PRICE_ACTION_MOVE_KEYWORDS = (
+    "上涨",
+    "下跌",
+    "大涨",
+    "大跌",
+    "拉升",
+    "跳水",
+    "回调",
+    "反弹",
+    "走高",
+    "走低",
+    "涨",
+    "跌",
+    "新高",
+    "新低",
+)
+SUPPLY_PRICE_CONTEXT_KEYWORDS = (
+    "材料",
+    "原料",
+    "树脂",
+    "emc",
+    "六氟化钨",
+    "供应商",
+    "半导体材料",
+    "封装",
+)
 CRYPTO_ENTITY_KIND_ALIASES = {
     "project": "project",
     "protocol": "project",
@@ -578,6 +651,38 @@ def _parse_event_linked_entity(
     return None
 
 
+def _event_text(headline: str, event_summary: str) -> str:
+    return f"{headline} {event_summary}".casefold()
+
+
+def _is_supply_risk_event(headline: str, event_summary: str, event_type: str) -> bool:
+    text = _event_text(headline, event_summary)
+    if event_type == STOCK_NEWS_SUPPLY_RISK_TYPE:
+        return True
+    if any(keyword.casefold() in text for keyword in SUPPLY_RISK_KEYWORDS):
+        return True
+    has_material_context = any(keyword.casefold() in text for keyword in SUPPLY_PRICE_CONTEXT_KEYWORDS)
+    return has_material_context and "价格" in text and "上调" in text
+
+
+def _is_price_action_news_event(headline: str, event_summary: str, event_type: str) -> bool:
+    if event_type != "data_point":
+        return False
+    text = _event_text(headline, event_summary)
+    if _is_supply_risk_event(headline, event_summary, event_type):
+        return False
+    has_market_subject = any(keyword.casefold() in text for keyword in PRICE_ACTION_EVENT_KEYWORDS)
+    has_price_move = any(keyword.casefold() in text for keyword in PRICE_ACTION_MOVE_KEYWORDS)
+    return has_market_subject and has_price_move
+
+
+def _normalize_event_type(headline: str, event_summary: str, raw_event_type: object) -> str:
+    event_type = str(raw_event_type or "other").strip().lower().replace(" ", "_") or "other"
+    if _is_supply_risk_event(headline, event_summary, event_type):
+        return STOCK_NEWS_SUPPLY_RISK_TYPE
+    return event_type
+
+
 def _parse_event(
     raw: dict[str, object],
     *,
@@ -589,6 +694,9 @@ def _parse_event(
     if not headline:
         headline = event_summary[:80]
     if not headline:
+        return None
+    event_type = _normalize_event_type(headline, event_summary, raw.get("event_type"))
+    if _is_price_action_news_event(headline, event_summary, event_type):
         return None
     linked_entities: list[EventLinkedEntity] = []
     seen_entities: set[tuple[str, str]] = set()
@@ -616,7 +724,7 @@ def _parse_event(
     return EventRecord(
         headline=headline,
         event_summary=event_summary,
-        event_type=str(raw.get("event_type") or "other").strip().lower().replace(" ", "_") or "other",
+        event_type=event_type,
         event_nature=str(raw.get("event_nature") or "reported").strip().lower().replace(" ", "_") or "reported",
         sort_order=order,
         linked_entities=linked_entities,
@@ -1639,7 +1747,7 @@ def _materialize_stock_news_timelines(
             )
             for extract, event in sorted(
                 items,
-                key=lambda item: (item[0].publish_time or "", item[0].note_id, item[1].sort_order),
+                key=_stock_news_item_priority,
                 reverse=True,
             )
         ]
@@ -1659,6 +1767,12 @@ def _materialize_stock_news_timelines(
             store.upsert_stock_news_day(record)
         updated_records.append(record)
     return updated_records
+
+
+def _stock_news_item_priority(item: tuple[NoteExtractRecord, EventRecord]) -> tuple[int, str, str, int]:
+    extract, event = item
+    priority = 1 if event.event_type == STOCK_NEWS_SUPPLY_RISK_TYPE else 0
+    return (priority, extract.publish_time or "", extract.note_id, event.sort_order)
 
 
 def _materialize_crypto_timelines(

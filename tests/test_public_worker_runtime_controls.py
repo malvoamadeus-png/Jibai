@@ -3,8 +3,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 from packages.public_app.crypto_asset_narrative import generate_crypto_asset_briefs_once
-from packages.public_app.jobs import CrawlJob, _stock_blogger_score_accounts
-from packages.public_app.worker import enqueue_scheduled_crawl_job, process_pending_jobs
+from packages.public_app.jobs import CrawlJob, PublicXAccount, _stock_blogger_score_accounts
+from packages.public_app.worker import (
+    _account_timeout_seconds,
+    _timeout_result,
+    enqueue_scheduled_crawl_job,
+    process_pending_jobs,
+)
 
 
 def test_enqueue_scheduled_crawl_job_skips_disabled_crypto(monkeypatch) -> None:
@@ -26,6 +31,38 @@ def test_stock_blogger_score_accounts_are_disabled_by_default(monkeypatch) -> No
     monkeypatch.setenv("PUBLIC_STOCK_BLOGGER_SCORE_ENABLED", "true")
 
     assert _stock_blogger_score_accounts() == ["labubu_trader", "hicagr", "xiaomustock"]
+
+
+def test_account_timeout_seconds_use_job_specific_defaults(monkeypatch) -> None:
+    monkeypatch.delenv("PUBLIC_WORKER_ACCOUNT_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("PUBLIC_WORKER_BACKFILL_ACCOUNT_TIMEOUT_SECONDS", raising=False)
+
+    assert _account_timeout_seconds("scheduled_crawl") == 180
+    assert _account_timeout_seconds("initial_backfill") == 600
+
+    monkeypatch.setenv("PUBLIC_WORKER_ACCOUNT_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("PUBLIC_WORKER_BACKFILL_ACCOUNT_TIMEOUT_SECONDS", "90")
+
+    assert _account_timeout_seconds("manual_crawl") == 45
+    assert _account_timeout_seconds("initial_backfill") == 90
+
+
+def test_timeout_result_marks_account_failed() -> None:
+    result = _timeout_result(
+        account=PublicXAccount(
+            id="account-1",
+            username="stuck_account",
+            display_name="Stuck Account",
+            profile_url="https://x.com/stuck_account",
+        ),
+        run_at="2026-06-08T20:00:00+08:00",
+        timeout_seconds=30,
+    )
+
+    assert result.status == "failed"
+    assert result.account_name == "stuck_account"
+    assert result.error is not None
+    assert "X_ACCOUNT_TIMEOUT" in result.error
 
 
 def test_process_pending_jobs_marks_disabled_crypto_job_skipped(monkeypatch) -> None:

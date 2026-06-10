@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 import os
+import queue as queue_module
 import re
+import signal
 import time
 from datetime import datetime, timedelta
 from typing import Any
@@ -100,6 +103,12 @@ def _poll_seconds() -> int:
 
 def _account_pause_seconds() -> float:
     return max(0.0, float(os.getenv("PUBLIC_WORKER_ACCOUNT_DELAY_SECONDS", "5")))
+
+
+def _account_timeout_seconds(job_kind: str) -> int:
+    if job_kind == "initial_backfill":
+        return max(60, _env_int("PUBLIC_WORKER_BACKFILL_ACCOUNT_TIMEOUT_SECONDS", 600))
+    return max(30, _env_int("PUBLIC_WORKER_ACCOUNT_TIMEOUT_SECONDS", 180))
 
 
 def _light_market_data_days() -> int:
@@ -320,14 +329,13 @@ def _target_for_account(account: PublicXAccount, limit: int) -> AccountTarget:
     )
 
 
-def _run_account(
+def _crawl_account_payload(
     *,
-    store: PostgresInsightStore,
-    conn: Any,
     account: PublicXAccount,
     job_kind: str,
     run_at: str,
-) -> tuple[Any, int]:
+    seen_note_ids: set[str],
+) -> dict[str, Any]:
     is_backfill = job_kind == "initial_backfill"
     target_limit = 30 if is_backfill else 5
     age_days = 30 if is_backfill else 5
@@ -337,13 +345,179 @@ def _run_account(
         cfg=cfg,
         paths=get_paths(),
         account=target,
-        seen_note_ids=list_seen_note_ids(conn, account.id),
+        seen_note_ids=seen_note_ids,
         target_limit=target_limit,
         max_pages=8 if is_backfill else 3,
         max_post_age_days=age_days,
         exclude_old_posts=True,
         skip_old_pinned=is_backfill,
         run_at=run_at,
+    )
+    return {
+        "result": result.model_dump(mode="json"),
+        "notes": [note.model_dump(mode="json") for note in notes],
+    }
+
+
+def _crawl_account_child(
+    queue: Any,
+    *,
+    account: PublicXAccount,
+    job_kind: str,
+    run_at: str,
+    seen_note_ids: set[str],
+) -> None:
+    if hasattr(os, "setsid"):
+        try:
+            os.setsid()
+        except OSError:
+            pass
+    try:
+        queue.put(
+            {
+                "ok": True,
+                "payload": _crawl_account_payload(
+                    account=account,
+                    job_kind=job_kind,
+                    run_at=run_at,
+                    seen_note_ids=seen_note_ids,
+                ),
+            }
+        )
+    except BaseException as exc:  # pragma: no cover - child safety net
+        queue.put({"ok": False, "error": _clean_error_text(str(exc) or exc.__class__.__name__)})
+
+
+def _terminate_process_tree(process: mp.Process) -> None:
+    if process.pid is None:
+        return
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except OSError:
+            process.terminate()
+    else:
+        process.terminate()
+    process.join(timeout=5)
+    if process.is_alive():
+        if hasattr(os, "killpg"):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+            except OSError:
+                process.kill()
+        else:
+            process.kill()
+        process.join(timeout=5)
+
+
+def _timeout_result(account: PublicXAccount, *, run_at: str, timeout_seconds: int) -> CrawlAccountResult:
+    return CrawlAccountResult(
+        platform="x",
+        account_name=account.username,
+        profile_url=account.profile_url,
+        run_at=run_at,
+        status="failed",
+        error=f"X_ACCOUNT_TIMEOUT: 单账号抓取超过 {timeout_seconds} 秒，已跳过以避免阻塞 worker。",
+    )
+
+
+def _account_process_context() -> mp.context.BaseContext | None:
+    methods = mp.get_all_start_methods()
+    for method in ("spawn", "forkserver", "fork"):
+        if method in methods:
+            return mp.get_context(method)
+    return None
+
+
+def _run_account_crawl_with_timeout(
+    *,
+    account: PublicXAccount,
+    job_kind: str,
+    run_at: str,
+    seen_note_ids: set[str],
+) -> tuple[CrawlAccountResult, list[RawNoteRecord]]:
+    timeout_seconds = _account_timeout_seconds(job_kind)
+    ctx = _account_process_context()
+    if ctx is None:
+        payload = _crawl_account_payload(
+            account=account,
+            job_kind=job_kind,
+            run_at=run_at,
+            seen_note_ids=seen_note_ids,
+        )
+    else:
+        queue = ctx.Queue(maxsize=1)
+        process = ctx.Process(
+            target=_crawl_account_child,
+            kwargs={
+                "queue": queue,
+                "account": account,
+                "job_kind": job_kind,
+                "run_at": run_at,
+                "seen_note_ids": seen_note_ids,
+            },
+        )
+        process.start()
+        deadline = time.monotonic() + timeout_seconds
+        child_message: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            remaining = max(0.0, deadline - time.monotonic())
+            try:
+                child_message = queue.get(timeout=min(1.0, remaining))
+                break
+            except queue_module.Empty:
+                if not process.is_alive():
+                    child_message = {
+                        "ok": False,
+                        "error": f"child exited with code {process.exitcode} without crawl result",
+                    }
+                    break
+        if child_message is None:
+            _terminate_process_tree(process)
+            queue.close()
+            queue.join_thread()
+            return _timeout_result(account, run_at=run_at, timeout_seconds=timeout_seconds), []
+        process.join(timeout=5)
+        if process.is_alive():
+            _terminate_process_tree(process)
+        queue.close()
+        queue.join_thread()
+        if not child_message.get("ok"):
+            return (
+                CrawlAccountResult(
+                    platform="x",
+                    account_name=account.username,
+                    profile_url=account.profile_url,
+                    run_at=run_at,
+                    status="failed",
+                    error=f"X_ACCOUNT_FAILED: {child_message.get('error') or 'unknown child error'}",
+                ),
+                [],
+            )
+        payload = child_message["payload"]
+
+    result = CrawlAccountResult.model_validate(payload["result"])
+    notes = [RawNoteRecord.model_validate(item) for item in payload["notes"]]
+    return result, notes
+
+
+def _run_account(
+    *,
+    store: PostgresInsightStore,
+    conn: Any,
+    account: PublicXAccount,
+    job_kind: str,
+    run_at: str,
+) -> tuple[Any, int]:
+    result, notes = _run_account_crawl_with_timeout(
+        account=account,
+        job_kind=job_kind,
+        run_at=run_at,
+        seen_note_ids=list_seen_note_ids(conn, account.id),
     )
     for note in notes:
         store.upsert_content_item(note)
@@ -367,12 +541,29 @@ def _process_job(job: CrawlJob) -> None:
         crawl_warnings: list[str] = []
         total_new_notes = 0
         for index, account in enumerate(accounts):
+            account_start = time.monotonic()
+            timeout_seconds = _account_timeout_seconds(job.kind)
+            print(
+                "[public-worker] crawl_account_start "
+                f"job_id={job.id} kind={job.kind} domain={job.domain} "
+                f"account={account.username} index={index + 1}/{len(accounts)} "
+                f"timeout={timeout_seconds}s",
+                flush=True,
+            )
             result, new_count = _run_account(
                 store=store,
                 conn=conn,
                 account=account,
                 job_kind=job.kind,
                 run_at=run_at,
+            )
+            elapsed = time.monotonic() - account_start
+            print(
+                "[public-worker] crawl_account_done "
+                f"job_id={job.id} kind={job.kind} domain={job.domain} "
+                f"account={account.username} index={index + 1}/{len(accounts)} "
+                f"status={result.status} new_notes={new_count} elapsed={elapsed:.1f}s",
+                flush=True,
             )
             crawl_results.append(result)
             total_new_notes += new_count
@@ -518,6 +709,8 @@ def diagnose_worker_once() -> int:
         f"crypto_asset_brief_time={_crypto_asset_brief_time()} "
         f"poll={_poll_seconds()}s "
         f"stale_job_minutes={_stale_running_job_minutes()} "
+        f"account_timeout={_account_timeout_seconds('scheduled_crawl')}s "
+        f"backfill_account_timeout={_account_timeout_seconds('initial_backfill')}s "
         f"market_data_days={MARKET_DATA_WINDOW_DAYS} "
         f"light_market_data_days={_light_market_data_days()} "
         f"light_market_data_max={_light_market_data_max_securities()}"
@@ -1023,6 +1216,8 @@ def run_worker(*, once: bool = False) -> int:
         + f"; domains={','.join(_worker_domains())}"
         + f"; crypto_pipeline_enabled={'yes' if crypto_pipeline_enabled else 'no'}"
         + f"; poll={_poll_seconds()}s; account_delay={_account_pause_seconds()}s"
+        + f"; account_timeout={_account_timeout_seconds('scheduled_crawl')}s"
+        + f"; backfill_account_timeout={_account_timeout_seconds('initial_backfill')}s"
         + f"; light_market_data_days={_light_market_data_days()}"
         + f"; light_market_data_max={_light_market_data_max_securities()}"
         + f"; top_risk_sync_time={_top_risk_sync_time()}"

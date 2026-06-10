@@ -191,6 +191,12 @@ export function StockMatrixOverview() {
   const previousLabel = granularity === "day" ? "上一日" : "上一周";
   const nextLabel = granularity === "day" ? "下一日" : "下一周";
   const emptyLabel = granularity === "day" ? "这个日期没有有效股票观点" : "这个周窗口没有有效股票观点";
+  const adminView = Boolean(profile?.isAdmin);
+  const emptyReason = adminView
+    ? "管理员视图下暂时还没有可见股票观点数据。"
+    : profile
+      ? "当前账号的订阅范围内还没有可见股票观点数据。通常是因为还没订阅任何账号，或已订阅账号暂时没有有效观点。"
+      : "暂无公开预览数据";
 
   function navigate(nextEndDate: string | null, nextGranularity: StockMatrixGranularity = granularity) {
     const next = new URLSearchParams(searchParams);
@@ -363,7 +369,23 @@ export function StockMatrixOverview() {
               </div>
             ) : null}
             {!matrixLoading && matrix && (!matrix.stocks.length || !matrix.authors.length) ? (
-              <div className="m-4 empty">{profile ? emptyLabel : "暂无公开预览数据"}</div>
+              <div className="m-4 empty space-y-2">
+                <div>{profile ? `${emptyLabel}。${emptyReason}` : emptyReason}</div>
+                {profile && !adminView ? (
+                  <div className="text-sm text-[color:var(--muted-ink)]">
+                    去
+                    {" "}
+                    <Link
+                      href="/accounts"
+                      className="underline underline-offset-4 hover:text-[color:var(--accent-strong)]"
+                    >
+                      账号库
+                    </Link>
+                    {" "}
+                    订阅后，再回来看股票一览表。
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </CardContent>
         </Card>

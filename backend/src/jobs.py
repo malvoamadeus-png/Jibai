@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from packages.ai import normalize_existing_analysis, reanalyze_existing_content, run_analysis
-from packages.common import InsightStore, init_db, migrate_legacy_json_to_sqlite, sqlite_connection
+from packages.common import InsightStore, export_daily_author_viewpoints, init_db, migrate_legacy_json_to_sqlite, sqlite_connection
 from packages.common.paths import ensure_runtime_dirs, get_paths
+from packages.common.postgres_database import postgres_connection
 from packages.x import load_watchlist as load_x_watchlist
 from packages.x import run_once as run_x_once
 from packages.xhs import load_watchlist, login_and_validate, run_once
@@ -185,3 +186,61 @@ def run_reanalyze_existing_job() -> int:
         f"errors={len(summary.snapshot.errors)}",
     )
     return 1 if summary.exit_code else 0
+
+
+def run_export_daily_author_viewpoints_job(
+    *,
+    date_key: str | None,
+    output_path: str | None,
+    platform: str | None,
+) -> int:
+    paths = get_paths()
+    ensure_runtime_dirs(paths)
+    local_error: str | None = None
+    if paths.insight_db_path.exists():
+        with sqlite_connection(paths) as conn:
+            init_db(conn)
+            try:
+                result = export_daily_author_viewpoints(
+                    conn,
+                    paths=paths,
+                    date_key=date_key,
+                    platform=platform,
+                    output_path=output_path,
+                    source="sqlite",
+                )
+                print(
+                    "export-daily-author-viewpoints:",
+                    "source=local-sqlite",
+                    f"date={result.date}",
+                    f"rows={result.row_count}",
+                    f"csv={result.output_path}",
+                )
+                return 0
+            except ValueError as exc:
+                local_error = str(exc)
+    else:
+        local_error = f"missing local db: {paths.insight_db_path}"
+
+    try:
+        with postgres_connection() as conn:
+            result = export_daily_author_viewpoints(
+                conn,
+                paths=paths,
+                date_key=date_key,
+                platform=platform,
+                output_path=output_path,
+                source="postgres",
+            )
+    except Exception as exc:
+        detail = local_error or "local export failed"
+        print(f"export-daily-author-viewpoints: local={detail}; public-postgres={exc}")
+        return 1
+    print(
+        "export-daily-author-viewpoints:",
+        "source=public-postgres",
+        f"date={result.date}",
+        f"rows={result.row_count}",
+        f"csv={result.output_path}",
+    )
+    return 0

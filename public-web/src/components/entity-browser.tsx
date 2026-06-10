@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowUp, CalendarDays, Hash, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
@@ -92,6 +93,17 @@ export function EntityBrowser({
   const basePath = isCrypto ? "/crypto/assets" : "/stocks";
   const title = isCrypto ? "按标的（详情）" : "按股票（详情）";
   const description = isCrypto ? "左侧快速切换项目或资产，右侧查看按日作者信号、原文标识、逻辑和来源。" : "左侧快速切换股票，右侧查看日线标记和按日作者观点。";
+  const adminView = Boolean(profile?.isAdmin);
+  const listScopeLabel = adminView ? "管理员全量视图" : profile ? "按你的订阅过滤" : "公开轻量预览";
+  const emptyListHint = adminView
+    ? isCrypto
+      ? "管理员视图下暂时还没有可见标的观点数据。"
+      : "管理员视图下暂时还没有可见股票观点数据。"
+    : profile
+      ? isCrypto
+        ? "当前账号的订阅范围内还没有可见标的观点数据。通常是因为还没订阅任何账号，或已订阅账号暂时没有有效观点。"
+        : "当前账号的订阅范围内还没有可见股票观点数据。通常是因为还没订阅任何账号，或已订阅账号暂时没有有效观点。"
+      : "暂无公开预览数据";
   const cryptoIdentifierBadges = useMemo(() => {
     if (!isCrypto || !detail) return [];
     const badges: string[] = [];
@@ -234,7 +246,7 @@ export function EntityBrowser({
             <CardHeader className="shrink-0 space-y-4 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
               <div>
                 <CardTitle className="text-xl">快速切换</CardTitle>
-                <CardDescription>{profile ? "按你的订阅过滤" : "公开轻量预览"}</CardDescription>
+                <CardDescription>{listScopeLabel}</CardDescription>
               </div>
               <form className="space-y-3" onSubmit={search}>
                 <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isCrypto ? "搜索标的" : "搜索股票"} />
@@ -277,7 +289,23 @@ export function EntityBrowser({
                 />
               ))}
               {!listLoading && items.length === 0 ? (
-                <div className="empty">{profile ? "暂无订阅范围内的数据" : "暂无公开预览数据"}</div>
+                <div className="empty space-y-2">
+                  <div>{emptyListHint}</div>
+                  {profile && !adminView ? (
+                    <div className="text-sm text-[color:var(--muted-ink)]">
+                      去
+                      {" "}
+                      <Link
+                        href={isCrypto ? "/crypto/accounts" : "/accounts"}
+                        className="underline underline-offset-4 hover:text-[color:var(--accent-strong)]"
+                      >
+                        账号库
+                      </Link>
+                      {" "}
+                      订阅后，这里才会显示详情时间线。
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </CardContent>
           </Card>

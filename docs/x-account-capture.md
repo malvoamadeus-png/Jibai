@@ -102,6 +102,7 @@ X 内容入库时主要字段包括：
 | `X_RUNTIME_FAILED` | Playwright/Chromium 环境异常 |
 | `X_FETCH_FAILED` | 请求失败、镜像不可用、被安全验证或反机器人拦截 |
 | `X_PARSE_EMPTY` | 页面或接口返回成功，但没有解析到可用 tweet |
+| `X_ACCOUNT_TIMEOUT` | public worker 单账号抓取超过硬超时，被跳过以避免阻塞队列 |
 | `X_OTHER` | 未归类异常 |
 
 ## 运行态文件

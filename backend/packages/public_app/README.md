@@ -39,6 +39,8 @@ PUBLIC_WORKER_ACCOUNT_DELAY_SECONDS=5
 PUBLIC_WORKER_POLL_SECONDS=30
 PUBLIC_WORKER_HEADLESS=true
 PUBLIC_WORKER_PAGE_WAIT_SECONDS=6
+PUBLIC_WORKER_ACCOUNT_TIMEOUT_SECONDS=180
+PUBLIC_WORKER_BACKFILL_ACCOUNT_TIMEOUT_SECONDS=600
 PUBLIC_WORKER_NITTER_INSTANCES=nitter.tiekoetter.com,nitter.catsarch.com,xcancel.com
 PUBLIC_WORKER_MARKET_DATA_MAX_SECURITIES=30
 PUBLIC_WORKER_MARKET_DATA_DAYS=180
@@ -98,6 +100,13 @@ first. Nitter is now only a fallback for cases where that API is unavailable.
 bot protection or go offline, so keep this value configurable on the server
 instead of relying on the code defaults. Use comma-separated host names without
 `https://`.
+
+The public worker isolates each account crawl in a child process. Scheduled
+crawls use `PUBLIC_WORKER_ACCOUNT_TIMEOUT_SECONDS`, default `180`, and initial
+backfills use `PUBLIC_WORKER_BACKFILL_ACCOUNT_TIMEOUT_SECONDS`, default `600`.
+If an account crawl exceeds its limit, the worker terminates that child,
+records `X_ACCOUNT_TIMEOUT` for the account, and continues with the remaining
+accounts so one stuck external request cannot hold the global worker lock.
 
 Crypto asset brief X search is a separate runtime from timeline crawling. It is
 now implemented inside `backend/packages/public_app/x_search.py`, uses

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink, Newspaper } from "lucide-react";
+import { AlertTriangle, ExternalLink, Newspaper } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -14,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageHeader } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
 import { getVisibleStockNewsTimeline } from "@/lib/direct-data";
-import { formatCount, stripTime } from "@/lib/utils";
+import { cn, formatCount, stripTime } from "@/lib/utils";
 import type { StockNewsTimelineResponse } from "@/lib/types";
 
 function parsePage(value: string | null) {
@@ -35,6 +35,7 @@ function eventTypeLabel(value: string) {
     product_update: "产品更新",
     policy_update: "政策更新",
     supply_chain_update: "供应链更新",
+    supply_risk: "供应风险",
     profitability_outlook: "盈利预期",
     analyst_report: "分析师报告",
     exclusive_report: "独家报道",
@@ -43,6 +44,10 @@ function eventTypeLabel(value: string) {
     other: "其他",
   };
   return mapping[value] || value || "其他";
+}
+
+function isSupplyRisk(value: string) {
+  return value === "supply_risk";
 }
 
 function eventNatureLabel(value: string) {
@@ -120,10 +125,11 @@ export function StockNewsTimeline() {
       <PageHeader
         eyebrow="Stock News"
         title="新闻"
-        description="按日期回看股票与主题相关的客观新闻、事件、公告、引述和数据播报。这里不混入作者观点，也不推导买卖方向。"
+        description="按日期回看股票与主题相关的客观新闻、事件、公告、引述和非行情类数据播报。这里不混入作者观点，也不推导买卖方向。"
         badges={
           <>
             <Badge variant="warm">股票板块</Badge>
+            <Badge variant="danger">供应风险优先</Badge>
             <Badge variant="neutral">{profile ? "完整模式" : "公开预览"}</Badge>
           </>
         }
@@ -182,9 +188,14 @@ export function StockNewsTimeline() {
                 {day.events.map((event, index) => (
                   <article
                     key={`${day.date}-${event.noteId}-${index}`}
-                    className="space-y-2 border-b border-[color:var(--border)]/70 py-3 last:border-b-0 last:pb-0 first:pt-0"
+                    className={cn(
+                      "space-y-2 border-b border-[color:var(--border)]/70 py-3 last:border-b-0 last:pb-0 first:pt-0",
+                      isSupplyRisk(event.eventType) &&
+                        "rounded-lg border border-[color:rgba(212,67,67,0.28)] bg-[color:rgba(212,67,67,0.06)] px-3 py-3 last:border-b first:pt-3",
+                    )}
                   >
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[color:var(--soft-ink)] sm:text-sm">
+                      {isSupplyRisk(event.eventType) ? <AlertTriangle className="h-4 w-4 text-[color:var(--danger)]" /> : null}
                       <span>{stripTime(event.publishTime)}</span>
                       <span>{event.authorNickname || event.accountName}</span>
                       {event.noteUrl ? (
@@ -193,7 +204,7 @@ export function StockNewsTimeline() {
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                       ) : null}
-                      <Badge variant="neutral">{eventTypeLabel(event.eventType)}</Badge>
+                      <Badge variant={isSupplyRisk(event.eventType) ? "danger" : "neutral"}>{eventTypeLabel(event.eventType)}</Badge>
                       <Badge variant="warm">{eventNatureLabel(event.eventNature)}</Badge>
                       {event.linkedEntities.map((entity) => (
                         <Badge key={`${event.noteId}-${entity.entityType}-${entity.entityKey}`} variant="neutral">

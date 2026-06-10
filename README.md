@@ -78,6 +78,7 @@ python backend/src/main.py login --config data/config/watchlist.json
 python backend/src/main.py run-once --config data/config/watchlist.json
 python backend/src/main.py run-once-x --config data/config/x_watchlist.json
 python backend/src/main.py run-scheduler --config data/config/watchlist.json
+python backend/src/main.py export-daily-author-viewpoints --date 2026-06-08
 ```
 
 ## 配置说明
@@ -116,7 +117,49 @@ python backend/src/main.py run-scheduler --config data/config/watchlist.json
 - 小红书登录态：`data/runtime/state/xhs_chrome_user_data/`
 - SQLite 数据库：`data/runtime/insight.db`
 - AI snapshot：`data/runtime/ai/snapshots/`
+- 每日作者观点导出：`data/runtime/exports/`
 - 运行状态文件：`data/runtime/state/`
+
+## 导出每日作者观点 CSV
+
+如果你想把“当天所有作者的股票观点”导成 CSV，拿去做 X 或小红书图片素材，可以直接运行：
+
+```bash
+python backend/src/main.py export-daily-author-viewpoints
+```
+
+常用参数：
+
+- `--date 2026-06-08`：导出指定日期；不传时默认导出库里最新一个有明确股票观点的日期
+- `--platform x`：只导出某个平台，例如 `x` 或 `xiaohongshu`
+- `--output /absolute/path/output.csv`：自定义输出路径
+
+默认会生成：
+
+`data/runtime/exports/daily-author-viewpoints-YYYY-MM-DD.csv`
+
+数据源规则：
+
+- 先读取本地 `data/runtime/insight.db`
+- 如果本地当天没有可导出的作者股票观点，再自动回退到 Supabase/Postgres 公共库
+- 命令输出里会显示 `source=local-sqlite` 或 `source=public-postgres`
+
+当前导出字段包括：
+
+- `日期`
+- `作者`
+- `作者账号`
+- `标的名称`
+- `标的代码/简称`
+- `多空`
+- `强烈程度`
+- `逻辑`
+
+导出会自动排除：
+
+- 纯提及、没有明确多空的内容
+- 非股票对象
+- 证据字段
 
 ## 如何在新电脑上本地核验“这次运行是否真的成功”
 
