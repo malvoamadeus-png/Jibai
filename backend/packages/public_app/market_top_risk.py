@@ -24,16 +24,16 @@ from packages.common.postgres_database import PostgresInsightStore, postgres_con
 CACHE_DIR = get_paths().runtime_dir / "market_top_risk" / "cache"
 START_DATE = dt.date(2004, 1, 1)
 FRED_SERIES = {
-    "NASDAQ100": "NASDAQ100",
     "NFCI": "NFCI",
     "ANFCI": "ANFCI",
     "BAA10Y": "BAA10Y",
 }
-NASDAQ_SYMBOLS = {
-    "SPY": "etf",
-    "RSP": "etf",
-    "QQQ": "etf",
-    "QQEW": "etf",
+NASDAQ_PRICE_SERIES = {
+    "NDX": ("index", "nasdaq100"),
+    "SPY": ("etf", "px_spy"),
+    "RSP": ("etf", "px_rsp"),
+    "QQQ": ("etf", "px_qqq"),
+    "QQEW": ("etf", "px_qqew"),
 }
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -115,6 +115,13 @@ def _fetch_url(url: str, cache_name: str, *, max_age_hours: int = 24) -> bytes:
             last_exc = exc
             if attempt < 3:
                 time.sleep(2 * attempt)
+    if path.exists():
+        age_hours = (time.time() - path.stat().st_mtime) / 3600
+        print(
+            "[public-worker] market_top_risk stale_cache "
+            f"cache={cache_name} age_hours={age_hours:.1f} fetch_error={last_exc}"
+        )
+        return path.read_bytes()
     raise RuntimeError(f"Fetch failed for {url}: {last_exc}") from last_exc
 
 
@@ -288,13 +295,25 @@ def build_market_top_risk_snapshots(*, history_limit: int = 90) -> list[MarketTo
     weeks = _all_week_ends(START_DATE, end_date)
     rows: list[dict[str, object]] = [{"week": week.isoformat()} for week in weeks]
 
-    fred = {key: _fetch_fred_series(series_id) for key, series_id in FRED_SERIES.items()}
+    fred: dict[str, dict[dt.date, float]] = {}
+    fred_unavailable = False
+    for key, series_id in FRED_SERIES.items():
+        if fred_unavailable:
+            print(f"[public-worker] market_top_risk source_skipped source=fred series={series_id} reason=previous_failure")
+            fred[key] = {}
+            continue
+        try:
+            fred[key] = _fetch_fred_series(series_id)
+        except Exception as exc:
+            print(f"[public-worker] market_top_risk source_unavailable source=fred series={series_id} error={exc}")
+            fred_unavailable = True
+            fred[key] = {}
     for key, series in fred.items():
         _add_series(rows, key.lower(), _weekly_asof(series, weeks, max_stale_days=21))
 
-    for symbol, assetclass in NASDAQ_SYMBOLS.items():
+    for symbol, (assetclass, row_key) in NASDAQ_PRICE_SERIES.items():
         series = _fetch_nasdaq_price(symbol, assetclass, end_date)
-        _add_series(rows, f"px_{symbol.lower()}", _weekly_asof(series, weeks, max_stale_days=14))
+        _add_series(rows, row_key, _weekly_asof(series, weeks, max_stale_days=14))
 
     ndx = [_parse_float(row.get("nasdaq100")) for row in rows]
     dd_from_high: list[float | None] = []
@@ -388,7 +407,7 @@ def build_market_top_risk_snapshots(*, history_limit: int = 90) -> list[MarketTo
                 },
                 sources={
                     "fred": list(FRED_SERIES.values()),
-                    "nasdaq": list(NASDAQ_SYMBOLS.keys()),
+                    "nasdaq": list(NASDAQ_PRICE_SERIES.keys()),
                     "method": "weekly Friday as-of, expanding historical percentiles",
                 },
             )

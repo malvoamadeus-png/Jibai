@@ -89,11 +89,19 @@ python3 research/market_top_risk/run_market_top_risk.py
 
 | 数据 | 来源 | 自动化方式 | 说明 |
 | --- | --- | --- | --- |
-| `NASDAQ100` | FRED | CSV 下载 | 主回撤标签和近高位过滤 |
+| `NDX` / Nasdaq 100 | Nasdaq 公共历史接口 | JSON 下载 | 主回撤标签和近高位过滤 |
 | `NFCI` | FRED | CSV 下载 | 金融条件 |
 | `ANFCI` | FRED | CSV 下载 | 调整后金融条件 |
 | `BAA10Y` | FRED | CSV 下载 | 长期信用利差代理 |
 | `SPY`、`RSP`、`QQQ`、`QQEW` | Nasdaq 公共历史接口 | JSON 下载 | 无 key，但当前只覆盖约 10 年 |
+
+运行时容错：
+
+- FRED 实时下载失败但本地已有缓存时，任务会使用过期缓存继续计算；各序列仍受
+  `max_stale_days` 限制，过旧值不会无限向后填充。
+- FRED 序列完全不可用时，对应金融条件/信用指标记为空，任务继续写入可由 Nasdaq
+  数据计算出的宽度类快照，并在 worker 日志中打印 `source_unavailable`。
+- `/risk` 页面会在最新快照超过 14 天时显示陈旧数据提示，并在最近历史图表上展示周度日期轴。
 
 ## 计算流程
 

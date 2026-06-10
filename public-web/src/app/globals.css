@@ -837,12 +837,49 @@ th {
   box-shadow: none;
 }
 
+.risk-data-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(181, 119, 23, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 248, 232, 0.92);
+  color: #8a560d;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.risk-data-warning svg {
+  flex: 0 0 auto;
+}
+
+.risk-history-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-history-summary,
+.risk-history-axis {
+  display: grid;
+  color: var(--muted-ink);
+  font-size: 12px;
+}
+
+.risk-history-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .risk-history {
   display: grid;
   height: 160px;
-  grid-template-columns: repeat(40, minmax(4px, 1fr));
   align-items: end;
   gap: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
 }
 
 .risk-history-bar {
@@ -874,6 +911,21 @@ th {
 
 .risk-history-high span {
   background: #ff453a;
+}
+
+.risk-history-axis {
+  align-items: start;
+  gap: 6px;
+  min-height: 18px;
+}
+
+.risk-history-axis span {
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.risk-history-axis span:last-child {
+  text-align: right;
 }
 
 .risk-guide {

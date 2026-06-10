@@ -85,6 +85,35 @@ function formatNumber(value: number | null) {
   return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
+function formatDate(value: string | null | undefined, options?: Intl.DateTimeFormatOptions) {
+  if (!value) return "-";
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value.replace(" ", "T");
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    ...options,
+  }).format(date);
+}
+
+function daysSinceDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const dateUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  return Math.floor((todayUtc - dateUtc) / 86_400_000);
+}
+
+function isHistoryTick(index: number, length: number) {
+  if (length <= 1) return true;
+  const last = length - 1;
+  const tickIndexes = new Set([0, Math.round(last * 0.25), Math.round(last * 0.5), Math.round(last * 0.75), last]);
+  return tickIndexes.has(index);
+}
+
 function RiskBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value * 100));
   return (
@@ -106,6 +135,42 @@ function SignalRow({ name, signal }: { name: string; signal: MarketTopRiskSignal
       <td>{formatScore(signal.value)}</td>
       <td className="muted">{signal.module}</td>
     </tr>
+  );
+}
+
+function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }) {
+  const points = history.slice(-40);
+  if (!points.length) return <div className="empty">暂无历史风险分数</div>;
+
+  const gridTemplateColumns = `repeat(${points.length}, minmax(8px, 1fr))`;
+  const first = points[0];
+  const latest = points.at(-1);
+
+  return (
+    <div className="risk-history-shell">
+      <div className="risk-history-summary">
+        <span>周度风险分数，纵轴 0-1</span>
+        <span>
+          {formatDate(first.week, { year: "numeric" })} 至 {formatDate(latest?.week, { year: "numeric" })}
+        </span>
+      </div>
+      <div className="risk-history" style={{ gridTemplateColumns }}>
+        {points.map((point) => (
+          <div
+            className={`risk-history-bar risk-history-${point.riskLevel}`}
+            key={point.week}
+            title={`${point.week} 风险分数 ${formatScore(point.riskScore)}，状态 ${LEVEL_TEXT[point.riskLevel]}`}
+          >
+            <span style={{ height: `${Math.max(4, Math.min(100, point.riskScore * 100))}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="risk-history-axis" style={{ gridTemplateColumns }}>
+        {points.map((point, index) => (
+          <span key={point.week}>{isHistoryTick(index, points.length) ? formatDate(point.week) : ""}</span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -166,6 +231,8 @@ export default function RiskPage() {
     [latest],
   );
   const history = data?.history ?? [];
+  const latestWeekAgeDays = daysSinceDate(latest?.week);
+  const latestIsStale = latestWeekAgeDays !== null && latestWeekAgeDays > 14;
 
   if (loading) return <LoadingPanel />;
 
@@ -187,6 +254,15 @@ export default function RiskPage() {
 
       {latest ? (
         <>
+          {latestIsStale ? (
+            <div className="risk-data-warning">
+              <AlertTriangle size={18} />
+              <span>
+                最新快照停在 {latest.week}，距今约 {latestWeekAgeDays} 天；请检查顶部风险同步任务或上游数据源。
+              </span>
+            </div>
+          ) : null}
+
           <section className="risk-grid">
             <div className="panel risk-main-panel">
               <div className="risk-title-row">
@@ -236,6 +312,7 @@ export default function RiskPage() {
               </div>
               <div className="risk-meta">
                 <span>周度：{latest.week}</span>
+                <span>写入：{formatDate(latest.updatedAt, { year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                 <span>NDX：{formatNumber(latest.nasdaq100)}</span>
                 <span>距 52 周高点：{formatPct(latest.ndxDdFrom52wHigh)}</span>
               </div>
@@ -273,20 +350,10 @@ export default function RiskPage() {
             <div className="section-head risk-section-head">
               <div>
                 <h2>最近历史</h2>
-                <p className="muted">近高位基准：未来 26 周平均最大回撤 {formatPct(data?.baseline.nearHighFwd26wAvgDrawdown ?? null)}，10%+ 回撤概率 {formatPct(data?.baseline.nearHighFwd26wDd10Probability ?? null)}。</p>
+                <p className="muted">每根柱子是一周的风险分数，横轴是快照周日期。近高位基准：未来 26 周平均最大回撤 {formatPct(data?.baseline.nearHighFwd26wAvgDrawdown ?? null)}，10%+ 回撤概率 {formatPct(data?.baseline.nearHighFwd26wDd10Probability ?? null)}。</p>
               </div>
             </div>
-            <div className="risk-history">
-              {history.slice(-40).map((point) => (
-                <div
-                  className={`risk-history-bar risk-history-${point.riskLevel}`}
-                  key={point.week}
-                  title={`${point.week} ${formatScore(point.riskScore)}`}
-                >
-                  <span style={{ height: `${Math.max(4, Math.min(100, point.riskScore * 100))}%` }} />
-                </div>
-              ))}
-            </div>
+            <RiskHistoryChart history={history} />
           </section>
 
           <IndicatorGuide />
