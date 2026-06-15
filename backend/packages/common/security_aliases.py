@@ -44,6 +44,7 @@ _MARKET_SUFFIX_MAP = {
     "SH": "SSE",
     "SS": "SSE",
     "BJ": "BJSE",
+    "HK": "HKEX",
     "KS": "KRX",
     "KQ": "KOSDAQ",
     "L": "LSE",
@@ -56,6 +57,7 @@ _MARKET_SUFFIX_MAP = {
     "V": "TSXV",
     "DE": "XETRA",
     "ST": "STO",
+    "T": "TSE",
     "TW": "TWSE",
     "TWO": "TPEX",
 }
@@ -315,6 +317,10 @@ def _normalize_market(market: str | None) -> str | None:
         "SZ": "SZSE",
         "BJSE": "BJSE",
         "BJ": "BJSE",
+        "HK": "HKEX",
+        "HKG": "HKEX",
+        "SEHK": "HKEX",
+        "HKEX": "HKEX",
         "KRX": "KRX",
         "KOSDAQ": "KOSDAQ",
         "LSE": "LSE",
@@ -331,9 +337,12 @@ def _normalize_market(market: str | None) -> str | None:
         "STO": "STO",
         "OMXSTO": "STO",
         "ST": "STO",
+        "JP": "TSE",
+        "TYO": "TSE",
+        "T": "TSE",
+        "TSE": "TSE",
         "TWSE": "TWSE",
         "TW": "TWSE",
-        "TSE": "TWSE",
         "TPEX": "TPEX",
         "TWO": "TPEX",
     }
@@ -445,12 +454,16 @@ def _build_security_key(
             return f"{ticker}.sh"
         if normalized_market == "BJSE":
             return f"{ticker}.bj"
+        if normalized_market == "HKEX":
+            return f"{ticker}.hk"
         if normalized_market in {"KRX", "KOSDAQ"}:
             return f"{ticker}.{normalized_market.casefold()}"
         if normalized_market == "TWSE":
             return f"{ticker}.tw"
         if normalized_market == "TPEX":
             return f"{ticker}.tpex"
+        if normalized_market == "TSE":
+            return f"{ticker}.t"
         if normalized_market == "STO":
             return ticker.casefold()
         if raw_is_plain_ticker or not _has_chinese(display_name):

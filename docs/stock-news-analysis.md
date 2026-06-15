@@ -9,7 +9,10 @@
 - `viewpoints` 只代表作者本人方向性判断。
 - `events` 只代表客观事件，不推导作者立场。
 
-第一版只在股票板块提供独立页面 `/stocks/news`，按日期展示新闻时间线。
+股票板块提供两个新闻页面：
+
+- `/stocks/news`：按日期展示新闻时间线。
+- `/stocks/news/tracking`：展示管理员选择追踪的新闻，以及 AI 映射出来的受益股票和入选后涨幅。
 
 ## 抽取口径
 
@@ -33,6 +36,8 @@
 
 纯股票、指数、ETF 或市场价格上涨/下跌、盘前盘后涨跌、创高创低等行情涨跌播报不进入 `events`，也不算股票新闻。材料、零部件或服务本身的涨价仍可作为 `supply_risk`。
 
+`events` 必须是近期具体发生或披露的事情。历史研究报告分享、长期规律回顾、行业知识科普、技术概念解释、工业流程定义、产品/工艺关系辨析不进入 `events`；这类内容即使客观，也不是新闻事件。
+
 当前 `linked_entities` 只允许两类：
 
 - `stock`
@@ -47,8 +52,14 @@
 | `content_events` | 单条内容拆出的事件原子项。 |
 | `content_event_entities` | 事件和股票/主题实体的关联。 |
 | `stock_news_daily_timeline` | 股票新闻按日期聚合后的时间线。 |
+| `stock_news_tracking` | 管理员选择追踪的新闻事件，按 `event_key` 去重。 |
+| `stock_news_tracking_stocks` | 单条追踪新闻映射出的受益股票、逻辑和价格表现。 |
 
 事件对象与观点对象分开存储，不复用 `content_viewpoints`。
+
+`stock_news_daily_timeline.events_json` 中每条事件都带 `event_key` 和
+`event_sort_order`。`event_key` 由 `note_id + event_sort_order + headline`
+生成，用作追踪去重和 AI 一次性分析的稳定锚点。
 
 ## 页面口径
 
@@ -60,9 +71,14 @@
 - `supply_risk` 事件在同一日期内优先排序，并使用警示样式突出显示。
 - 正文只保留标题和事件摘要，不单独展示依据字段。
 
-第一版限制：
+管理员在 `/stocks/news` 可以选择单条新闻追踪。追踪结果全站共享，普通用户只读。
+后台每小时扫描待分析新闻，使用 `gpt-5.4` 和 `reasoning_effort=high`
+对每条新闻只分析一次，最多保留 30 只映射股票。每天北京时间 08:00
+和 20:00 刷新映射股票行情，涨幅基准为 AI 入选日的可用交易日收盘价。
+
+仍然不进入：
 
 - 不进入作者时间线。
 - 不进入单只股票详情页。
 - 不进入观点矩阵、点金榜、叙事简报和顶部风险。
-- 关联实体 badge 只展示，不提供跳转。
+- 新闻页关联实体 badge 只展示，不提供跳转。

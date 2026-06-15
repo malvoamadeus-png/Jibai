@@ -254,6 +254,8 @@ class StockTimelineFile(BaseModel):
 
 
 class NewsTimelineItem(BaseModel):
+    event_key: str = ""
+    event_sort_order: int = 0
     note_id: str
     note_url: str = ""
     note_title: str = ""

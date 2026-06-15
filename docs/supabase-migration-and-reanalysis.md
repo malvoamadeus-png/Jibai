@@ -317,6 +317,24 @@ Verify `public.get_stock_blogger_gold_rankings()` with an authenticated session.
 The payload should include the latest successful run and must not include
 legacy `hit`, `hit_rate`, `confidence_factor`, or `raw_overall_score` fields.
 
+Apply `supabase/migrations/033_stock_news_tracking.sql` before enabling
+`/stocks/news/tracking`. The migration adds `event_key` to materialized stock
+news events, creates `stock_news_tracking` and `stock_news_tracking_stocks`, and
+exposes:
+
+- `track_stock_news_event(event_key_arg, event_snapshot_arg)`: admin-only,
+  idempotent tracking selection.
+- `get_stock_news_tracking(page_arg, page_size_arg)`: shared read RPC for the
+  tracking table.
+
+After applying it, run the two one-off worker commands if you want immediate
+results instead of waiting for the scheduler:
+
+```bash
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-analyze-stock-news-tracking --limit 5
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-refresh-stock-news-tracking-prices
+```
+
 Generate or refresh crypto asset briefs after the crypto migration or resolver
 change:
 

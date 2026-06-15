@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from packages.ai.pipeline import _materialize_stock_news_timelines, _parse_event
+from packages.ai.pipeline import _materialize_stock_news_timelines, _parse_event, build_stock_news_event_key
 from packages.common.database import InsightStore, init_db
 from packages.common.models import EventLinkedEntity, EventRecord, NewsTimelineDay, NoteExtractRecord, RawNoteRecord
 
@@ -102,6 +102,50 @@ def test_parse_event_filters_price_action_data_points() -> None:
     assert event is None
 
 
+def test_parse_event_filters_historical_research_shares() -> None:
+    event = _parse_event(
+        {
+            "headline": "AI需求与HBM打破DRAM长期降本趋势",
+            "event_summary": (
+                "内容指出，1957年至2020年DRAM单位成本长期按约每五年下降一个数量级，"
+                "但AI基础设施需求和HBM出现后，这一成本下降模式被直接逆转。"
+            ),
+            "event_type": "data_point",
+            "event_nature": "reported",
+            "linked_entities": [
+                {"entity_type": "theme", "entity_name": "AI基础设施", "entity_code_or_name": "AI基础设施"},
+                {"entity_type": "theme", "entity_name": "DRAM", "entity_code_or_name": "DRAM"},
+                {"entity_type": "theme", "entity_name": "HBM", "entity_code_or_name": "HBM"},
+            ],
+        },
+        order=0,
+        aliases={},
+    )
+
+    assert event is None
+
+
+def test_parse_event_filters_technical_definition_discussions() -> None:
+    event = _parse_event(
+        {
+            "headline": "讨论 CoPoS 产品与玻璃载板关系",
+            "event_summary": (
+                "原文表示“Glass carrier is just a carrier”，并称真正的 CoPoS 产品在 RDL 下方不应有玻璃，"
+                "属于对封装工艺定义的技术讨论。"
+            ),
+            "event_type": "other",
+            "event_nature": "reported",
+            "linked_entities": [
+                {"entity_type": "theme", "entity_name": "CoPoS", "entity_code_or_name": "CoPoS"},
+            ],
+        },
+        order=0,
+        aliases={},
+    )
+
+    assert event is None
+
+
 def test_materialize_stock_news_timelines_groups_events_by_day() -> None:
     extract_a = NoteExtractRecord(
         platform="x",
@@ -153,6 +197,11 @@ def test_materialize_stock_news_timelines_groups_events_by_day() -> None:
     assert [item.date for item in records] == ["2026-06-08", "2026-06-07"]
     assert records[0].event_count == 1
     assert records[0].events[0].account_name == "alice"
+    assert records[0].events[0].event_key == build_stock_news_event_key(
+        note_id="n1",
+        event_sort_order=0,
+        headline="英伟达供应链需求继续走强",
+    )
     assert records[0].events[0].linked_entities[1].entity_name == "HBM"
 
 

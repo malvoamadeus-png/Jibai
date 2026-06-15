@@ -27,6 +27,9 @@ YAHOO_SUFFIX_BY_MARKET = {
     "XMIL": ".MI",
     "SIX": ".SW",
     "STO": ".ST",
+    "TSE": ".T",
+    "TYO": ".T",
+    "JP": ".T",
     "TWSE": ".TW",
     "TPEX": ".TWO",
 }
@@ -78,8 +81,9 @@ def _normalize_market(value: str | None) -> str | None:
         "BJ": "BJSE",
         "ST": "STO",
         "OMXSTO": "STO",
+        "JP": "TSE",
+        "TYO": "TSE",
         "TW": "TWSE",
-        "TSE": "TWSE",
         "TWO": "TPEX",
     }
     return aliases.get(normalized, normalized) or None

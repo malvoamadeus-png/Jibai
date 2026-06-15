@@ -45,6 +45,9 @@ import type {
   StockKlineData,
   StockNewsItem,
   StockNewsLinkedEntity,
+  StockNewsTrackingItem,
+  StockNewsTrackingResponse,
+  StockNewsTrackingStock,
   StockNewsTimelineDay,
   StockNewsTimelineResponse,
   StockKlineMarker,
@@ -240,6 +243,8 @@ function normalizeStockNewsLinkedEntity(rawValue: unknown): StockNewsLinkedEntit
 function normalizeStockNewsItem(rawValue: unknown): StockNewsItem {
   const raw = asRecord(rawValue);
   return {
+    eventKey: asString(raw.event_key ?? raw.eventKey),
+    eventSortOrder: asNumber(raw.event_sort_order ?? raw.eventSortOrder),
     noteId: asString(raw.note_id ?? raw.noteId),
     noteUrl: asString(raw.note_url ?? raw.noteUrl),
     noteTitle: asString(raw.note_title ?? raw.noteTitle),
@@ -252,6 +257,7 @@ function normalizeStockNewsItem(rawValue: unknown): StockNewsItem {
     eventNature: asString(raw.event_nature ?? raw.eventNature, "reported"),
     linkedEntities: asArray(raw.linked_entities ?? raw.linkedEntities).map(normalizeStockNewsLinkedEntity),
     metadata: asRecord(raw.metadata),
+    isTracked: Boolean(raw.is_tracked ?? raw.isTracked),
   };
 }
 
@@ -262,6 +268,53 @@ function normalizeStockNewsDay(rawValue: unknown): StockNewsTimelineDay {
     eventCount: asNumber(raw.event_count ?? raw.eventCount),
     events: asArray(raw.events).map(normalizeStockNewsItem),
     updatedAt: asNullableString(raw.updated_at ?? raw.updatedAt) ?? "",
+  };
+}
+
+function normalizeStockNewsTrackingStock(rawValue: unknown): StockNewsTrackingStock {
+  const raw = asRecord(rawValue);
+  return {
+    id: asString(raw.id),
+    sortOrder: asNumber(raw.sort_order ?? raw.sortOrder),
+    securityKey: asString(raw.security_key ?? raw.securityKey),
+    displayName: asString(raw.display_name ?? raw.displayName ?? raw.security_key ?? raw.securityKey),
+    ticker: asNullableString(raw.ticker),
+    market: asNullableString(raw.market),
+    countryOrRegion: asString(raw.country_or_region ?? raw.countryOrRegion),
+    benefitLogic: asString(raw.benefit_logic ?? raw.benefitLogic),
+    confidence: asString(raw.confidence, "unknown"),
+    selectedDate: asString(raw.selected_date ?? raw.selectedDate),
+    anchorStatus: asString(raw.anchor_status ?? raw.anchorStatus, "pending"),
+    anchorDate: asNullableString(raw.anchor_date ?? raw.anchorDate),
+    anchorPrice: asNullableNumber(raw.anchor_price ?? raw.anchorPrice),
+    latestDate: asNullableString(raw.latest_date ?? raw.latestDate),
+    latestPrice: asNullableNumber(raw.latest_price ?? raw.latestPrice),
+    horizon3Status: asString(raw.horizon_3_status ?? raw.horizon3Status, "pending"),
+    return3d: asNullableNumber(raw.return_3d ?? raw.return3d),
+    target3dDate: asNullableString(raw.target_3d_date ?? raw.target3dDate),
+    horizon7Status: asString(raw.horizon_7_status ?? raw.horizon7Status, "pending"),
+    return7d: asNullableNumber(raw.return_7d ?? raw.return7d),
+    target7dDate: asNullableString(raw.target_7d_date ?? raw.target7dDate),
+    returnSinceSelected: asNullableNumber(raw.return_since_selected ?? raw.returnSinceSelected),
+    priceStatus: asString(raw.price_status ?? raw.priceStatus, "pending"),
+    priceError: asString(raw.price_error ?? raw.priceError),
+    lastPriceCheckedAt: asNullableString(raw.last_price_checked_at ?? raw.lastPriceCheckedAt),
+  };
+}
+
+function normalizeStockNewsTrackingItem(rawValue: unknown): StockNewsTrackingItem {
+  const raw = asRecord(rawValue);
+  return {
+    id: asString(raw.id),
+    eventKey: asString(raw.event_key ?? raw.eventKey),
+    eventDate: asNullableString(raw.event_date ?? raw.eventDate),
+    eventSnapshot: asRecord(raw.event_snapshot ?? raw.eventSnapshot),
+    status: asString(raw.status, "pending"),
+    modelName: asNullableString(raw.model_name ?? raw.modelName),
+    errorText: asString(raw.error_text ?? raw.errorText),
+    createdAt: asString(raw.created_at ?? raw.createdAt),
+    analyzedAt: asNullableString(raw.analyzed_at ?? raw.analyzedAt),
+    stocks: asArray(raw.stocks).map(normalizeStockNewsTrackingStock),
   };
 }
 
@@ -916,6 +969,58 @@ export async function getVisibleStockNewsTimeline(
   const payload = asRecord(data);
   return {
     timeline: normalizePaged(payload.timeline, normalizeStockNewsDay),
+  };
+}
+
+export async function trackStockNewsEvent(
+  supabase: SupabaseClient,
+  event: StockNewsItem,
+  date: string,
+): Promise<void> {
+  if (!event.eventKey) {
+    throw new Error("这条新闻缺少 event_key，等待下一次新闻物化后再追踪。");
+  }
+  const { error } = await supabase.rpc("track_stock_news_event", {
+    event_key_arg: event.eventKey,
+    event_snapshot_arg: {
+      date,
+      event_key: event.eventKey,
+      event_sort_order: event.eventSortOrder,
+      note_id: event.noteId,
+      note_url: event.noteUrl,
+      note_title: event.noteTitle,
+      account_name: event.accountName,
+      author_nickname: event.authorNickname,
+      publish_time: event.publishTime,
+      headline: event.headline,
+      event_summary: event.eventSummary,
+      event_type: event.eventType,
+      event_nature: event.eventNature,
+      linked_entities: event.linkedEntities.map((entity) => ({
+        entity_type: entity.entityType,
+        entity_key: entity.entityKey,
+        entity_name: entity.entityName,
+        entity_code_or_name: entity.entityCodeOrName,
+        metadata: entity.metadata,
+      })),
+      metadata: event.metadata,
+    },
+  });
+  assertNoError(error);
+}
+
+export async function getStockNewsTracking(
+  supabase: SupabaseClient,
+  page = 1,
+): Promise<StockNewsTrackingResponse> {
+  const { data, error } = await supabase.rpc("get_stock_news_tracking", {
+    page_arg: page,
+    page_size_arg: 20,
+  });
+  assertNoError(error);
+  const payload = asRecord(data);
+  return {
+    tracking: normalizePaged(payload.tracking, normalizeStockNewsTrackingItem),
   };
 }
 

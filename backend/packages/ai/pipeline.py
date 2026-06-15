@@ -199,6 +199,48 @@ SUPPLY_PRICE_CONTEXT_KEYWORDS = (
     "半导体材料",
     "封装",
 )
+NON_NEWS_HISTORICAL_SHARE_KEYWORDS = (
+    "历史研究",
+    "研究报告的分享",
+    "研究报告分享",
+    "历史规律",
+    "长期趋势",
+    "长期降本趋势",
+    "历史回顾",
+    "资料分享",
+    "1957年至2020年",
+    "1957至2020年",
+)
+NON_NEWS_EXPLAINER_KEYWORDS = (
+    "技术讨论",
+    "工艺定义",
+    "流程定义",
+    "概念解释",
+    "知识科普",
+    "关系辨析",
+    "直接定义",
+    "工业流程",
+    "just a carrier",
+    "属于对",
+)
+NON_NEWS_EXPLAINER_CONTEXT_KEYWORDS = (
+    "定义",
+    "阐述",
+    "讨论",
+    "解释",
+    "是什么",
+    "关系",
+    "原理",
+)
+NON_NEWS_TECHNICAL_SUBJECT_KEYWORDS = (
+    "工艺",
+    "流程",
+    "产品",
+    "玻璃载板",
+    "carrier",
+    "copos",
+    "rdl",
+)
 CRYPTO_ENTITY_KIND_ALIASES = {
     "project": "project",
     "protocol": "project",
@@ -676,6 +718,19 @@ def _is_price_action_news_event(headline: str, event_summary: str, event_type: s
     return has_market_subject and has_price_move
 
 
+def _is_non_news_explainer_event(headline: str, event_summary: str, event_type: str) -> bool:
+    text = _event_text(headline, event_summary)
+    if event_type in {"data_point", "other"} and any(
+        keyword.casefold() in text for keyword in NON_NEWS_HISTORICAL_SHARE_KEYWORDS
+    ):
+        return True
+    if any(keyword.casefold() in text for keyword in NON_NEWS_EXPLAINER_KEYWORDS):
+        return True
+    has_explainer_context = any(keyword.casefold() in text for keyword in NON_NEWS_EXPLAINER_CONTEXT_KEYWORDS)
+    has_technical_subject = any(keyword.casefold() in text for keyword in NON_NEWS_TECHNICAL_SUBJECT_KEYWORDS)
+    return event_type == "other" and has_explainer_context and has_technical_subject
+
+
 def _normalize_event_type(headline: str, event_summary: str, raw_event_type: object) -> str:
     event_type = str(raw_event_type or "other").strip().lower().replace(" ", "_") or "other"
     if _is_supply_risk_event(headline, event_summary, event_type):
@@ -697,6 +752,8 @@ def _parse_event(
         return None
     event_type = _normalize_event_type(headline, event_summary, raw.get("event_type"))
     if _is_price_action_news_event(headline, event_summary, event_type):
+        return None
+    if _is_non_news_explainer_event(headline, event_summary, event_type):
         return None
     linked_entities: list[EventLinkedEntity] = []
     seen_entities: set[tuple[str, str]] = set()
@@ -1732,6 +1789,12 @@ def _materialize_stock_news_timelines(
         items = grouped[date]
         events = [
             NewsTimelineItem(
+                event_key=build_stock_news_event_key(
+                    note_id=extract.note_id,
+                    event_sort_order=event.sort_order,
+                    headline=event.headline,
+                ),
+                event_sort_order=event.sort_order,
                 note_id=extract.note_id,
                 note_url=extract.note_url,
                 note_title=extract.note_title,
@@ -1773,6 +1836,11 @@ def _stock_news_item_priority(item: tuple[NoteExtractRecord, EventRecord]) -> tu
     extract, event = item
     priority = 1 if event.event_type == STOCK_NEWS_SUPPLY_RISK_TYPE else 0
     return (priority, extract.publish_time or "", extract.note_id, event.sort_order)
+
+
+def build_stock_news_event_key(*, note_id: str, event_sort_order: int, headline: str) -> str:
+    payload = f"{note_id}|{event_sort_order}|{headline.strip()}"
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
 
 def _materialize_crypto_timelines(

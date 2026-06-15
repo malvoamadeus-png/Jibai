@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, ExternalLink, Newspaper } from "lucide-react";
+import { AlertTriangle, ExternalLink, Newspaper, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
-import { getVisibleStockNewsTimeline } from "@/lib/direct-data";
+import { getVisibleStockNewsTimeline, trackStockNewsEvent } from "@/lib/direct-data";
 import { cn, formatCount, formatShanghaiDateTime } from "@/lib/utils";
 import type { StockNewsTimelineResponse } from "@/lib/types";
 
@@ -74,6 +74,7 @@ export function StockNewsTimeline() {
   const [data, setData] = useState<StockNewsTimelineResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(true);
+  const [trackingKey, setTrackingKey] = useState<string | null>(null);
 
   useEffect(() => {
     function syncFromLocation() {
@@ -112,6 +113,33 @@ export function StockNewsTimeline() {
   function goToPage(nextPage: number) {
     setPage(nextPage);
     window.history.pushState(null, "", buildNewsUrl(nextPage));
+  }
+
+  async function handleTrack(dayDate: string, eventKey: string) {
+    const event = rows.flatMap((day) => day.events).find((item) => item.eventKey === eventKey);
+    if (!event) return;
+    setTrackingKey(eventKey);
+    try {
+      await trackStockNewsEvent(supabase, event, dayDate);
+      setData((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          timeline: {
+            ...current.timeline,
+            rows: current.timeline.rows.map((day) => ({
+              ...day,
+              events: day.events.map((item) => (item.eventKey === eventKey ? { ...item, isTracked: true } : item)),
+            })),
+          },
+        };
+      });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "新闻追踪提交失败");
+    } finally {
+      setTrackingKey(null);
+    }
   }
 
   if (loading) return <LoadingPanel />;
@@ -211,6 +239,18 @@ export function StockNewsTimeline() {
                           {entityTypeLabel(entity.entityType)} · {entity.entityName}
                         </Badge>
                       ))}
+                      {profile?.isAdmin ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={event.isTracked ? "secondary" : "tinted"}
+                          disabled={event.isTracked || trackingKey === event.eventKey || !event.eventKey}
+                          onClick={() => handleTrack(day.date, event.eventKey)}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          {event.isTracked ? "已追踪" : trackingKey === event.eventKey ? "提交中" : "追踪"}
+                        </Button>
+                      ) : null}
                     </div>
                     <p className="text-sm leading-6 text-[color:var(--muted-ink)] sm:text-[15px]">
                       <span className="font-semibold text-[color:var(--ink)]">{event.headline}</span>

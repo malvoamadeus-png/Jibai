@@ -118,12 +118,22 @@ Nitter.
 
 Market-data settings are optional. Backfill and manual market refresh default
 to at most 30 stocks and 180 days of daily candles. Scheduled crawls default to
-at most 10 recently visible stocks and only fetch the latest 7 days of daily
-candles, but the K-line cache is still retained for the 180-day
-`PUBLIC_WORKER_MARKET_DATA_DAYS` window. Do not use the light refresh window as
-the delete/prune window. Scheduled crawls skip market data only when the
-analysis window has no stock signals. Market-data failures are isolated from
-the crawl and AI pipeline; the job result records `market_errors=N`.
+the lighter window configured by `PUBLIC_WORKER_LIGHT_MARKET_DATA_DAYS` and
+`PUBLIC_WORKER_LIGHT_MARKET_DATA_MAX_SECURITIES` (by default at most 10
+recently visible stocks and the latest 7 days of daily candles), but the K-line
+cache is still retained for the 180-day `PUBLIC_WORKER_MARKET_DATA_DAYS`
+window. Do not use the light refresh window as the delete/prune window.
+Scheduled crawls skip market data only when the analysis window has no stock
+signals. Market-data failures are isolated from the crawl and AI pipeline; the
+job result records `market_errors=N`.
+
+Stock news tracking uses the same AI and market-data infrastructure. The worker
+checks pending tracked news every hour at
+`PUBLIC_WORKER_STOCK_NEWS_TRACKING_ANALYSIS_MINUTE` (default `05`) and refreshes
+tracked-stock prices at `PUBLIC_WORKER_STOCK_NEWS_TRACKING_PRICE_TIMES`
+(default `08:00,20:00`, Asia/Shanghai). Each tracked news event is analyzed once
+with `gpt-5.4` and `reasoning_effort=high`; the resulting stock list is capped
+at 30 names.
 
 Analysis output is intentionally windowed. `PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS`
 defaults to `30`, matching the initial backfill lookback and using
@@ -227,6 +237,8 @@ python backend/src/main.py public-generate-stock-narrative
 python backend/src/main.py public-generate-stock-narrative --date 2026-05-18 --force
 python backend/src/main.py public-ensure-stock-blogger-accounts
 python backend/src/main.py public-rebuild-stock-blogger-scores --days 90
+python backend/src/main.py public-analyze-stock-news-tracking --limit 5
+python backend/src/main.py public-refresh-stock-news-tracking-prices
 python backend/src/main.py public-generate-crypto-asset-briefs
 python backend/src/main.py public-generate-crypto-asset-briefs --asset-key orbiter --force
 python backend/src/main.py public-import-sqlite
@@ -326,6 +338,11 @@ without a ticker.
 Before the market-data path can return K-line data to `public-web`, apply the
 Supabase migrations through `supabase/migrations/004_public_read_rpc.sql` and
 `supabase/migrations/005_stock_daily_prices.sql`.
+
+Before `/stocks/news/tracking` can accept tracked news, apply
+`supabase/migrations/033_stock_news_tracking.sql`. Admin users call
+`track_stock_news_event(...)` from `/stocks/news`; all users read
+`get_stock_news_tracking(...)` from `/stocks/news/tracking`.
 
 ## Smoke Tests
 

@@ -49,6 +49,10 @@ from .crypto_asset_narrative import generate_crypto_asset_briefs_once
 from .market_top_risk import sync_market_top_risk_once
 from .stock_narrative import generate_stock_narrative_once
 from .stock_blogger_scoring import rebuild_stock_blogger_scores_once
+from .stock_news_tracking import (
+    analyze_pending_stock_news_tracking_once,
+    refresh_stock_news_tracking_prices_once,
+)
 
 
 DEFAULT_CRAWL_TIMES = tuple(f"{hour:02d}:00" for hour in range(24))
@@ -87,6 +91,25 @@ def _stock_blogger_score_time() -> str:
 
 def _stock_blogger_score_enabled() -> bool:
     return os.getenv("PUBLIC_STOCK_BLOGGER_SCORE_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+
+
+def _stock_news_tracking_analysis_minutes() -> list[int]:
+    raw = os.getenv("PUBLIC_WORKER_STOCK_NEWS_TRACKING_ANALYSIS_MINUTE", "05")
+    values: list[int] = []
+    for item in raw.split(","):
+        try:
+            minute = int(item.strip())
+        except ValueError:
+            continue
+        if 0 <= minute <= 59 and minute not in values:
+            values.append(minute)
+    return values or [5]
+
+
+def _stock_news_tracking_price_times() -> list[str]:
+    raw = os.getenv("PUBLIC_WORKER_STOCK_NEWS_TRACKING_PRICE_TIMES", "08:00,20:00")
+    values = [item.strip() for item in raw.split(",") if item.strip()]
+    return values or ["08:00", "20:00"]
 
 
 def _crypto_asset_brief_time() -> str:
@@ -1202,6 +1225,21 @@ def run_worker(*, once: bool = False) -> int:
             id="public-stock-blogger-score",
             replace_existing=True,
         )
+    for minute in _stock_news_tracking_analysis_minutes():
+        scheduler.add_job(
+            lambda: analyze_pending_stock_news_tracking_once(),
+            CronTrigger(minute=minute, timezone=SHANGHAI_TZ),
+            id=f"public-stock-news-tracking-analysis-{minute:02d}",
+            replace_existing=True,
+        )
+    for value in _stock_news_tracking_price_times():
+        price_hour, price_minute = value.split(":", 1)
+        scheduler.add_job(
+            lambda: refresh_stock_news_tracking_prices_once(),
+            CronTrigger(hour=int(price_hour), minute=int(price_minute), timezone=SHANGHAI_TZ),
+            id=f"public-stock-news-tracking-prices-{price_hour}{price_minute}",
+            replace_existing=True,
+        )
     crypto_brief_hour, crypto_brief_minute = _crypto_asset_brief_time().split(":", 1)
     scheduler.add_job(
         lambda: generate_crypto_asset_briefs_once(),
@@ -1227,6 +1265,8 @@ def run_worker(*, once: bool = False) -> int:
             if _stock_blogger_score_enabled()
             else "; stock_blogger_score=disabled"
         )
+        + f"; stock_news_tracking_analysis_minutes={','.join(str(item) for item in _stock_news_tracking_analysis_minutes())}"
+        + f"; stock_news_tracking_price_times={','.join(_stock_news_tracking_price_times())}"
         + f"; crypto_asset_brief_time={_crypto_asset_brief_time()}"
     )
     scheduler.start()

@@ -386,6 +386,8 @@ export type StockNewsLinkedEntity = {
 };
 
 export type StockNewsItem = {
+  eventKey: string;
+  eventSortOrder: number;
   noteId: string;
   noteUrl: string;
   noteTitle: string;
@@ -398,6 +400,7 @@ export type StockNewsItem = {
   eventNature: string;
   linkedEntities: StockNewsLinkedEntity[];
   metadata: Record<string, unknown>;
+  isTracked: boolean;
 };
 
 export type StockNewsTimelineDay = {
@@ -409,6 +412,51 @@ export type StockNewsTimelineDay = {
 
 export type StockNewsTimelineResponse = {
   timeline: PagedResult<StockNewsTimelineDay>;
+};
+
+export type StockNewsTrackingStock = {
+  id: string;
+  sortOrder: number;
+  securityKey: string;
+  displayName: string;
+  ticker: string | null;
+  market: string | null;
+  countryOrRegion: string;
+  benefitLogic: string;
+  confidence: string;
+  selectedDate: string;
+  anchorStatus: string;
+  anchorDate: string | null;
+  anchorPrice: number | null;
+  latestDate: string | null;
+  latestPrice: number | null;
+  horizon3Status: string;
+  return3d: number | null;
+  target3dDate: string | null;
+  horizon7Status: string;
+  return7d: number | null;
+  target7dDate: string | null;
+  returnSinceSelected: number | null;
+  priceStatus: string;
+  priceError: string;
+  lastPriceCheckedAt: string | null;
+};
+
+export type StockNewsTrackingItem = {
+  id: string;
+  eventKey: string;
+  eventDate: string | null;
+  eventSnapshot: Record<string, unknown>;
+  status: "pending" | "analyzing" | "succeeded" | "failed" | string;
+  modelName: string | null;
+  errorText: string;
+  createdAt: string;
+  analyzedAt: string | null;
+  stocks: StockNewsTrackingStock[];
+};
+
+export type StockNewsTrackingResponse = {
+  tracking: PagedResult<StockNewsTrackingItem>;
 };
 
 export type EntityDetailData = {

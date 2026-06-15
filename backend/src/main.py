@@ -221,6 +221,26 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use existing market-data cache without refreshing stock or benchmark candles.",
     )
+    public_stock_news_tracking_parser = subparsers.add_parser(
+        "public-analyze-stock-news-tracking",
+        help="Analyze pending tracked stock news events.",
+    )
+    public_stock_news_tracking_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Maximum pending tracked news events to analyze. Defaults to 5.",
+    )
+    public_stock_news_tracking_prices_parser = subparsers.add_parser(
+        "public-refresh-stock-news-tracking-prices",
+        help="Refresh prices and returns for tracked stock news mappings.",
+    )
+    public_stock_news_tracking_prices_parser.add_argument(
+        "--delay-seconds",
+        type=float,
+        default=0.25,
+        help="Delay between symbols. Defaults to 0.25.",
+    )
     subparsers.add_parser(
         "public-ensure-stock-blogger-accounts",
         help="Ensure default stock blogger score accounts exist and are approved for stock.",
@@ -372,6 +392,14 @@ def main() -> int:
         from packages.public_app.stock_blogger_scoring import ensure_stock_blogger_accounts_once  # noqa: PLC0415
 
         return ensure_stock_blogger_accounts_once()
+    if args.command == "public-analyze-stock-news-tracking":
+        from packages.public_app.stock_news_tracking import analyze_pending_stock_news_tracking_once  # noqa: PLC0415
+
+        return analyze_pending_stock_news_tracking_once(limit=args.limit)
+    if args.command == "public-refresh-stock-news-tracking-prices":
+        from packages.public_app.stock_news_tracking import refresh_stock_news_tracking_prices_once  # noqa: PLC0415
+
+        return refresh_stock_news_tracking_prices_once(delay_seconds=args.delay_seconds)
     if args.command == "public-generate-crypto-asset-briefs":
         from packages.public_app.crypto_asset_narrative import generate_crypto_asset_briefs_once  # noqa: PLC0415
 
