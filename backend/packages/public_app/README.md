@@ -134,7 +134,10 @@ checks pending tracked news every hour at
 tracked-stock prices at `PUBLIC_WORKER_STOCK_NEWS_TRACKING_PRICE_TIMES`
 (default `08:00,20:00`, Asia/Shanghai). Each tracked news event is analyzed once
 with `gpt-5.4` and `reasoning_effort=high`; the resulting stock list is capped
-at 30 names.
+at 30 names. The prompt version `stock_news_tracking_v2_one_hop` limits mapping
+to the news core object's direct self/peer, upstream-one-hop, and
+downstream-one-hop beneficiaries; parser-side validation drops entries outside
+those layers.
 
 Analysis output is intentionally windowed. `PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS`
 defaults to `30`, matching the initial backfill lookback and using

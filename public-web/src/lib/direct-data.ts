@@ -281,6 +281,8 @@ function normalizeStockNewsTrackingStock(rawValue: unknown): StockNewsTrackingSt
     ticker: asNullableString(raw.ticker),
     market: asNullableString(raw.market),
     countryOrRegion: asString(raw.country_or_region ?? raw.countryOrRegion),
+    benefitLayer: asString(raw.benefit_layer ?? raw.benefitLayer),
+    coreLink: asString(raw.core_link ?? raw.coreLink),
     benefitLogic: asString(raw.benefit_logic ?? raw.benefitLogic),
     confidence: asString(raw.confidence, "unknown"),
     selectedDate: asString(raw.selected_date ?? raw.selectedDate),
@@ -1022,6 +1024,16 @@ export async function getStockNewsTracking(
   return {
     tracking: normalizePaged(payload.tracking, normalizeStockNewsTrackingItem),
   };
+}
+
+export async function deleteStockNewsTrackingStock(
+  supabase: SupabaseClient,
+  stockRowId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("delete_stock_news_tracking_stock", {
+    stock_row_id_arg: stockRowId,
+  });
+  assertNoError(error);
 }
 
 export async function getLatestStockNarrativeBrief(

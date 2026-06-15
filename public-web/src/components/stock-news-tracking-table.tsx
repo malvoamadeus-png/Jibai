@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink, RefreshCw, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ExternalLink, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
-import { getStockNewsTracking } from "@/lib/direct-data";
+import { deleteStockNewsTrackingStock, getStockNewsTracking } from "@/lib/direct-data";
 import { formatCount, formatShanghaiDateTime } from "@/lib/utils";
 import type { StockNewsTrackingItem, StockNewsTrackingResponse, StockNewsTrackingStock } from "@/lib/types";
 
@@ -97,11 +97,12 @@ function NewsCell({ item }: { item: StockNewsTrackingItem }) {
 
 export function StockNewsTrackingTable() {
   const searchParams = useSearchParams();
-  const { loading, supabase } = useAuth();
+  const { loading, profile, supabase } = useAuth();
   const [page, setPage] = useState(() => parsePage(searchParams.get("page")));
   const [data, setData] = useState<StockNewsTrackingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trackingLoading, setTrackingLoading] = useState(true);
+  const [deletingStockId, setDeletingStockId] = useState<string | null>(null);
 
   useEffect(() => {
     function syncFromLocation() {
@@ -112,34 +113,54 @@ export function StockNewsTrackingTable() {
     return () => window.removeEventListener("popstate", syncFromLocation);
   }, []);
 
+  const loadTracking = useCallback(
+    (cancelledRef?: { cancelled: boolean }) => {
+      setTrackingLoading(true);
+      return getStockNewsTracking(supabase, page)
+        .then((nextData) => {
+          if (cancelledRef?.cancelled) return;
+          setData(nextData);
+          setError(null);
+        })
+        .catch((err) => {
+          if (cancelledRef?.cancelled) return;
+          setData(null);
+          setError(err instanceof Error ? err.message : "新闻追踪加载失败");
+        })
+        .finally(() => {
+          if (!cancelledRef?.cancelled) setTrackingLoading(false);
+        });
+    },
+    [page, supabase],
+  );
+
   useEffect(() => {
     if (loading) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (!cancelled) setTrackingLoading(true);
-    });
-    getStockNewsTracking(supabase, page)
-      .then((nextData) => {
-        if (cancelled) return;
-        setData(nextData);
-        setError(null);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setData(null);
-        setError(err instanceof Error ? err.message : "新闻追踪加载失败");
-      })
-      .finally(() => {
-        if (!cancelled) setTrackingLoading(false);
-      });
+    const cancelledRef = { cancelled: false };
+    Promise.resolve().then(() => loadTracking(cancelledRef));
     return () => {
-      cancelled = true;
+      cancelledRef.cancelled = true;
     };
-  }, [loading, page, supabase]);
+  }, [loadTracking, loading]);
 
   function goToPage(nextPage: number) {
     setPage(nextPage);
     window.history.pushState(null, "", buildTrackingUrl(nextPage));
+  }
+
+  async function deleteStock(stock: StockNewsTrackingStock) {
+    if (!profile?.isAdmin || deletingStockId) return;
+    const ok = window.confirm(`删除 ${stock.displayName} 与这条新闻的映射？`);
+    if (!ok) return;
+    setDeletingStockId(stock.id);
+    try {
+      await deleteStockNewsTrackingStock(supabase, stock.id);
+      await loadTracking();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除映射股票失败");
+    } finally {
+      setDeletingStockId(null);
+    }
   }
 
   if (loading) return <LoadingPanel />;
@@ -208,6 +229,7 @@ export function StockNewsTrackingTable() {
                   <th>3日涨幅</th>
                   <th>7日涨幅</th>
                   <th>入选后至今</th>
+                  {profile?.isAdmin ? <th>操作</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -227,6 +249,9 @@ export function StockNewsTrackingTable() {
                               <strong>{stock.displayName}</strong>
                               <span className="muted">{stockLabel(stock)}</span>
                               {stock.countryOrRegion ? <span className="muted">{stock.countryOrRegion}</span> : null}
+                              {stock.benefitLayer || stock.coreLink ? (
+                                <span className="muted">{[stock.benefitLayer, stock.coreLink].filter(Boolean).join(" / ")}</span>
+                              ) : null}
                             </div>
                           </td>
                           <td className="max-w-[480px] text-sm leading-6 text-[color:var(--muted-ink)]">{stock.benefitLogic}</td>
@@ -246,9 +271,24 @@ export function StockNewsTrackingTable() {
                               ) : null}
                             </div>
                           </td>
+                          {profile?.isAdmin ? (
+                            <td>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                disabled={deletingStockId === stock.id}
+                                onClick={() => deleteStock(stock)}
+                                title="删除这条映射股票"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                {deletingStockId === stock.id ? "删除中" : "删除"}
+                              </Button>
+                            </td>
+                          ) : null}
                         </>
                       ) : (
-                        <td colSpan={5} className="text-sm text-[color:var(--soft-ink)]">
+                        <td colSpan={profile?.isAdmin ? 6 : 5} className="text-sm text-[color:var(--soft-ink)]">
                           {item.status === "failed" ? "分析失败，暂无股票映射。" : "等待 AI 分析生成股票映射。"}
                         </td>
                       )}

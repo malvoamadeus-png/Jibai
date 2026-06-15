@@ -422,6 +422,8 @@ export type StockNewsTrackingStock = {
   ticker: string | null;
   market: string | null;
   countryOrRegion: string;
+  benefitLayer: string;
+  coreLink: string;
   benefitLogic: string;
   confidence: string;
   selectedDate: string;

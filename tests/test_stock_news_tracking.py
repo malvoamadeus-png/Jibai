@@ -14,6 +14,8 @@ def test_tracking_candidate_normalizes_missing_market_from_ticker_suffix() -> No
             "ticker": "6981.T",
             "market": "",
             "country_or_region": "Japan",
+            "benefit_layer": "self",
+            "core_link": "高端 MLCC",
             "benefit_logic": "高端 MLCC 龙头直接受益涨价。",
             "confidence": "high",
         }
@@ -32,7 +34,9 @@ def test_tracking_candidate_uses_market_when_ticker_has_no_suffix() -> None:
             "ticker": "005930",
             "market": "KRX",
             "country_or_region": "Korea",
-            "benefit_logic": "产业链景气发散到韩国龙头。",
+            "benefit_layer": "peer",
+            "core_link": "高端 MLCC",
+            "benefit_logic": "高端 MLCC -> 同环节韩国厂商 -> 涨价带动盈利弹性。",
             "confidence": "medium",
         }
     )
@@ -40,6 +44,23 @@ def test_tracking_candidate_uses_market_when_ticker_has_no_suffix() -> None:
     assert candidate is not None
     assert candidate.identity.security_key == "005930.krx"
     assert candidate.identity.market == "KRX"
+
+
+def test_tracking_candidate_rejects_non_one_hop_layer() -> None:
+    candidate = _candidate_to_identity(
+        {
+            "company_name": "Furukawa Electric",
+            "ticker": "5801.T",
+            "market": "TSE",
+            "country_or_region": "Japan",
+            "benefit_layer": "downstream_2",
+            "core_link": "InP",
+            "benefit_logic": "InP -> 光模块 -> 数据中心投资扩张，链条超过一跳。",
+            "confidence": "medium",
+        }
+    )
+
+    assert candidate is None
 
 
 def test_score_prices_uses_next_trading_day_anchor_and_pending_unmatured_horizon() -> None:

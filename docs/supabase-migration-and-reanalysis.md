@@ -327,6 +327,13 @@ exposes:
 - `get_stock_news_tracking(page_arg, page_size_arg)`: shared read RPC for the
   tracking table.
 
+Apply `supabase/migrations/034_stock_news_tracking_one_hop_admin_delete.sql`
+after `033`. It clears previously generated tracked-stock mappings, resets
+tracked news to `pending` so the worker reanalyzes them with the one-hop prompt,
+adds `delete_stock_news_tracking_stock(stock_row_id_arg)` for admin-only row
+removal, and extends `get_stock_news_tracking` with the AI `benefit_layer` and
+`core_link` metadata.
+
 After applying it, run the two one-off worker commands if you want immediate
 results instead of waiting for the scheduler:
 
