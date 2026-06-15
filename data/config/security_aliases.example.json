@@ -52,5 +52,17 @@
     "display_name": "Sivers",
     "ticker": "SIVE",
     "market": "STO"
+  },
+  "Kioxia": {
+    "security_key": "285A.t",
+    "display_name": "铠侠",
+    "ticker": "285A",
+    "market": "TSE"
+  },
+  "铠侠": {
+    "security_key": "285A.t",
+    "display_name": "铠侠",
+    "ticker": "285A",
+    "market": "TSE"
   }
 }

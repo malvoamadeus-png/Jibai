@@ -317,6 +317,7 @@ python backend/src/main.py export-daily-author-viewpoints
 
 - 轻量刷新只控制本次抓取最近几天的数据，不裁剪已有日线缓存。
 - 公开 K 线读取仍保留 180 天缓存窗口。
+- JP/TSE 股票行情优先使用 Futunn 公开 quote API；如果 Futunn 搜索、签名接口或 K 线接口失败，会快速降级到 Yahoo Finance 或返回空行情，不阻塞观点时间线。
 - 没有行情数据时，股票详情仍应展示观点时间线。
 - 当前行情逻辑服务股票，不作为 crypto 第一版的必需能力。
 

@@ -242,6 +242,54 @@ _BUILT_IN_SECURITY_ALIASES: dict[str, dict[str, str | None]] = {
         "ticker": "MRVL",
         "market": "NASDAQ",
     },
+    "Kioxia": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
+    "KIOXIA": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
+    "Kioxia Holdings": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
+    "Kioxia Holdings Corporation": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
+    "铠侠": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
+    "鎧侠": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
+    "285A": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
+    "285A.T": {
+        "security_key": "285A.t",
+        "display_name": "铠侠",
+        "ticker": "285A",
+        "market": "TSE",
+    },
 }
 
 

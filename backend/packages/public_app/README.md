@@ -16,8 +16,9 @@ Public web uses Supabase as the primary database. Vercel only serves `public-web
 - Initial backfills refresh the 180-day market-data cache. Scheduled crawls use
   a lightweight refresh for the most recent stock signals in the analysis
   window, so older-but-visible stock pages still receive latest candles. Plain
-  tickers such as `NVDA`, `AAPL`, and `TSLA` use Yahoo Finance. A-share markets
-  `SSE`, `SZSE`, and `BJSE` still use EastMoney.
+  tickers such as `NVDA`, `AAPL`, and `TSLA` use Yahoo Finance. JP/TSE stocks
+  use Futunn first and fall back to Yahoo Finance if Futunn is unavailable.
+  A-share markets `SSE`, `SZSE`, and `BJSE` still use EastMoney.
 - Crypto jobs do not write market data or K-line cache in the first version.
 
 Approval flow:
@@ -355,8 +356,13 @@ python -m compileall backend/packages backend/src
 PYTHONPATH=backend python - <<'PY'
 from packages.common.market_data import build_market_data_target, fetch_security_daily
 
-for ticker in ["NVDA", "AAPL", "TSLA"]:
-    payload = fetch_security_daily(ticker=ticker, market=None, security_key=ticker.lower(), days=30)
+for ticker, market, key in [
+    ("NVDA", None, "nvidia"),
+    ("AAPL", None, "apple"),
+    ("TSLA", None, "tesla"),
+    ("285A", "TSE", "285A.t"),
+]:
+    payload = fetch_security_daily(ticker=ticker, market=market, security_key=key, days=30)
     print(ticker, len(payload.get("candles") or []), payload.get("sourceLabel"), payload.get("message"))
 
 print(build_market_data_target(ticker="300502", market="SZSE", security_key="300502"))

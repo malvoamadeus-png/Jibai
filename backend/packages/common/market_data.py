@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import re
 from datetime import date as date_class, datetime, timedelta, timezone
 from typing import Any
@@ -9,6 +12,7 @@ import requests
 
 
 A_SHARE_MARKETS = {"SSE", "SZSE", "BJSE"}
+FUTUNN_JP_MARKETS = {"TSE"}
 US_MARKETS = {"NASDAQ", "NYSE", "AMEX", "ARCA", "BATS", "IEX", "OTC", "US"}
 YAHOO_SUFFIX_BY_MARKET = {
     "HK": ".HK",
@@ -367,6 +371,135 @@ def fetch_twse_daily(*, ticker: str, days: int = 180) -> dict[str, Any]:
     }
 
 
+def _futunn_quote_token(params: dict[str, Any]) -> str:
+    normalized = {
+        key: str(value)
+        for key, value in params.items()
+        if value is not None
+    }
+    payload = json.dumps(normalized, separators=(",", ":"), ensure_ascii=False)
+    digest = hmac.new(b"quote_web", payload.encode("utf-8"), hashlib.sha512).hexdigest()
+    return hashlib.sha256(digest[:10].encode("utf-8")).hexdigest()[:10]
+
+
+def _futunn_headers(*, params: dict[str, Any], referer: str) -> dict[str, str]:
+    return {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": referer,
+        "quote-token": _futunn_quote_token(params),
+    }
+
+
+def _lookup_futunn_jp_stock_id(*, ticker: str, timeout: float = 4.0) -> str | None:
+    normalized_ticker = ticker.strip().upper()
+    if not normalized_ticker:
+        return None
+
+    response = requests.get(
+        "https://www.futunn.com/search-stock/predict",
+        params={"keyword": normalized_ticker, "lang": "zh-cn"},
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json,text/plain,*/*",
+            "Referer": "https://www.futunn.com/",
+        },
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    quotes = ((payload.get("data") or {}).get("quote") or []) if isinstance(payload, dict) else []
+    for item in quotes:
+        if not isinstance(item, dict):
+            continue
+        market = str(item.get("market") or "").strip().lower()
+        stock_symbol = str(item.get("stockSymbol") or "").strip().upper()
+        stock_id = str(item.get("stockId") or "").strip()
+        if market == "jp" and stock_symbol == normalized_ticker and stock_id:
+            return stock_id
+    return None
+
+
+def fetch_futunn_jp_daily(*, ticker: str, days: int = 180) -> dict[str, Any]:
+    normalized_days = max(1, min(int(days), 5000))
+    normalized_ticker = ticker.strip().upper()
+    stock_id = _lookup_futunn_jp_stock_id(ticker=normalized_ticker)
+    if stock_id is None:
+        return {
+            "sourceLabel": "Futunn",
+            "message": "Futunn did not find a matching JP stock id.",
+            "candles": [],
+        }
+
+    params = {
+        "stockId": stock_id,
+        "marketType": "25",
+        "type": "2",
+        "marketCode": "830",
+        "instrumentType": "3",
+        "subInstrumentType": "3002",
+    }
+    response = requests.get(
+        "https://www.futunn.com/quote-api/quote-v2/get-kline",
+        params=params,
+        headers=_futunn_headers(
+            params=params,
+            referer=f"https://www.futunn.com/stock/{normalized_ticker}-JP",
+        ),
+        timeout=5,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict) or payload.get("code") != 0:
+        return {
+            "sourceLabel": "Futunn",
+            "message": str(payload.get("message") if isinstance(payload, dict) else "Futunn returned an invalid response."),
+            "candles": [],
+        }
+
+    rows = (payload.get("data") or {}).get("list") or []
+    candles: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        timestamp = _to_number(row.get("k"))
+        trade_date = _format_yahoo_date(int(timestamp), "Asia/Tokyo") if timestamp is not None else None
+        open_price = _to_number(row.get("o"))
+        high_price = _to_number(row.get("h"))
+        low_price = _to_number(row.get("l"))
+        close_price = _to_number(row.get("c"))
+        volume = _to_number(row.get("v"))
+        if (
+            trade_date is None
+            or open_price is None
+            or high_price is None
+            or low_price is None
+            or close_price is None
+        ):
+            continue
+        candles.append(
+            {
+                "date": trade_date,
+                "open": open_price,
+                "high": high_price,
+                "low": low_price,
+                "close": close_price,
+                "volume": volume,
+            }
+        )
+
+    candles.sort(key=lambda item: str(item["date"]))
+    if len(candles) > normalized_days:
+        candles = candles[-normalized_days:]
+
+    return {
+        "sourceLabel": "Futunn",
+        "sourceSymbol": f"JP:{normalized_ticker}",
+        "message": None if candles else "Futunn did not return daily candles for this JP symbol.",
+        "candles": candles,
+    }
+
+
 def fetch_yahoo_daily(*, symbol: str, days: int = 180) -> dict[str, Any]:
     normalized_days = max(1, min(int(days), 5000))
     session = requests.Session()
@@ -503,16 +636,39 @@ def fetch_security_daily(
             "candles": [],
         }
 
+    futunn_error: Exception | None = None
+    if target["market"] in FUTUNN_JP_MARKETS:
+        try:
+            futunn_payload = fetch_futunn_jp_daily(ticker=target["ticker"], days=days)
+            if futunn_payload.get("candles"):
+                return {
+                    **futunn_payload,
+                    "sourceLabel": "Futunn",
+                    "sourceSymbol": futunn_payload.get("sourceSymbol") or f"JP:{target['ticker']}",
+                }
+            futunn_message = str(futunn_payload.get("message") or "Futunn returned no daily candles.")
+            futunn_error = RuntimeError(futunn_message)
+        except Exception as exc:
+            futunn_error = exc
+
     yahoo_error: Exception | None = None
     try:
         payload = fetch_yahoo_daily(symbol=target["symbol"], days=days)
     except Exception as exc:
-        if target["market"] != "TWSE":
+        if target["market"] not in {"TWSE", *FUTUNN_JP_MARKETS}:
             raise
         yahoo_error = exc
         payload = {
             "sourceLabel": "Yahoo Finance",
             "message": str(exc),
+            "candles": [],
+        }
+
+    if target["market"] in FUTUNN_JP_MARKETS and not payload.get("candles"):
+        return {
+            "sourceLabel": "Futunn / Yahoo Finance",
+            "sourceSymbol": f"JP:{target['ticker']} / {target['symbol']}",
+            "message": f"Futunn 和 Yahoo Finance 都没有返回可用日线：{futunn_error}; {yahoo_error or payload.get('message')}",
             "candles": [],
         }
 
