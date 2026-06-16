@@ -334,6 +334,10 @@ adds `delete_stock_news_tracking_stock(stock_row_id_arg)` for admin-only row
 removal, and extends `get_stock_news_tracking` with the AI `benefit_layer` and
 `core_link` metadata.
 
+Apply `supabase/migrations/035_stock_news_tracking_rerun_compact_prompt.sql`
+after `034` when you want to clear all currently generated tracking results and
+re-run them with the compact prompt wording.
+
 After applying it, run the two one-off worker commands if you want immediate
 results instead of waiting for the scheduler:
 

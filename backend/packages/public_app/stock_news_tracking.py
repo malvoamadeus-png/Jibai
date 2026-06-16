@@ -13,7 +13,7 @@ from packages.common.settings import load_settings
 from packages.common.time_utils import now_iso, today_date_key
 
 
-PROMPT_VERSION = "stock_news_tracking_v2_one_hop"
+PROMPT_VERSION = "stock_news_tracking_v3_one_hop_compact"
 TRACKING_MODEL = "gpt-5.4"
 TRACKING_REASONING_EFFORT = "high"
 MAX_TRACKED_STOCKS_PER_NEWS = 30
@@ -128,7 +128,7 @@ def _candidate_to_identity(raw: dict[str, Any]) -> TrackingStockCandidate | None
     country = _clip(raw.get("country_or_region") or raw.get("country") or raw.get("region"), 120)
     benefit_layer = _clip(raw.get("benefit_layer") or raw.get("layer"), 40).lower()
     core_link = _clip(raw.get("core_link") or raw.get("core_object") or raw.get("core"), 200)
-    logic = _clip(raw.get("benefit_logic") or raw.get("logic") or raw.get("reason"), 800)
+    logic = _clip(raw.get("benefit_logic") or raw.get("logic") or raw.get("reason"), 400)
     confidence = _clip(raw.get("confidence") or "unknown", 40).lower() or "unknown"
     if not company and not ticker:
         return None
@@ -182,26 +182,17 @@ def _build_tracking_messages(event_snapshot: dict[str, Any]) -> list[dict[str, s
         {
             "role": "system",
             "content": (
-                "你是全球股票事件映射分析师。任务是分析一条新闻可能利好哪些上市公司，"
-                "覆盖日本、中国大陆、韩国、美国、台湾等市场，但必须严格限制在核心对象的一跳产业链内。"
-                "先识别新闻的核心商品、材料、工艺、零部件、设备或服务，然后只允许列四类股票："
-                "1 self：新闻直接提到的上市公司或核心对象本身生产商；"
-                "2 peer：同类、可替代或同环节上市公司；"
-                "3 upstream_1：直接生产该核心对象所需的原材料、关键设备、关键工艺服务或关键耗材供应商；"
-                "4 downstream_1：直接使用该核心对象生产下一层产品的公司。"
-                "禁止超过一跳继续推演：不能从下游产品继续推到终端应用、AI、数据中心、电信投资、消费电子景气等远端主题；"
-                "不能用产业景气、国产/本土替代、进口受限、估值弹性、竞争格局大变化等泛化逻辑列股票，除非它就是新闻直接核心对象。"
-                "如果某只股票的利好逻辑需要两跳或更多才能说清，必须剔除。"
-                "宁缺毋滥，不要为了凑满 30 只扩链。"
-                "不要输出基金、ETF、指数、未上市公司或无法交易标的。"
-                "只输出 JSON，不要输出解释性正文。"
+                "你是全球股票事件映射分析师。只输出新闻核心对象一跳内的受益上市公司，覆盖日本、中国大陆、韩国、美国、台湾等市场。"
+                "先识别新闻核心对象，再按 self、peer、upstream_1、downstream_1 四类输出标的。"
+                "self 是新闻直接提到的公司或核心对象本身；peer 是同环节可替代公司；upstream_1 是直接供给核心对象的原材料、关键设备、工艺服务或耗材；downstream_1 是直接使用核心对象生产下一层产品的公司。"
+                "只保留最直接的一跳标的，最多 30 只。不要扩展到终端应用或主题行情。不要输出基金、ETF、指数、未上市公司或无法交易标的。只输出 JSON。"
             ),
         },
         {
             "role": "user",
             "content": (
                 "请基于这条新闻输出最多 30 只可能受益股票，只能使用 self、peer、upstream_1、downstream_1 四种 benefit_layer。"
-                "benefit_logic 必须用简短中文说明“核心对象 -> 该公司所在的一跳位置 -> 为什么受益”，不要写远端主题。"
+                "benefit_logic 写成一句结果话，简短说明核心对象、该公司所在的一跳位置、受益原因。"
                 "JSON 格式必须为：{\"stocks\":[{\"company_name\":\"...\",\"ticker\":\"...\","
                 "\"market\":\"NASDAQ/NYSE/SSE/SZSE/TSE/KRX/KOSDAQ/TWSE/TPEX/HKEX 等\","
                 "\"country_or_region\":\"...\",\"benefit_layer\":\"self/peer/upstream_1/downstream_1\","
