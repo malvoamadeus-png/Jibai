@@ -1036,6 +1036,16 @@ export async function deleteStockNewsTrackingStock(
   assertNoError(error);
 }
 
+export async function deleteStockNewsTrackingItem(
+  supabase: SupabaseClient,
+  trackingId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("delete_stock_news_tracking_item", {
+    tracking_id_arg: trackingId,
+  });
+  assertNoError(error);
+}
+
 export async function getLatestStockNarrativeBrief(
   supabase: SupabaseClient,
 ): Promise<StockNarrativeBrief | null> {

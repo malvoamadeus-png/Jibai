@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
-import { deleteStockNewsTrackingStock, getStockNewsTracking } from "@/lib/direct-data";
+import { deleteStockNewsTrackingItem, deleteStockNewsTrackingStock, getStockNewsTracking } from "@/lib/direct-data";
 import { formatCount, formatShanghaiDateTime } from "@/lib/utils";
 import type { StockNewsTrackingItem, StockNewsTrackingResponse, StockNewsTrackingStock } from "@/lib/types";
 
@@ -103,6 +103,7 @@ export function StockNewsTrackingTable() {
   const [error, setError] = useState<string | null>(null);
   const [trackingLoading, setTrackingLoading] = useState(true);
   const [deletingStockId, setDeletingStockId] = useState<string | null>(null);
+  const [deletingTrackingId, setDeletingTrackingId] = useState<string | null>(null);
 
   useEffect(() => {
     function syncFromLocation() {
@@ -149,7 +150,7 @@ export function StockNewsTrackingTable() {
   }
 
   async function deleteStock(stock: StockNewsTrackingStock) {
-    if (!profile?.isAdmin || deletingStockId) return;
+    if (!profile?.isAdmin || deletingStockId || deletingTrackingId) return;
     const ok = window.confirm(`删除 ${stock.displayName} 与这条新闻的映射？`);
     if (!ok) return;
     setDeletingStockId(stock.id);
@@ -160,6 +161,22 @@ export function StockNewsTrackingTable() {
       setError(err instanceof Error ? err.message : "删除映射股票失败");
     } finally {
       setDeletingStockId(null);
+    }
+  }
+
+  async function deleteTrackingItem(item: StockNewsTrackingItem) {
+    if (!profile?.isAdmin || deletingTrackingId || deletingStockId) return;
+    const headline = asText(item.eventSnapshot.headline, item.eventKey);
+    const ok = window.confirm(`删除整条追踪新闻“${headline}”？这会同时删除该新闻下的全部映射股票。`);
+    if (!ok) return;
+    setDeletingTrackingId(item.id);
+    try {
+      await deleteStockNewsTrackingItem(supabase, item.id);
+      await loadTracking();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除追踪新闻失败");
+    } finally {
+      setDeletingTrackingId(null);
     }
   }
 
@@ -239,7 +256,22 @@ export function StockNewsTrackingTable() {
                     <tr key={`${item.id}-${stock?.id ?? "empty"}-${index}`}>
                       {index === 0 ? (
                         <td rowSpan={stocks.length} className="align-top">
-                          <NewsCell item={item} />
+                          <div className="space-y-3">
+                            <NewsCell item={item} />
+                            {profile?.isAdmin ? (
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                disabled={deletingTrackingId === item.id}
+                                onClick={() => deleteTrackingItem(item)}
+                                title="删除整条追踪新闻"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                {deletingTrackingId === item.id ? "删除中" : "删除新闻"}
+                              </Button>
+                            ) : null}
+                          </div>
                         </td>
                       ) : null}
                       {stock ? (
