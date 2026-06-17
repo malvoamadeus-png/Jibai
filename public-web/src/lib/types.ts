@@ -458,6 +458,7 @@ export type StockNewsTrackingItem = {
 };
 
 export type StockNewsTrackingResponse = {
+  viewerIsAdmin: boolean;
   tracking: PagedResult<StockNewsTrackingItem>;
 };
 

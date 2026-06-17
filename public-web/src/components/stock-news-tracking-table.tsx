@@ -150,7 +150,7 @@ export function StockNewsTrackingTable() {
   }
 
   async function deleteStock(stock: StockNewsTrackingStock) {
-    if (!profile?.isAdmin || deletingStockId || deletingTrackingId) return;
+    if (!isAdminViewer || deletingStockId || deletingTrackingId) return;
     const ok = window.confirm(`删除 ${stock.displayName} 与这条新闻的映射？`);
     if (!ok) return;
     setDeletingStockId(stock.id);
@@ -165,7 +165,7 @@ export function StockNewsTrackingTable() {
   }
 
   async function deleteTrackingItem(item: StockNewsTrackingItem) {
-    if (!profile?.isAdmin || deletingTrackingId || deletingStockId) return;
+    if (!isAdminViewer || deletingTrackingId || deletingStockId) return;
     const headline = asText(item.eventSnapshot.headline, item.eventKey);
     const ok = window.confirm(`删除整条追踪新闻“${headline}”？这会同时删除该新闻下的全部映射股票。`);
     if (!ok) return;
@@ -183,6 +183,7 @@ export function StockNewsTrackingTable() {
   if (loading) return <LoadingPanel />;
 
   const rows = data?.tracking.rows ?? [];
+  const isAdminViewer = data?.viewerIsAdmin || profile?.isAdmin || false;
   const canGoPrev = (data?.tracking.page ?? 1) > 1;
   const canGoNext = (data?.tracking.page ?? 1) < (data?.tracking.totalPages ?? 1);
 
@@ -246,7 +247,7 @@ export function StockNewsTrackingTable() {
                   <th>3日涨幅</th>
                   <th>7日涨幅</th>
                   <th>入选后至今</th>
-                  {profile?.isAdmin ? <th>操作</th> : null}
+                  {isAdminViewer ? <th>操作</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -258,7 +259,7 @@ export function StockNewsTrackingTable() {
                         <td rowSpan={stocks.length} className="align-top">
                           <div className="space-y-3">
                             <NewsCell item={item} />
-                            {profile?.isAdmin ? (
+                            {isAdminViewer ? (
                               <Button
                                 type="button"
                                 variant="destructive"
@@ -303,7 +304,7 @@ export function StockNewsTrackingTable() {
                               ) : null}
                             </div>
                           </td>
-                          {profile?.isAdmin ? (
+                          {isAdminViewer ? (
                             <td>
                               <Button
                                 type="button"
@@ -320,7 +321,7 @@ export function StockNewsTrackingTable() {
                           ) : null}
                         </>
                       ) : (
-                        <td colSpan={profile?.isAdmin ? 6 : 5} className="text-sm text-[color:var(--soft-ink)]">
+                        <td colSpan={isAdminViewer ? 6 : 5} className="text-sm text-[color:var(--soft-ink)]">
                           {item.status === "failed" ? "分析失败，暂无股票映射。" : "等待 AI 分析生成股票映射。"}
                         </td>
                       )}

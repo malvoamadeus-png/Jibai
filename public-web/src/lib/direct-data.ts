@@ -1022,6 +1022,7 @@ export async function getStockNewsTracking(
   assertNoError(error);
   const payload = asRecord(data);
   return {
+    viewerIsAdmin: Boolean(payload.viewer_is_admin ?? payload.viewerIsAdmin),
     tracking: normalizePaged(payload.tracking, normalizeStockNewsTrackingItem),
   };
 }
