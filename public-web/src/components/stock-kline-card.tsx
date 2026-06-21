@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatCount, viewSignalLabel, viewSignalVariant } from "@/lib/utils";
 import type {
-  EntityAuthorView,
   StockKlineCandle,
   StockKlineData,
   StockKlineMarker,
+  StockKlineMarkerView,
 } from "@/lib/types";
 
 const SVG_WIDTH = 1120;
@@ -52,18 +52,18 @@ function formatPrice(value: number | null | undefined) {
   }).format(value);
 }
 
-function markerFill(view: EntityAuthorView) {
+function markerFill(view: StockKlineMarkerView) {
   if (viewSignalVariant(view) === "positive") return "#2f7d56";
   if (viewSignalVariant(view) === "danger") return "#b34747";
   if (viewSignalVariant(view) === "warm") return "#0a84ff";
   return "#8c7b6a";
 }
 
-function isBullish(view: EntityAuthorView) {
+function isBullish(view: StockKlineMarkerView) {
   return viewSignalVariant(view) === "positive";
 }
 
-function isBearish(view: EntityAuthorView) {
+function isBearish(view: StockKlineMarkerView) {
   return viewSignalVariant(view) === "danger";
 }
 
@@ -73,7 +73,7 @@ function markerOffset(index: number) {
   return index % 2 === 0 ? distance : -distance;
 }
 
-function summarizeViews(authorViews: EntityAuthorView[]) {
+function summarizeViews(authorViews: StockKlineMarkerView[]) {
   return authorViews.reduce(
     (accumulator, view) => {
       if (isBullish(view)) accumulator.bullish += 1;

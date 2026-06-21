@@ -487,7 +487,7 @@ export type StockKlineCandle = {
 export type StockKlineMarker = {
   date: string;
   mentionCount: number;
-  authorViews: EntityAuthorView[];
+  authorViews: StockKlineMarkerView[];
 };
 
 export type StockKlineData = {
@@ -495,6 +495,17 @@ export type StockKlineData = {
   message: string | null;
   candles: StockKlineCandle[];
   markers: StockKlineMarker[];
+};
+
+export type StockKlineMarkerView = {
+  platform: string;
+  account_name: string;
+  author_nickname: string;
+  stance: ViewStance;
+  direction: ViewDirection;
+  signal_type: ViewSignalType;
+  judgment_type: ViewJudgmentType;
+  logic: string;
 };
 
 export type MarketTopRiskSignal = {

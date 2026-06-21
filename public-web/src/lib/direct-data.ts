@@ -51,6 +51,7 @@ import type {
   StockNewsTimelineDay,
   StockNewsTimelineResponse,
   StockKlineMarker,
+  StockKlineMarkerView,
   StockBloggerAuthorScore,
   StockBloggerGoldData,
   StockBloggerGoldRun,
@@ -643,7 +644,19 @@ function normalizeStockMarker(rawValue: unknown): StockKlineMarker | null {
   const raw = asRecord(rawValue);
   const date = asString(raw.date ?? raw.date_key);
   if (!date) return null;
-  const authorViews = asArray(raw.authorViews ?? raw.author_views).map(normalizeEntityAuthorView);
+  const authorViews = asArray(raw.authorViews ?? raw.author_views).map((item): StockKlineMarkerView => {
+    const view = asRecord(item);
+    return {
+      platform: asString(view.platform, "x"),
+      account_name: asString(view.account_name ?? view.author_name ?? view.username).trim().replace(/^@/, "").toLowerCase(),
+      author_nickname: asString(view.author_nickname ?? view.display_name),
+      stance: asString(view.stance, "unknown") as ViewStance,
+      direction: asString(view.direction, "unknown") as ViewDirection,
+      signal_type: asString(view.signal_type, "unknown") as ViewSignalType,
+      judgment_type: asString(view.judgment_type, "unknown") as ViewJudgmentType,
+      logic: asString(view.logic),
+    };
+  });
   return {
     date,
     mentionCount: asNumber(raw.mentionCount ?? raw.mention_count, authorViews.length),
