@@ -19,6 +19,7 @@ import type {
   EntityListItem,
   EntitySortKey,
   FeedDay,
+  HomeStats,
   MarketTopRiskData,
   MarketTopRiskHistoryPoint,
   MarketTopRiskSignal,
@@ -1215,6 +1216,21 @@ export async function listFeed(
   assertNoError(error);
   const payload = asRecord(data);
   return asArray(payload.rows).map(normalizeFeedDay);
+}
+
+export async function getHomeStats(
+  supabase: SupabaseClient,
+  domain: Domain = "stock",
+): Promise<HomeStats> {
+  const { data, error } = await supabase.rpc("get_home_stats", {
+    domain_arg: domain,
+  });
+  assertNoError(error);
+  const payload = asRecord(data);
+  return {
+    approvedCount: asNumber(payload.approved_count ?? payload.approvedCount),
+    subscribedCount: asNumber(payload.subscribed_count ?? payload.subscribedCount),
+  };
 }
 
 export async function listAdminDashboard(supabase: SupabaseClient, domain: Domain = "stock") {

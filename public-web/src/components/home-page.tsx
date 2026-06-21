@@ -10,12 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader, StatCard, StatGrid } from "@/components/ui/page";
 import { useAuth } from "@/lib/auth-context";
-import { listAccounts as listDirectAccounts, listFeed as listDirectFeed } from "@/lib/direct-data";
-import type { AccountListItem, Domain, FeedDay } from "@/lib/types";
+import { getHomeStats, listFeed as listDirectFeed } from "@/lib/direct-data";
+import type { Domain, FeedDay, HomeStats } from "@/lib/types";
 
 export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
   const { loading, profile, signIn, supabase } = useAuth();
-  const [accounts, setAccounts] = useState<AccountListItem[]>([]);
+  const [stats, setStats] = useState<HomeStats>({ approvedCount: 0, subscribedCount: 0 });
   const [feed, setFeed] = useState<FeedDay[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,12 +24,12 @@ export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
     let cancelled = false;
 
     async function load() {
-      const [nextAccounts, nextFeed] = await Promise.all([
-        listDirectAccounts(supabase, profile, "", domain),
+      const [nextStats, nextFeed] = await Promise.all([
+        getHomeStats(supabase, domain),
         listDirectFeed(supabase, profile, 6, domain),
       ]);
       if (!cancelled) {
-        setAccounts(nextAccounts);
+        setStats(nextStats);
         setFeed(nextFeed);
         setError(null);
       }
@@ -37,7 +37,7 @@ export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
 
     load().catch((err) => {
       if (cancelled) return;
-      setAccounts([]);
+      setStats({ approvedCount: 0, subscribedCount: 0 });
       setFeed([]);
       setError(err instanceof Error ? err.message : "数据加载失败");
     });
@@ -89,13 +89,13 @@ export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
       <StatGrid>
         <StatCard
           label="已审批账号"
-          value={accounts.length}
+          value={stats.approvedCount}
           hint="账号库对游客开放，登录后按你的订阅生成个性化视图。"
           icon={<Radio className="h-4 w-4" />}
         />
         <StatCard
           label="我的订阅"
-          value={accounts.filter((item) => item.subscribed).length}
+          value={stats.subscribedCount}
           hint={profile ? "会直接影响你的时间线、矩阵和详情页内容。" : "登录后可开始建立自己的订阅列表。"}
           icon={<Library className="h-4 w-4" />}
         />

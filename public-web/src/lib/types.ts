@@ -80,6 +80,11 @@ export type AccountListItem = {
   backfillCompletedAt: string | null;
 };
 
+export type HomeStats = {
+  approvedCount: number;
+  subscribedCount: number;
+};
+
 export type RequestListItem = {
   id: string;
   status: string;
