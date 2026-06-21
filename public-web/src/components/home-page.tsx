@@ -157,7 +157,7 @@ export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
                       <span>{item.noteCount} 条内容</span>
                     </div>
                     <h3>{item.displayName || item.username}</h3>
-                    <p className="muted">{isCrypto ? `${item.viewpoints.length} 个标的信号` : item.summary}</p>
+                    <p className="muted">{isCrypto ? `${item.viewpointCount} 个标的信号` : item.summary}</p>
                   </article>
                 ))}
               </div>

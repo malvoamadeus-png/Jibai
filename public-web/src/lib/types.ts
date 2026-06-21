@@ -97,6 +97,7 @@ export type FeedDay = {
   status: string;
   noteCount: number;
   summary: string;
+  viewpointCount: number;
   notes: Array<{ note_id: string; url: string; title: string; publish_time: string | null }>;
   viewpoints: Array<Record<string, unknown>>;
   updatedAt: string;

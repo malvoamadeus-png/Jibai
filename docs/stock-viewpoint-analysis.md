@@ -178,6 +178,10 @@ AI 配置优先级：
 
 ## 前端数据口径
 
+`/` 首页的“最近更新”预览使用单独的轻量 RPC `get_home_feed_preview`。它只返回首页卡片所需字段，不再通过“先拉作者列表，再逐个读取作者时间线详情”的方式组装预览。
+
+这样可以减少 Supabase 调用次数和返回体积，同时保持和 `/feed` 相同的数据新鲜度，因为它仍然直接读取最新的 `author_daily_summaries`。
+
 `/feed` 通过作者维度展示观点时间线。登录用户只看到自己订阅范围；未登录用户只看到公开轻量预览范围。
 
 `/stocks` 通过 `list_visible_entities` 获取可见股票列表，通过 `get_visible_entity_timeline` 获取单只股票详情。详情页支持：

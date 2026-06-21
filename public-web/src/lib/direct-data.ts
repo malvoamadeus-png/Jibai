@@ -581,6 +581,32 @@ function normalizeAuthorDay(rawValue: unknown): AuthorTimelineDay {
   };
 }
 
+function normalizeFeedDay(rawValue: unknown): FeedDay {
+  const raw = asRecord(rawValue);
+  return {
+    id: asString(raw.id),
+    username: asString(raw.username),
+    displayName: asString(raw.display_name ?? raw.displayName ?? raw.username),
+    profileUrl: asString(raw.profile_url ?? raw.profileUrl),
+    date: asString(raw.date),
+    status: asString(raw.status),
+    noteCount: asNumber(raw.note_count ?? raw.noteCount),
+    summary: asString(raw.summary),
+    viewpointCount: asNumber(raw.viewpoint_count ?? raw.viewpointCount),
+    notes: asArray(raw.notes).map((item): TimelineNote => {
+      const note = asRecord(item);
+      return {
+        note_id: asString(note.note_id),
+        url: asString(note.url),
+        title: asString(note.title),
+        publish_time: asNullableString(note.publish_time),
+      };
+    }),
+    viewpoints: asArray(raw.viewpoints).map((item) => asRecord(item)),
+    updatedAt: asString(raw.updated_at ?? raw.updatedAt),
+  };
+}
+
 function normalizeEntityDay(rawValue: unknown) {
   const raw = asRecord(rawValue);
   const authorViews = asArray(raw.authorViews ?? raw.author_views).map(normalizeEntityAuthorView);
@@ -1169,31 +1195,13 @@ export async function listFeed(
   limit = 40,
   domain: Domain = "stock",
 ): Promise<FeedDay[]> {
-  const authors = await listVisibleAuthors(supabase, profile, "", limit, domain);
-  const items = await Promise.all(
-    authors.slice(0, Math.min(authors.length, limit)).map(async (author) => {
-      const detail = await getVisibleAuthorTimeline(supabase, profile, author.accountId, 1, domain);
-      return { author, detail };
-    }),
-  );
-
-  return items.flatMap(({ author, detail }) =>
-    (detail?.timeline.rows ?? []).map(
-      (day): FeedDay => ({
-        id: `${author.accountId}-${day.date}`,
-        username: author.accountName,
-        displayName: author.authorNickname || author.accountName,
-        profileUrl: author.profileUrl,
-        date: day.date,
-        status: day.status,
-        noteCount: day.noteCountToday,
-        summary: day.summaryText,
-        notes: day.notes,
-        viewpoints: day.viewpoints as unknown as Array<Record<string, unknown>>,
-        updatedAt: day.updatedAt,
-      }),
-    ),
-  );
+  const { data, error } = await supabase.rpc("get_home_feed_preview", {
+    limit_arg: limit,
+    domain_arg: domain,
+  });
+  assertNoError(error);
+  const payload = asRecord(data);
+  return asArray(payload.rows).map(normalizeFeedDay);
 }
 
 export async function listAdminDashboard(supabase: SupabaseClient, domain: Domain = "stock") {

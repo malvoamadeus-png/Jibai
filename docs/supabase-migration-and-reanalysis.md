@@ -640,6 +640,23 @@ npm run build
 
 The production build route list should not include `/themes`.
 
+## Add Home Feed Preview RPC
+
+`supabase/migrations/038_home_feed_preview_rpc.sql` adds a lightweight preview
+RPC for the public home pages:
+
+- `get_home_feed_preview(limit_arg integer, domain_arg text)`
+- keeps the same auth and preview visibility rules as the author feed
+- returns only homepage preview fields instead of full author timelines
+- reduces Supabase request count and egress for `/` and `/crypto`
+
+Verification after applying it:
+
+```bash
+/home/malvo/.local/bin/psql "$SUPABASE_DB_URL" -c "select public.get_home_feed_preview(3, 'stock');"
+/home/malvo/.local/bin/psql "$SUPABASE_DB_URL" -c "select public.get_home_feed_preview(3, 'crypto');"
+```
+
 ## Add Stock Matrix Day View
 
 `supabase/migrations/020_stock_matrix_day_granularity.sql` extends the stock
