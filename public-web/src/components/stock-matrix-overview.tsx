@@ -46,6 +46,10 @@ function readGranularity(value: string | null): StockMatrixGranularity {
   return value === "day" ? "day" : "week";
 }
 
+function readCompact(value: string | null) {
+  return value === "1";
+}
+
 function formatWindowLabel(startDate: string | null, endDate: string | null) {
   if (!startDate || !endDate) return "暂无";
   return startDate === endDate ? startDate : `${startDate} 至 ${endDate}`;
@@ -65,6 +69,40 @@ function trimEmptyMatrix(data: StockMatrixData | null): {
     stocks: data.stocks.filter((stock) => visibleStocks.has(stock.securityKey)),
     cells,
   };
+}
+
+function buildVisibleCellsByStock(cells: StockMatrixCell[]) {
+  const map = new Map<string, StockMatrixCell[]>();
+  for (const cell of cells) {
+    if (!cell.views.length) continue;
+    const stockCells = map.get(cell.securityKey);
+    if (stockCells) stockCells.push(cell);
+    else map.set(cell.securityKey, [cell]);
+  }
+  return map;
+}
+
+function buildCompactAuthorLabel(author: StockMatrixAuthor) {
+  const raw = String(author.authorNickname || author.accountName || "").replace(/^@+/, "").trim();
+  if (!raw) return "--";
+  const compact = raw.replace(/\s+/g, "");
+  if (/[\u3400-\u9fff]/.test(compact)) {
+    return compact.slice(0, 2);
+  }
+  const latin = compact.replace(/[^a-zA-Z0-9]/g, "");
+  if (latin) {
+    return latin.slice(0, Math.min(3, latin.length)).toUpperCase();
+  }
+  return compact.slice(0, 2);
+}
+
+function getAuthorsForStock(
+  stockKey: string,
+  authors: StockMatrixAuthor[],
+  cellsByStock: Map<string, StockMatrixCell[]>,
+) {
+  const visibleAuthors = new Set((cellsByStock.get(stockKey) ?? []).map((cell) => cell.accountName));
+  return authors.filter((author) => visibleAuthors.has(author.accountName));
 }
 
 function ViewTooltip({
@@ -151,6 +189,7 @@ export function StockMatrixOverview() {
   const endParam = searchParams.get("end");
   const endDate = isDateKey(endParam) ? endParam : null;
   const granularity = readGranularity(searchParams.get("granularity"));
+  const compact = readCompact(searchParams.get("compact"));
   const [data, setData] = useState<StockMatrixData | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -182,6 +221,11 @@ export function StockMatrixOverview() {
 
   const matrix = useMemo(() => trimEmptyMatrix(data), [data]);
   const cellMap = useMemo(() => buildCellMap(matrix?.cells ?? []), [matrix]);
+  const cellsByStock = useMemo(() => buildVisibleCellsByStock(matrix?.cells ?? []), [matrix]);
+  const authorMap = useMemo(
+    () => new Map((matrix?.authors ?? []).map((author) => [author.accountName, author])),
+    [matrix],
+  );
   const totalViews = useMemo(
     () => (matrix?.cells ?? []).reduce((sum, cell) => sum + cell.views.length, 0),
     [matrix],
@@ -198,12 +242,18 @@ export function StockMatrixOverview() {
       ? "当前账号的订阅范围内还没有可见股票观点数据。通常是因为还没订阅任何账号，或已订阅账号暂时没有有效观点。"
       : "暂无公开预览数据";
 
-  function navigate(nextEndDate: string | null, nextGranularity: StockMatrixGranularity = granularity) {
+  function navigate(
+    nextEndDate: string | null,
+    nextGranularity: StockMatrixGranularity = granularity,
+    nextCompact: boolean = compact,
+  ) {
     const next = new URLSearchParams(searchParams);
     if (nextEndDate) next.set("end", nextEndDate);
     else next.delete("end");
     if (nextGranularity === "day") next.set("granularity", "day");
     else next.delete("granularity");
+    if (nextCompact) next.set("compact", "1");
+    else next.delete("compact");
     router.push(next.toString() ? `/stocks/overview?${next.toString()}` : "/stocks/overview");
   }
 
@@ -245,6 +295,14 @@ export function StockMatrixOverview() {
                   按日
                 </Button>
               </div>
+              <Button
+                type="button"
+                variant={compact ? "secondary" : "ghost"}
+                aria-pressed={compact}
+                onClick={() => navigate(endDate, granularity, !compact)}
+              >
+                紧凑显示
+              </Button>
               <Button
                 type="button"
                 variant="secondary"
@@ -300,72 +358,135 @@ export function StockMatrixOverview() {
             {matrixLoading ? <div className="m-4 empty">一览表加载中</div> : null}
             {!matrixLoading && matrix && matrix.stocks.length && matrix.authors.length ? (
               <div className="h-full overflow-auto overscroll-contain">
-                <table className="min-w-max border-separate border-spacing-0">
-                  <thead>
-                    <tr>
-                      <th className="sticky left-0 top-0 z-30 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3">
-                        股票
-                      </th>
-                      {matrix.authors.map((author) => (
-                        <th
-                          key={author.accountName}
-                          className="sticky top-0 z-20 min-w-[148px] max-w-[148px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-3 py-3 align-bottom"
+                {compact ? (
+                  <div className="min-w-max space-y-3 p-4">
+                    {matrix.stocks.map((stock) => {
+                      const stockAuthors = getAuthorsForStock(stock.securityKey, matrix.authors, cellsByStock);
+                      return (
+                        <div
+                          key={stock.securityKey}
+                          className="flex min-w-max overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper)]"
                         >
-                          <Link
-                            href={`/feed?q=${encodeURIComponent(author.accountName)}`}
-                            className="block truncate text-[12px] font-semibold normal-case tracking-normal text-[color:var(--ink)] underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
-                            title={author.authorNickname || author.accountName}
-                          >
-                            {author.authorNickname || author.accountName}
-                          </Link>
-                          <span className="mt-1 block truncate text-[11px] font-normal normal-case tracking-normal text-[color:var(--soft-ink)]">
-                            @{author.accountName} · {formatCount(author.mentionCount)}
-                          </span>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {matrix.stocks.map((stock) => (
-                      <tr key={stock.securityKey}>
-                        <th className="sticky left-0 z-10 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 text-left align-top">
-                          <Link
-                            href={`/stocks?stock=${encodeURIComponent(stock.securityKey)}`}
-                            className="block text-sm font-semibold normal-case tracking-normal text-[color:var(--ink)] underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
-                          >
-                            {stock.displayName}
-                          </Link>
-                          <span className="mt-1 block text-xs font-normal normal-case tracking-normal text-[color:var(--muted-ink)]">
-                            {stockLabel(stock)} · {formatCount(stock.mentionCount)}
-                          </span>
-                        </th>
-                        {matrix.authors.map((author) => {
-                          const cell = cellMap.get(cellKey(stock.securityKey, author.accountName));
-                          return (
-                            <td
-                              key={`${stock.securityKey}-${author.accountName}`}
-                              className="min-w-[148px] max-w-[148px] border-b border-r border-[color:var(--border)] bg-[color:var(--panel)]/70 px-3 py-3 align-top"
+                          <div className="sticky left-0 z-10 flex w-[220px] shrink-0 flex-col justify-center border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
+                            <Link
+                              href={`/stocks?stock=${encodeURIComponent(stock.securityKey)}`}
+                              className="block text-sm font-semibold normal-case tracking-normal text-[color:var(--ink)] underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
                             >
-                              {cell?.views.length ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {cell.views.map((view, index) => (
-                                    <OpinionDot
-                                      key={`${stock.securityKey}-${author.accountName}-${view.date}-${index}`}
-                                      stock={stock}
-                                      view={view}
-                                    />
-                                  ))}
+                              {stock.displayName}
+                            </Link>
+                            <span className="mt-1 block text-xs font-normal normal-case tracking-normal text-[color:var(--muted-ink)]">
+                              {stockLabel(stock)} · {formatCount(stock.mentionCount)}
+                            </span>
+                          </div>
+                          <div className="grid auto-cols-[96px] grid-flow-col">
+                            {stockAuthors.map((author) => {
+                              const cell = cellMap.get(cellKey(stock.securityKey, author.accountName));
+                              const displayAuthor = authorMap.get(author.accountName) ?? author;
+                              return (
+                                <div
+                                  key={`${stock.securityKey}-${author.accountName}`}
+                                  className="flex min-h-[92px] flex-col gap-3 border-r border-[color:var(--border)] bg-[color:var(--panel)]/70 px-2 py-3"
+                                >
+                                  <div className="min-h-8 text-center">
+                                    <Link
+                                      href={`/feed?q=${encodeURIComponent(author.accountName)}`}
+                                      className="mx-auto inline-flex max-w-full items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold tracking-[0.08em] text-[color:var(--ink)] underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
+                                      title={displayAuthor.authorNickname || displayAuthor.accountName}
+                                    >
+                                      {buildCompactAuthorLabel(displayAuthor)}
+                                    </Link>
+                                    <span
+                                      className="mt-1 block truncate text-center text-[10px] normal-case tracking-normal text-[color:var(--soft-ink)]"
+                                      title={`@${displayAuthor.accountName}`}
+                                    >
+                                      @{displayAuthor.accountName}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-1 flex-wrap content-start justify-center gap-1.5">
+                                    {cell?.views.map((view, index) => (
+                                      <OpinionDot
+                                        key={`${stock.securityKey}-${author.accountName}-${view.date}-${index}`}
+                                        stock={stock}
+                                        view={view}
+                                      />
+                                    ))}
+                                  </div>
                                 </div>
-                              ) : (
-                                <span className="block h-5 text-xs text-[color:var(--soft-ink)]">-</span>
-                              )}
-                            </td>
-                          );
-                        })}
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <table className="min-w-max border-separate border-spacing-0">
+                    <thead>
+                      <tr>
+                        <th className="sticky left-0 top-0 z-30 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-4 py-3">
+                          股票
+                        </th>
+                        {matrix.authors.map((author) => (
+                          <th
+                            key={author.accountName}
+                            className="sticky top-0 z-20 min-w-[148px] max-w-[148px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper-strong)] px-3 py-3 align-bottom"
+                          >
+                            <Link
+                              href={`/feed?q=${encodeURIComponent(author.accountName)}`}
+                              className="block truncate text-[12px] font-semibold normal-case tracking-normal text-[color:var(--ink)] underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
+                              title={author.authorNickname || author.accountName}
+                            >
+                              {author.authorNickname || author.accountName}
+                            </Link>
+                            <span className="mt-1 block truncate text-[11px] font-normal normal-case tracking-normal text-[color:var(--soft-ink)]">
+                              @{author.accountName} · {formatCount(author.mentionCount)}
+                            </span>
+                          </th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {matrix.stocks.map((stock) => (
+                        <tr key={stock.securityKey}>
+                          <th className="sticky left-0 z-10 min-w-[220px] border-b border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3 text-left align-top">
+                            <Link
+                              href={`/stocks?stock=${encodeURIComponent(stock.securityKey)}`}
+                              className="block text-sm font-semibold normal-case tracking-normal text-[color:var(--ink)] underline-offset-4 hover:text-[color:var(--accent-strong)] hover:underline"
+                            >
+                              {stock.displayName}
+                            </Link>
+                            <span className="mt-1 block text-xs font-normal normal-case tracking-normal text-[color:var(--muted-ink)]">
+                              {stockLabel(stock)} · {formatCount(stock.mentionCount)}
+                            </span>
+                          </th>
+                          {matrix.authors.map((author) => {
+                            const cell = cellMap.get(cellKey(stock.securityKey, author.accountName));
+                            return (
+                              <td
+                                key={`${stock.securityKey}-${author.accountName}`}
+                                className="min-w-[148px] max-w-[148px] border-b border-r border-[color:var(--border)] bg-[color:var(--panel)]/70 px-3 py-3 align-top"
+                              >
+                                {cell?.views.length ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {cell.views.map((view, index) => (
+                                      <OpinionDot
+                                        key={`${stock.securityKey}-${author.accountName}-${view.date}-${index}`}
+                                        stock={stock}
+                                        view={view}
+                                      />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="block h-5 text-xs text-[color:var(--soft-ink)]">-</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ) : null}
             {!matrixLoading && matrix && (!matrix.stocks.length || !matrix.authors.length) ? (

@@ -171,7 +171,10 @@ must not apply a fixed recent-day cutoff. `/stocks/overview` uses
 at the latest visible stock-signal date unless a specific `end` date is passed.
 For logged-in users the matrix is scoped to subscribed authors, including admin
 users; anonymous users keep the public preview scope. Matrix cells keep every
-valid positive/negative stock signal as an individual point.
+valid positive/negative stock signal as an individual point. The frontend keeps
+the default global-author matrix layout and also offers a compact mode that
+reflows each stock row to only the authors that actually appear for that stock
+inside the current window.
 
 `/stocks/narrative` uses `get_latest_stock_narrative_brief` and is visible to
 anonymous and logged-in users. The brief is generated from all approved stock
