@@ -104,6 +104,8 @@ export function StockNewsTrackingTable() {
   const [trackingLoading, setTrackingLoading] = useState(true);
   const [deletingStockId, setDeletingStockId] = useState<string | null>(null);
   const [deletingTrackingId, setDeletingTrackingId] = useState<string | null>(null);
+  const [selectedTrackingIds, setSelectedTrackingIds] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     function syncFromLocation() {
@@ -121,6 +123,7 @@ export function StockNewsTrackingTable() {
         .then((nextData) => {
           if (cancelledRef?.cancelled) return;
           setData(nextData);
+          setSelectedTrackingIds((current) => current.filter((id) => nextData.tracking.rows.some((item) => item.id === id)));
           setError(null);
         })
         .catch((err) => {
@@ -149,6 +152,18 @@ export function StockNewsTrackingTable() {
     window.history.pushState(null, "", buildTrackingUrl(nextPage));
   }
 
+  function toggleTrackingSelection(trackingId: string) {
+    setSelectedTrackingIds((current) =>
+      current.includes(trackingId) ? current.filter((id) => id !== trackingId) : [...current, trackingId],
+    );
+  }
+
+  function toggleSelectAllVisible(nextRows: StockNewsTrackingItem[]) {
+    const ids = nextRows.map((item) => item.id);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedTrackingIds.includes(id));
+    setSelectedTrackingIds((current) => (allSelected ? current.filter((id) => !ids.includes(id)) : Array.from(new Set([...current, ...ids]))));
+  }
+
   async function deleteStock(stock: StockNewsTrackingStock) {
     if (!isAdminViewer || deletingStockId || deletingTrackingId) return;
     const ok = window.confirm(`删除 ${stock.displayName} 与这条新闻的映射？`);
@@ -165,7 +180,7 @@ export function StockNewsTrackingTable() {
   }
 
   async function deleteTrackingItem(item: StockNewsTrackingItem) {
-    if (!isAdminViewer || deletingTrackingId || deletingStockId) return;
+    if (!isAdminViewer || deletingTrackingId || deletingStockId || bulkDeleting) return;
     const headline = asText(item.eventSnapshot.headline, item.eventKey);
     const ok = window.confirm(`删除整条追踪新闻“${headline}”？这会同时删除该新闻下的全部映射股票。`);
     if (!ok) return;
@@ -173,10 +188,32 @@ export function StockNewsTrackingTable() {
     try {
       await deleteStockNewsTrackingItem(supabase, item.id);
       await loadTracking();
+      setSelectedTrackingIds((current) => current.filter((id) => id !== item.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "删除追踪新闻失败");
     } finally {
       setDeletingTrackingId(null);
+    }
+  }
+
+  async function deleteSelectedTrackingItems(items: StockNewsTrackingItem[]) {
+    if (!isAdminViewer || deletingTrackingId || deletingStockId || bulkDeleting || selectedTrackingIds.length === 0) return;
+    const selectedItems = items.filter((item) => selectedTrackingIds.includes(item.id));
+    if (!selectedItems.length) return;
+    const ok = window.confirm(`删除已选中的 ${selectedItems.length} 条追踪新闻？这会同时删除各自下的全部映射股票。`);
+    if (!ok) return;
+    setBulkDeleting(true);
+    try {
+      for (const item of selectedItems) {
+        await deleteStockNewsTrackingItem(supabase, item.id);
+      }
+      setSelectedTrackingIds([]);
+      await loadTracking();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "批量删除追踪新闻失败");
+    } finally {
+      setBulkDeleting(false);
     }
   }
 
@@ -186,6 +223,8 @@ export function StockNewsTrackingTable() {
   const isAdminViewer = data?.viewerIsAdmin || profile?.isAdmin || false;
   const canGoPrev = (data?.tracking.page ?? 1) > 1;
   const canGoNext = (data?.tracking.page ?? 1) < (data?.tracking.totalPages ?? 1);
+  const visibleTrackingIds = rows.map((item) => item.id);
+  const allVisibleSelected = visibleTrackingIds.length > 0 && visibleTrackingIds.every((id) => selectedTrackingIds.includes(id));
 
   return (
     <main className="page space-y-6">
@@ -214,6 +253,17 @@ export function StockNewsTrackingTable() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            {isAdminViewer ? (
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={selectedTrackingIds.length === 0 || bulkDeleting || Boolean(deletingTrackingId) || Boolean(deletingStockId)}
+                onClick={() => deleteSelectedTrackingItems(rows)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {bulkDeleting ? "批量删除中" : `删除选中 (${selectedTrackingIds.length})`}
+              </Button>
+            ) : null}
             <Button type="button" variant="secondary" disabled={!canGoPrev} onClick={() => goToPage(Math.max(1, page - 1))}>
               上一页
             </Button>
@@ -241,6 +291,19 @@ export function StockNewsTrackingTable() {
             <table>
               <thead>
                 <tr>
+                  {isAdminViewer ? (
+                    <th className="w-[64px]">
+                      <label className="inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--soft-ink)]">
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          onChange={() => toggleSelectAllVisible(rows)}
+                          aria-label="全选当前页追踪新闻"
+                        />
+                        全选
+                      </label>
+                    </th>
+                  ) : null}
                   <th>新闻</th>
                   <th>映射股票</th>
                   <th>逻辑</th>
@@ -255,6 +318,18 @@ export function StockNewsTrackingTable() {
                   const stocks = item.stocks.length ? item.stocks : [null];
                   return stocks.map((stock, index) => (
                     <tr key={`${item.id}-${stock?.id ?? "empty"}-${index}`}>
+                      {index === 0 && isAdminViewer ? (
+                        <td rowSpan={stocks.length} className="align-top">
+                          <div className="flex justify-center pt-1">
+                            <input
+                              type="checkbox"
+                              checked={selectedTrackingIds.includes(item.id)}
+                              onChange={() => toggleTrackingSelection(item.id)}
+                              aria-label={`选择追踪新闻 ${asText(item.eventSnapshot.headline, item.eventKey)}`}
+                            />
+                          </div>
+                        </td>
+                      ) : null}
                       {index === 0 ? (
                         <td rowSpan={stocks.length} className="align-top">
                           <div className="space-y-3">
@@ -264,7 +339,7 @@ export function StockNewsTrackingTable() {
                                 type="button"
                                 variant="destructive"
                                 size="sm"
-                                disabled={deletingTrackingId === item.id}
+                                disabled={deletingTrackingId === item.id || bulkDeleting}
                                 onClick={() => deleteTrackingItem(item)}
                                 title="删除整条追踪新闻"
                               >
@@ -310,7 +385,7 @@ export function StockNewsTrackingTable() {
                                 type="button"
                                 variant="destructive"
                                 size="sm"
-                                disabled={deletingStockId === stock.id}
+                                disabled={deletingStockId === stock.id || bulkDeleting}
                                 onClick={() => deleteStock(stock)}
                                 title="删除这条映射股票"
                               >

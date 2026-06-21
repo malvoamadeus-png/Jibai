@@ -22,9 +22,16 @@ function parsePage(value: string | null) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
-function buildNewsUrl(page: number) {
-  if (page <= 1) return "/stocks/news";
-  return `/stocks/news?page=${page}`;
+function readSupplyRiskOnly(value: string | null) {
+  return value === "1";
+}
+
+function buildNewsUrlWithFilters(page: number, supplyRiskOnly: boolean) {
+  const next = new URLSearchParams();
+  if (page > 1) next.set("page", String(page));
+  if (supplyRiskOnly) next.set("supplyRiskOnly", "1");
+  const query = next.toString();
+  return query ? `/stocks/news?${query}` : "/stocks/news";
 }
 
 function eventTypeLabel(value: string) {
@@ -71,6 +78,7 @@ export function StockNewsTimeline() {
   const searchParams = useSearchParams();
   const { loading, profile, signIn, supabase } = useAuth();
   const [page, setPage] = useState(() => parsePage(searchParams.get("page")));
+  const [supplyRiskOnly, setSupplyRiskOnly] = useState(() => readSupplyRiskOnly(searchParams.get("supplyRiskOnly")));
   const [data, setData] = useState<StockNewsTimelineResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(true);
@@ -80,6 +88,7 @@ export function StockNewsTimeline() {
     function syncFromLocation() {
       const next = new URLSearchParams(window.location.search);
       setPage(parsePage(next.get("page")));
+      setSupplyRiskOnly(readSupplyRiskOnly(next.get("supplyRiskOnly")));
     }
     window.addEventListener("popstate", syncFromLocation);
     return () => window.removeEventListener("popstate", syncFromLocation);
@@ -112,7 +121,14 @@ export function StockNewsTimeline() {
 
   function goToPage(nextPage: number) {
     setPage(nextPage);
-    window.history.pushState(null, "", buildNewsUrl(nextPage));
+    window.history.pushState(null, "", buildNewsUrlWithFilters(nextPage, supplyRiskOnly));
+  }
+
+  function toggleSupplyRiskOnly() {
+    const nextValue = !supplyRiskOnly;
+    setSupplyRiskOnly(nextValue);
+    setPage(1);
+    window.history.pushState(null, "", buildNewsUrlWithFilters(1, nextValue));
   }
 
   async function handleTrack(dayDate: string, eventKey: string) {
@@ -145,6 +161,18 @@ export function StockNewsTimeline() {
   if (loading) return <LoadingPanel />;
 
   const rows = data?.timeline.rows ?? [];
+  const filteredRows = supplyRiskOnly
+    ? rows
+        .map((day) => {
+          const events = day.events.filter((event) => isSupplyRisk(event.eventType));
+          return {
+            ...day,
+            events,
+            eventCount: events.length,
+          };
+        })
+        .filter((day) => day.events.length > 0)
+    : rows;
   const canGoPrev = (data?.timeline.page ?? 1) > 1;
   const canGoNext = (data?.timeline.page ?? 1) < (data?.timeline.totalPages ?? 1);
 
@@ -178,6 +206,9 @@ export function StockNewsTimeline() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button type="button" variant={supplyRiskOnly ? "secondary" : "ghost"} onClick={toggleSupplyRiskOnly}>
+              只看供应风险
+            </Button>
             <Button type="button" variant="secondary" disabled={!canGoPrev} onClick={() => goToPage(Math.max(1, page - 1))}>
               上一页
             </Button>
@@ -195,13 +226,13 @@ export function StockNewsTimeline() {
         </div>
       ) : null}
 
-      {!timelineLoading && rows.length === 0 ? (
+      {!timelineLoading && filteredRows.length === 0 ? (
         <EmptyState title="还没有可见新闻记录" description="完成重分析和物化后，这里会按日期展示新闻事件时间线。" />
       ) : null}
 
-      {!timelineLoading && rows.length > 0 ? (
+      {!timelineLoading && filteredRows.length > 0 ? (
         <div className="space-y-4">
-          {rows.map((day) => (
+          {filteredRows.map((day) => (
             <Card key={day.date}>
               <CardHeader className="gap-3 border-b border-[color:var(--border)] bg-[color:var(--paper-strong)]/60">
                 <div className="flex flex-wrap items-center justify-between gap-3">

@@ -365,7 +365,7 @@ export function StockMatrixOverview() {
                       return (
                         <div
                           key={stock.securityKey}
-                          className="flex min-w-max overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper)]"
+                          className="flex min-w-max overflow-visible rounded-2xl border border-[color:var(--border)] bg-[color:var(--paper)]"
                         >
                           <div className="sticky left-0 z-10 flex w-[220px] shrink-0 flex-col justify-center border-r border-[color:var(--border)] bg-[color:var(--paper)] px-4 py-3">
                             <Link
