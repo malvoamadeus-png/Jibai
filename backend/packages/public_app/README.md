@@ -7,8 +7,6 @@ Public web uses Supabase as the primary database. Vercel only serves `public-web
 - Polls `crawl_jobs` every 30 seconds.
 - Enqueues scheduled crawl jobs hourly at `00:00` through `23:00`
   Asia/Shanghai by default.
-- Fetches approved onchain wallet holdings at
-  `04:20,10:20,16:20,22:20` Asia/Shanghai by default.
 - Processes only one crawl job at a time with a Postgres advisory lock.
 - Crawls X accounts serially with a 5 second account delay.
 - Runs stock or crypto AI signal analysis by job domain and writes author summaries, viewpoints, and materialized timelines back to Supabase.
@@ -56,9 +54,6 @@ PUBLIC_WORKER_CRYPTO_ASSET_BRIEF_TIME=22:50
 PUBLIC_STOCK_BLOGGER_SCORE_ENABLED=false
 PUBLIC_WORKER_STOCK_BLOGGER_SCORE_TIME=23:10
 PUBLIC_STOCK_BLOGGER_SCORE_ACCOUNTS=labubu_trader,hicagr,xiaomustock
-PUBLIC_ONCHAIN_ENABLED=true
-PUBLIC_ONCHAIN_FETCH_TIMES=04:20,10:20,16:20,22:20
-PUBLIC_ONCHAIN_MIN_VALUE_USD=200
 
 AI_PROVIDER=openai-compatible
 AI_API_KEY='your-openai-compatible-api-key'
@@ -204,18 +199,10 @@ detail view and never renders K-line data. `/crypto/assets/overview` uses
 and gray dots are weak informational or mention signals such as reposts,
 announcements, data broadcasts, or plain mentions.
 
-Public onchain browsing uses OKX Web3 from the backend only. The worker reads
-`OKX_API_KEY`, `OKX_SECRET_KEY`, and `OKX_PASSPHRASE`; these values must not be
-added to `public-web` env. `/onchain` shows overview data, `/onchain/tokens`
-shows the token x date matrix, `/onchain/wallets` shows the address library and
-single-wallet matrix, and `/onchain/admin` enqueues manual fetch runs. The
-long-running worker executes both scheduled fetches and pending manual onchain
-runs.
-
-`/onchain/gmgn-labels` calls the Linux public API endpoint
-`POST /api/onchain/gmgn-labels`. The API receives only token addresses and
-`limit`; user-pasted EVM/Solana GMGN label files stay in the browser and are
-used locally for de-duplication.
+OKX Web3 credentials are still used by server-side crypto asset identity
+resolution and the authenticated GMGN labels API. The retired public onchain
+wallet-tracking pages, scheduled wallet fetches, and `onchain_*` Supabase tables
+were removed by `supabase/migrations/041_remove_onchain_tracking_and_slim_public_rpc.sql`.
 
 ## Commands
 
@@ -231,10 +218,6 @@ python backend/src/main.py public-worker
 python backend/src/main.py public-api --host 127.0.0.1 --port 8010
 python backend/src/main.py public-worker-doctor
 python backend/src/main.py public-enqueue-scheduled
-python backend/src/main.py public-onchain-doctor
-python backend/src/main.py public-onchain-fetch --once
-python backend/src/main.py public-onchain-process-pending --limit 1
-python backend/src/main.py public-onchain-rebuild-daily --days 30
 python backend/src/main.py public-reanalyze-recent --days 30 --clear-analysis
 python backend/src/main.py public-reanalyze-recent --domain crypto --days 30 --clear-analysis
 python backend/src/main.py public-rebuild-timelines --domain crypto
@@ -257,9 +240,9 @@ poller and in-process scheduler. `public-enqueue-scheduled` inserts one schedule
 crawl job immediately, which is useful when you want the worker to process a run
 without waiting for the next configured wall-clock time.
 
-`public-api` starts the FastAPI service used by the Vercel frontend. Put it
-behind Nginx or another TLS reverse proxy, and point
-`NEXT_PUBLIC_GMGN_LABEL_API_URL` in `public-web` at that public HTTPS origin.
+`public-api` starts the FastAPI service used by server-side helper endpoints.
+Put it behind Nginx or another TLS reverse proxy, and keep
+`PUBLIC_API_ALLOWED_ORIGINS` aligned with the public-web origin.
 
 `public-reanalyze-recent --days 30 --clear-analysis` keeps raw `content_items`,
 clears only the selected recent notes' analysis rows, and force-runs the
@@ -276,8 +259,7 @@ and rebuilds the crypto materialized views.
 `public-worker-doctor` is read-only. Run it on the server with the same
 environment file as the worker to print queue counts, due pending jobs, running
 job age, latest scheduled job, global plus per-domain account/subscription
-counts, onchain OKX-key presence, onchain wallet counts, latest onchain run,
-and whether a job is holding the Postgres worker lock at that instant.
+counts, and whether a job is holding the Postgres worker lock at that instant.
 
 The long-running `public-worker` validates the database connection before it
 starts APScheduler. If the service exits immediately, inspect the service

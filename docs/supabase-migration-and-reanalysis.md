@@ -742,48 +742,23 @@ with psycopg.connect(dsn, autocommit=True) as conn:
 PY
 ```
 
-## Apply Onchain Ambush Migration
+## Retired Onchain Wallet Tracking
 
-`supabase/migrations/018_onchain_ambush.sql` adds the chain-tracking tables,
-RPCs, RLS policies, filter rules, and two approved seed wallets:
+`supabase/migrations/041_remove_onchain_tracking_and_slim_public_rpc.sql`
+removes the retired public onchain wallet-tracking surface. It drops the
+`onchain_*` wallet, token, fetch-run, raw snapshot, and daily-view tables plus
+their public RPCs. It also installs lightweight helpers used by public RPCs to
+avoid returning unused large JSON fields from stock detail, stock/crypto matrix,
+and stock-news timeline responses.
 
-- `0xa7bfa56d1fbb7809b8424b452896707be408e1bc` / `恰米` / BSC.
-- `0xa05ec35f7d1eba823cff2ed26aeaed419683742f` / `裤子` / BSC, Ethereum, Base.
+`042_slim_stock_news_timeline_rpc.sql` explicitly rebuilds the stock-news
+timeline RPC to use the slim event helper. `043_tighten_stock_news_timeline_payload.sql`
+then tightens the same surface further: timeline events no longer include the
+unused `note_title`, linked entities are returned without metadata, and
+authenticated stock-news timeline requests are capped at 10 date groups with a
+default/frontend page size of 5.
 
-Apply it locally with the Postgres DSN from `.env`:
-
-```bash
-/mnt/d/Software/Code/Anaconda/python.exe - <<'PY'
-import os
-from pathlib import Path
-
-import psycopg
-from dotenv import load_dotenv
-
-load_dotenv(".env", override=False)
-dsn = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
-if not dsn:
-    raise SystemExit("missing SUPABASE_DB_URL or DATABASE_URL")
-
-sql_path = Path("supabase/migrations/018_onchain_ambush.sql")
-with psycopg.connect(dsn, autocommit=False) as conn:
-    with conn.cursor() as cur:
-        cur.execute(sql_path.read_text(encoding="utf-8"))
-    conn.commit()
-
-print(f"migration=applied file={sql_path}")
-PY
-```
-
-Then run one fetch and rebuild:
-
-```bash
-/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-onchain-doctor
-/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-onchain-fetch --once
-/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-onchain-rebuild-daily --days 30
-```
-
-Verify without printing secrets:
+After applying it, verify without printing secrets:
 
 ```bash
 /mnt/d/Software/Code/Anaconda/python.exe - <<'PY'
@@ -798,18 +773,26 @@ if not dsn:
 
 with psycopg.connect(dsn, autocommit=True) as conn:
     with conn.cursor() as cur:
-        for table in [
-            "onchain_wallets",
-            "onchain_wallet_chains",
-            "onchain_token_filter_rules",
-            "onchain_fetch_runs",
-            "onchain_fetch_run_items",
-            "onchain_balance_snapshots",
-            "onchain_daily_wallet_token_views",
-            "onchain_daily_token_views",
+        cur.execute("""
+          select count(*)
+          from information_schema.tables
+          where table_schema = 'public'
+            and table_name like 'onchain_%'
+        """)
+        print(f"onchain_public_tables={cur.fetchone()[0]}")
+        for fn in [
+            "get_visible_entity_timeline",
+            "get_visible_stock_matrix",
+            "get_visible_crypto_matrix",
+            "get_visible_stock_news_timeline",
         ]:
-            cur.execute(f"select count(*) from public.{table}")
-            print(f"{table}={cur.fetchone()[0]}")
+            cur.execute("select proname from pg_proc where proname = %s limit 1", (fn,))
+            print(f"{fn}=" + ("present" if cur.fetchone() else "missing"))
+        cur.execute("""
+          select pg_get_functiondef('public.get_visible_stock_news_timeline(integer,integer)'::regprocedure)
+                 like '%slim_stock_news_event%'
+        """)
+        print(f"stock_news_uses_slim_helper={cur.fetchone()[0]}")
 PY
 ```
 

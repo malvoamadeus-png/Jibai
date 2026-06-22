@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,52 +20,3 @@ SUPPORTED_CHAINS: tuple[ChainSpec, ...] = (
 
 CHAIN_BY_KEY = {chain.key: chain for chain in SUPPORTED_CHAINS}
 CHAIN_BY_INDEX = {chain.chain_index: chain for chain in SUPPORTED_CHAINS}
-
-
-@dataclass(frozen=True, slots=True)
-class OnchainWallet:
-    id: str
-    address: str
-    admin_label: str
-    chain_key: str
-    chain_index: str
-
-
-@dataclass(frozen=True, slots=True)
-class TokenBalance:
-    wallet_id: str
-    address: str
-    chain_key: str
-    chain_index: str
-    token_key: str
-    token_contract_address: str
-    symbol: str
-    display_name: str
-    balance: Decimal
-    raw_balance: Decimal
-    token_price_usd: Decimal
-    holding_value_usd: Decimal
-    is_native: bool
-    is_risk_token: bool
-    excluded: bool
-    exclusion_reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FetchItemResult:
-    wallet_id: str
-    chain_key: str
-    chain_index: str
-    status: str
-    token_count: int
-    visible_token_count: int
-    error_text: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class FetchRunResult:
-    run_id: str
-    status: str
-    summary: str
-    item_results: list[FetchItemResult]
-    visible_balances: int

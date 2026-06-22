@@ -271,39 +271,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Regenerate even if a successful brief already exists for the asset.",
     )
-    public_onchain_fetch_parser = subparsers.add_parser(
-        "public-onchain-fetch",
-        help="Fetch approved onchain wallet holdings from OKX and rebuild daily views.",
-    )
-    public_onchain_fetch_parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Compatibility flag; the command always performs one fetch run.",
-    )
-    public_onchain_rebuild_parser = subparsers.add_parser(
-        "public-onchain-rebuild-daily",
-        help="Rebuild onchain daily wallet/token views from raw snapshots.",
-    )
-    public_onchain_rebuild_parser.add_argument(
-        "--days",
-        type=int,
-        default=30,
-        help="Recent Shanghai natural days to rebuild. Defaults to 30.",
-    )
-    subparsers.add_parser(
-        "public-onchain-doctor",
-        help="Print onchain wallet, OKX env, and latest run diagnostics.",
-    )
-    public_onchain_pending_parser = subparsers.add_parser(
-        "public-onchain-process-pending",
-        help="Process pending manual onchain fetch runs enqueued from public-web.",
-    )
-    public_onchain_pending_parser.add_argument(
-        "--limit",
-        type=int,
-        default=1,
-        help="Maximum pending runs to process. Defaults to 1.",
-    )
     return parser.parse_args()
 
 
@@ -409,26 +376,6 @@ def main() -> int:
             asset_keys=args.asset_key,
             force=args.force,
         )
-    if args.command == "public-onchain-fetch":
-        from packages.onchain.service import fetch_onchain_once  # noqa: PLC0415
-
-        result = fetch_onchain_once(kind="once")
-        print(f"[onchain] run_id={result.run_id} status={result.status} summary={result.summary}")
-        return 0 if result.status == "succeeded" else 1
-    if args.command == "public-onchain-rebuild-daily":
-        from packages.onchain.service import rebuild_onchain_daily_once  # noqa: PLC0415
-
-        return rebuild_onchain_daily_once(days=args.days)
-    if args.command == "public-onchain-doctor":
-        from packages.onchain.service import doctor_once  # noqa: PLC0415
-
-        return doctor_once()
-    if args.command == "public-onchain-process-pending":
-        from packages.onchain.service import process_pending_onchain_fetches  # noqa: PLC0415
-
-        processed = process_pending_onchain_fetches(max_runs=args.limit)
-        print(f"[onchain] processed_pending={processed}")
-        return 0
     raise ValueError(f"Unknown command: {args.command}")
 
 

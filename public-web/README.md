@@ -8,8 +8,6 @@ Copy `.env.example` to `.env.local` and set:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_GMGN_LABEL_API_URL` for the Linux public API used by
-  `/onchain/gmgn-labels`
 
 Run locally:
 
@@ -65,7 +63,3 @@ Approving a new account creates an `initial_backfill` job in Supabase. The worke
 For the crypto domain, `/crypto/admin` includes a runtime switch stored in
 Supabase. Turning it off stops new crypto crawl/analysis work on the backend
 but does not hide the existing crypto pages or historical data.
-
-`/onchain/gmgn-labels` calls the Linux public API with the logged-in Supabase
-access token. User-pasted GMGN labels are parsed locally in the browser and are
-not sent to the API.

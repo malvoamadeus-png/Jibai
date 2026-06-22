@@ -24,22 +24,6 @@ import type {
   MarketTopRiskHistoryPoint,
   MarketTopRiskSignal,
   MarketTopRiskSnapshot,
-  OnchainAdminDashboard,
-  OnchainAdminRequestItem,
-  OnchainAdminWalletItem,
-  OnchainChain,
-  OnchainChainKey,
-  OnchainHolder,
-  OnchainOverviewData,
-  OnchainRequestItem,
-  OnchainRunItem,
-  OnchainTokenMatrixCell,
-  OnchainTokenMatrixData,
-  OnchainTokenMatrixToken,
-  OnchainWalletListItem,
-  OnchainWalletMatrixCell,
-  OnchainWalletMatrixData,
-  OnchainWalletMatrixToken,
   PagedResult,
   RequestListItem,
   StockKlineCandle,
@@ -249,7 +233,6 @@ function normalizeStockNewsItem(rawValue: unknown): StockNewsItem {
     eventSortOrder: asNumber(raw.event_sort_order ?? raw.eventSortOrder),
     noteId: asString(raw.note_id ?? raw.noteId),
     noteUrl: asString(raw.note_url ?? raw.noteUrl),
-    noteTitle: asString(raw.note_title ?? raw.noteTitle),
     accountName: asString(raw.account_name ?? raw.accountName),
     authorNickname: asString(raw.author_nickname ?? raw.authorNickname),
     publishTime: asNullableString(raw.publish_time ?? raw.publishTime),
@@ -443,114 +426,6 @@ function normalizeCryptoMatrixCell(rawValue: unknown): CryptoMatrixCell {
     accountName,
     authorNickname: asString(raw.author_nickname ?? raw.authorNickname, accountName),
     views: asArray(raw.views).map(normalizeStockMatrixView),
-  };
-}
-
-function normalizeOnchainChain(rawValue: unknown): OnchainChain {
-  const raw = asRecord(rawValue);
-  return {
-    key: asString(raw.key, "bsc") as OnchainChainKey,
-    chainIndex: asString(raw.chainIndex ?? raw.chain_index),
-    enabled: raw.enabled === undefined ? undefined : Boolean(raw.enabled),
-  };
-}
-
-function normalizeOnchainWallet(rawValue: unknown): OnchainWalletListItem {
-  const raw = asRecord(rawValue);
-  return {
-    id: asString(raw.id),
-    address: asString(raw.address),
-    addressShort: asString(raw.address_short ?? raw.addressShort),
-    displayName: asString(raw.display_name ?? raw.displayName),
-    adminLabel: asString(raw.admin_label ?? raw.adminLabel),
-    userNote: asString(raw.user_note ?? raw.userNote),
-    subscribed: Boolean(raw.subscribed),
-    enabledChains: asArray(raw.enabled_chains ?? raw.enabledChains).map(normalizeOnchainChain),
-    lastSnapshotAt: asNullableString(raw.last_snapshot_at ?? raw.lastSnapshotAt),
-    status: asString(raw.status),
-  };
-}
-
-function normalizeOnchainRun(rawValue: unknown): OnchainRunItem {
-  const raw = asRecord(rawValue);
-  return {
-    id: asString(raw.id),
-    kind: asString(raw.kind),
-    status: asString(raw.status),
-    summary: asString(raw.summary),
-    errorText: asNullableString(raw.errorText ?? raw.error_text),
-    createdAt: asString(raw.createdAt ?? raw.created_at),
-    startedAt: asNullableString(raw.startedAt ?? raw.started_at),
-    finishedAt: asNullableString(raw.finishedAt ?? raw.finished_at),
-  };
-}
-
-function normalizeOnchainHolder(rawValue: unknown): OnchainHolder {
-  const raw = asRecord(rawValue);
-  return {
-    walletId: asString(raw.walletId ?? raw.wallet_id),
-    address: asString(raw.address),
-    addressShort: asString(raw.addressShort ?? raw.address_short),
-    displayName: asString(raw.displayName ?? raw.display_name),
-    balance: asNumber(raw.balance),
-    valueUsd: asNumber(raw.valueUsd ?? raw.value_usd),
-  };
-}
-
-function normalizeOnchainToken(rawValue: unknown): OnchainTokenMatrixToken {
-  const raw = asRecord(rawValue);
-  return {
-    tokenId: asString(raw.tokenId ?? raw.token_id),
-    tokenKey: asString(raw.tokenKey ?? raw.token_key),
-    chainKey: asString(raw.chainKey ?? raw.chain_key, "bsc") as OnchainChainKey,
-    chainIndex: asString(raw.chainIndex ?? raw.chain_index),
-    contractAddress: asString(raw.contractAddress ?? raw.contract_address),
-    symbol: asString(raw.symbol),
-    displayName: asString(raw.displayName ?? raw.display_name),
-    latestDate: asNullableString(raw.latestDate ?? raw.latest_date),
-    latestHolderCount: asNumber(raw.latestHolderCount ?? raw.latest_holder_count),
-    latestValueUsd: asNumber(raw.latestValueUsd ?? raw.latest_value_usd),
-  };
-}
-
-function normalizeOnchainTokenCell(rawValue: unknown): OnchainTokenMatrixCell {
-  const raw = asRecord(rawValue);
-  return {
-    date: asString(raw.date),
-    tokenId: asString(raw.tokenId ?? raw.token_id),
-    holderCount: asNumber(raw.holderCount ?? raw.holder_count),
-    balanceSum: asNumber(raw.balanceSum ?? raw.balance_sum),
-    valueUsdSum: asNumber(raw.valueUsdSum ?? raw.value_usd_sum),
-    holderCountDelta: asNullableNumber(raw.holderCountDelta ?? raw.holder_count_delta),
-    balanceDelta: asNullableNumber(raw.balanceDelta ?? raw.balance_delta),
-    valueUsdDelta: asNullableNumber(raw.valueUsdDelta ?? raw.value_usd_delta),
-    holders: asArray(raw.holders).map(normalizeOnchainHolder),
-  };
-}
-
-function normalizeOnchainWalletToken(rawValue: unknown): OnchainWalletMatrixToken {
-  const token = normalizeOnchainToken(rawValue);
-  return {
-    tokenId: token.tokenId,
-    tokenKey: token.tokenKey,
-    chainKey: token.chainKey,
-    chainIndex: token.chainIndex,
-    contractAddress: token.contractAddress,
-    symbol: token.symbol,
-    displayName: token.displayName,
-  };
-}
-
-function normalizeOnchainWalletCell(rawValue: unknown): OnchainWalletMatrixCell {
-  const raw = asRecord(rawValue);
-  return {
-    date: asString(raw.date),
-    tokenId: asString(raw.tokenId ?? raw.token_id),
-    balance: asNumber(raw.balance),
-    valueUsd: asNumber(raw.valueUsd ?? raw.value_usd),
-    balanceDelta: asNullableNumber(raw.balanceDelta ?? raw.balance_delta),
-    valueUsdDelta: asNullableNumber(raw.valueUsdDelta ?? raw.value_usd_delta),
-    state: asString(raw.state),
   };
 }
 
@@ -1005,7 +880,7 @@ export async function getVisibleStockNewsTimeline(
 ): Promise<StockNewsTimelineResponse> {
   const { data, error } = await supabase.rpc("get_visible_stock_news_timeline", {
     page_arg: page,
-    page_size_arg: profile ? 20 : 3,
+    page_size_arg: profile ? 5 : 3,
   });
   assertNoError(error);
   const payload = asRecord(data);
@@ -1030,7 +905,6 @@ export async function trackStockNewsEvent(
       event_sort_order: event.eventSortOrder,
       note_id: event.noteId,
       note_url: event.noteUrl,
-      note_title: event.noteTitle,
       account_name: event.accountName,
       author_nickname: event.authorNickname,
       publish_time: event.publishTime,
@@ -1407,181 +1281,5 @@ export async function adminDeleteCryptoAsset(supabase: SupabaseClient, assetKey:
     asset_key_arg: assetKey,
     reason_arg: reason,
   });
-  assertNoError(error);
-}
-
-export async function listOnchainWallets(supabase: SupabaseClient, query = ""): Promise<OnchainWalletListItem[]> {
-  const { data, error } = await supabase.rpc("list_onchain_wallets", {
-    query_arg: query,
-    limit_arg: 100,
-  });
-  assertNoError(error);
-  return (data || []).map(normalizeOnchainWallet);
-}
-
-export async function listMyOnchainWalletRequests(
-  supabase: SupabaseClient,
-  profile: UserProfile | null,
-): Promise<OnchainRequestItem[]> {
-  if (!profile) return [];
-  const { data, error } = await supabase.rpc("list_my_onchain_wallet_requests");
-  assertNoError(error);
-  return (data || []).map((item: unknown): OnchainRequestItem => {
-    const raw = asRecord(item);
-    return {
-      id: asString(raw.id),
-      status: asString(raw.status),
-      rawInput: asString(raw.raw_input ?? raw.rawInput),
-      normalizedAddress: asString(raw.normalized_address ?? raw.normalizedAddress),
-      createdAt: asString(raw.created_at ?? raw.createdAt),
-    };
-  });
-}
-
-export async function submitOnchainWallet(supabase: SupabaseClient, rawInput: string, chainKeys: string[] = []) {
-  const { error } = await supabase.rpc("submit_onchain_wallet", {
-    raw_input_arg: rawInput,
-    chain_keys_arg: chainKeys,
-  });
-  assertNoError(error);
-}
-
-export async function setOnchainWalletSubscription(
-  supabase: SupabaseClient,
-  walletId: string,
-  subscribed: boolean,
-) {
-  const { error } = await supabase.rpc("set_onchain_wallet_subscription", {
-    wallet_id_arg: walletId,
-    subscribed_arg: subscribed,
-  });
-  assertNoError(error);
-}
-
-export async function setOnchainWalletNote(supabase: SupabaseClient, walletId: string, note: string) {
-  const { error } = await supabase.rpc("set_onchain_wallet_note", {
-    wallet_id_arg: walletId,
-    note_arg: note,
-  });
-  assertNoError(error);
-}
-
-export async function getOnchainTokenMatrix(
-  supabase: SupabaseClient,
-  endDate: string | null = null,
-  chainKeys: string[] = [],
-): Promise<OnchainTokenMatrixData> {
-  const { data, error } = await supabase.rpc("get_onchain_token_matrix", {
-    end_date_arg: endDate || null,
-    chain_keys_arg: chainKeys.length ? chainKeys : null,
-  });
-  assertNoError(error);
-  const payload = asRecord(data);
-  return {
-    dates: normalizeStringArray(payload.dates),
-    tokens: asArray(payload.tokens).map(normalizeOnchainToken),
-    cells: asArray(payload.cells).map(normalizeOnchainTokenCell),
-  };
-}
-
-export async function getOnchainWalletMatrix(
-  supabase: SupabaseClient,
-  walletId: string,
-  endDate: string | null = null,
-  chainKeys: string[] = [],
-): Promise<OnchainWalletMatrixData> {
-  const { data, error } = await supabase.rpc("get_onchain_wallet_matrix", {
-    wallet_id_arg: walletId,
-    end_date_arg: endDate || null,
-    chain_keys_arg: chainKeys.length ? chainKeys : null,
-  });
-  assertNoError(error);
-  const payload = asRecord(data);
-  return {
-    meta: payload.meta ? normalizeOnchainWallet(payload.meta) : null,
-    dates: normalizeStringArray(payload.dates),
-    tokens: asArray(payload.tokens).map(normalizeOnchainWalletToken),
-    cells: asArray(payload.cells).map(normalizeOnchainWalletCell),
-  };
-}
-
-export async function getOnchainOverview(supabase: SupabaseClient): Promise<OnchainOverviewData> {
-  const { data, error } = await supabase.rpc("get_onchain_overview");
-  assertNoError(error);
-  const payload = asRecord(data);
-  return {
-    latestDate: asNullableString(payload.latestDate ?? payload.latest_date),
-    walletCount: asNumber(payload.walletCount ?? payload.wallet_count),
-    tokenCount: asNumber(payload.tokenCount ?? payload.token_count),
-    topTokens: asArray(payload.topTokens ?? payload.top_tokens).map(asRecord),
-    newTokens: asArray(payload.newTokens ?? payload.new_tokens).map(asRecord),
-    increasedTokens: asArray(payload.increasedTokens ?? payload.increased_tokens).map(asRecord),
-    activeWallets: asArray(payload.activeWallets ?? payload.active_wallets).map(asRecord),
-    recentRuns: asArray(payload.recentRuns ?? payload.recent_runs).map(normalizeOnchainRun),
-  };
-}
-
-export async function listOnchainAdminDashboard(supabase: SupabaseClient): Promise<OnchainAdminDashboard> {
-  const { data, error } = await supabase.rpc("list_onchain_admin_dashboard");
-  assertNoError(error);
-  const payload = asRecord(data);
-  return {
-    approvedCount: asNumber(payload.approvedCount ?? payload.approved_count),
-    pendingCount: asNumber(payload.pendingCount ?? payload.pending_count),
-    wallets: asArray(payload.wallets).map((item): OnchainAdminWalletItem => {
-      const raw = asRecord(item);
-      return {
-        id: asString(raw.id),
-        address: asString(raw.address),
-        addressShort: asString(raw.addressShort ?? raw.address_short),
-        adminLabel: asString(raw.adminLabel ?? raw.admin_label),
-        status: asString(raw.status),
-        lastSnapshotAt: asNullableString(raw.lastSnapshotAt ?? raw.last_snapshot_at),
-        enabledChains: asArray(raw.enabledChains ?? raw.enabled_chains).map(normalizeOnchainChain),
-      };
-    }),
-    requests: asArray(payload.requests).map((item): OnchainAdminRequestItem => {
-      const raw = asRecord(item);
-      return {
-        id: asString(raw.id),
-        rawInput: asString(raw.rawInput ?? raw.raw_input),
-        normalizedAddress: asString(raw.normalizedAddress ?? raw.normalized_address),
-        status: asString(raw.status),
-        requesterEmail: asString(raw.requesterEmail ?? raw.requester_email),
-        createdAt: asString(raw.createdAt ?? raw.created_at),
-      };
-    }),
-    runs: asArray(payload.runs).map(normalizeOnchainRun),
-  };
-}
-
-export async function approveOnchainWalletRequest(supabase: SupabaseClient, requestId: string) {
-  const { error } = await supabase.rpc("approve_onchain_wallet_request", { request_id_arg: requestId });
-  assertNoError(error);
-}
-
-export async function rejectOnchainWalletRequest(supabase: SupabaseClient, requestId: string) {
-  const { error } = await supabase.rpc("reject_onchain_wallet_request", { request_id_arg: requestId });
-  assertNoError(error);
-}
-
-export async function updateOnchainWalletAdmin(
-  supabase: SupabaseClient,
-  walletId: string,
-  adminLabel: string,
-  chainKeys: string[],
-  status: string,
-) {
-  const { error } = await supabase.rpc("admin_update_onchain_wallet", {
-    wallet_id_arg: walletId,
-    admin_label_arg: adminLabel,
-    chain_keys_arg: chainKeys,
-    status_arg: status,
-  });
-  assertNoError(error);
-}
-
-export async function enqueueOnchainFetch(supabase: SupabaseClient) {
-  const { error } = await supabase.rpc("enqueue_onchain_fetch");
   assertNoError(error);
 }

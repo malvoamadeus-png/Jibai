@@ -1,1 +1,1 @@
-"""On-chain wallet holding capture for the public app."""
+"""OKX Web3 helpers for public crypto asset identity and GMGN labels."""

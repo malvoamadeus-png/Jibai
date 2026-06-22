@@ -9,8 +9,3 @@ export function getSupabaseAnonKey() {
   if (!value) throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return value;
 }
-
-export function getGmgnLabelApiUrl() {
-  const value = process.env.NEXT_PUBLIC_GMGN_LABEL_API_URL || "/gmgn-api";
-  return value.replace(/\/+$/, "");
-}

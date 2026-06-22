@@ -16,10 +16,8 @@ import {
   Orbit,
   Shield,
   Sparkles,
-  Tags,
   Trophy,
   UserRound,
-  WalletCards,
   X,
 } from "lucide-react";
 
@@ -28,12 +26,6 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 function domainCopy(pathname: string) {
-  if (pathname.startsWith("/onchain")) {
-    return {
-      title: "链上",
-      description: "按地址与 token 观察埋伏仓位的结构变化",
-    };
-  }
   if (pathname.startsWith("/crypto")) {
     return {
       title: "加密",
@@ -51,16 +43,8 @@ export function Nav() {
   const { loading, profile, signIn, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const isCrypto = pathname.startsWith("/crypto");
-  const isOnchain = pathname.startsWith("/onchain");
   const activeDomain = useMemo(() => domainCopy(pathname), [pathname]);
-  const links = isOnchain
-    ? [
-        { href: "/onchain", label: "总览", icon: Home, exact: true },
-        { href: "/onchain/wallets", label: "地址库 / 按人", icon: WalletCards },
-        { href: "/onchain/tokens", label: "按代币", icon: Grid3X3 },
-        { href: "/onchain/gmgn-labels", label: "GMGN备注生成", icon: Tags },
-      ]
-    : isCrypto
+  const links = isCrypto
       ? [
           { href: "/crypto", label: "总览", icon: Home, exact: true },
           { href: "/crypto/accounts", label: "账号库", icon: BookText },
@@ -109,14 +93,11 @@ export function Nav() {
           </div>
 
           <div className="domain-switch" aria-label="板块切换">
-            <Link href="/" className={cn("domain-switch-item", !isCrypto && !isOnchain && "domain-switch-active")} onClick={() => setOpen(false)}>
+            <Link href="/" className={cn("domain-switch-item", !isCrypto && "domain-switch-active")} onClick={() => setOpen(false)}>
               股票
             </Link>
             <Link href="/crypto" className={cn("domain-switch-item", isCrypto && "domain-switch-active")} onClick={() => setOpen(false)}>
               加密
-            </Link>
-            <Link href="/onchain" className={cn("domain-switch-item", isOnchain && "domain-switch-active")} onClick={() => setOpen(false)}>
-              链上
             </Link>
           </div>
 
@@ -132,7 +113,7 @@ export function Nav() {
               );
             })}
             {profile?.isAdmin ? (
-              <Link href={isOnchain ? "/onchain/admin" : isCrypto ? "/crypto/admin" : "/admin"} className="nav-item admin-link" onClick={() => setOpen(false)}>
+              <Link href={isCrypto ? "/crypto/admin" : "/admin"} className="nav-item admin-link" onClick={() => setOpen(false)}>
                 <Shield size={16} />
                 <span>管理</span>
               </Link>

@@ -90,7 +90,6 @@ copy public-web\.env.example public-web\.env.local
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_GMGN_LABEL_API_URL`
 
 ## 后端本地环境
 
