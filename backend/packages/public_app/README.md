@@ -132,7 +132,8 @@ with `gpt-5.4` and `reasoning_effort=high`; the resulting stock list is capped
 at 30 names. The prompt version `stock_news_tracking_v3_one_hop_compact` limits mapping
 to the news core object's direct self/peer, upstream-one-hop, and
 downstream-one-hop beneficiaries; parser-side validation drops entries outside
-those layers.
+those layers. Tracked-stock return anchors use the news `event_date` and the
+next available trading-day close when the event lands on a non-trading day.
 
 Analysis output is intentionally windowed. `PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS`
 defaults to `30`, matching the initial backfill lookback and using

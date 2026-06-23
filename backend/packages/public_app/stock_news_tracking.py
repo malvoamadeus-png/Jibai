@@ -10,7 +10,7 @@ from packages.common.market_data import fetch_security_daily
 from packages.common.postgres_database import PostgresInsightStore, postgres_connection
 from packages.common.security_aliases import SecurityIdentity, resolve_security_identity
 from packages.common.settings import load_settings
-from packages.common.time_utils import now_iso, today_date_key
+from packages.common.time_utils import now_iso
 
 
 PROMPT_VERSION = "stock_news_tracking_v3_one_hop_compact"
@@ -299,7 +299,21 @@ def analyze_pending_stock_news_tracking_once(*, limit: int = 5) -> int:
 
 def _replace_tracking_stocks(conn: Any, tracking_id: str, candidates: list[TrackingStockCandidate]) -> None:
     store = PostgresInsightStore(conn)
-    selected_date = today_date_key()
+    tracking_row = conn.execute(
+        """
+        SELECT event_date, event_snapshot_json
+        FROM public.stock_news_tracking
+        WHERE id = %s
+        LIMIT 1
+        """,
+        (tracking_id,),
+    ).fetchone()
+    selected_date = str(tracking_row["event_date"]).strip() if tracking_row and tracking_row.get("event_date") else ""
+    if not selected_date and tracking_row:
+        snapshot = _as_record(tracking_row.get("event_snapshot_json"))
+        selected_date = _clip(snapshot.get("date"), 32)
+    if not selected_date:
+        raise ValueError(f"Tracking item {tracking_id} is missing event_date for price anchoring.")
     conn.execute("DELETE FROM public.stock_news_tracking_stocks WHERE tracking_id = %s", (tracking_id,))
     for sort_order, candidate in enumerate(candidates, start=1):
         security_id = store.ensure_security(candidate.identity, candidate.identity.display_name)
@@ -400,12 +414,14 @@ def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25) -> i
             """
             SELECT
               t.id::text AS row_id,
+              t.tracking_id::text AS tracking_id,
               t.security_id::text AS security_id,
               t.security_key,
               t.display_name,
               t.ticker,
               t.market,
-              t.selected_date
+              t.selected_date,
+              n.event_date
             FROM public.stock_news_tracking_stocks t
             JOIN public.stock_news_tracking n ON n.id = t.tracking_id
             WHERE n.status = 'succeeded'
@@ -416,6 +432,18 @@ def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25) -> i
             row_id = str(row["row_id"])
             security_key = str(row["security_key"])
             try:
+                anchored_selected_date = str(row["event_date"]).strip() if row.get("event_date") else str(row["selected_date"]).strip()
+                if not anchored_selected_date:
+                    raise ValueError(f"Tracked stock row {row_id} is missing event_date and selected_date.")
+                if anchored_selected_date != str(row["selected_date"]).strip():
+                    conn.execute(
+                        """
+                        UPDATE public.stock_news_tracking_stocks
+                        SET selected_date = %s, updated_at = now()
+                        WHERE id = %s
+                        """,
+                        (anchored_selected_date, row_id),
+                    )
                 payload = fetch_security_daily(
                     ticker=str(row["ticker"]).strip() if row["ticker"] else None,
                     market=str(row["market"]).strip() if row["market"] else None,
@@ -432,7 +460,7 @@ def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25) -> i
                         fetched_at=now_iso(),
                     )
                     conn.commit()
-                price_payload = _score_prices(_load_price_candles(conn, str(row["security_id"])), str(row["selected_date"]))
+                price_payload = _score_prices(_load_price_candles(conn, str(row["security_id"])), anchored_selected_date)
                 conn.execute(
                     """
                     UPDATE public.stock_news_tracking_stocks
