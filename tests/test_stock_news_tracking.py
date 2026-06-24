@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from packages.public_app.stock_news_tracking import (
+    DEFAULT_TRACKING_PRICE_REFRESH_LIMIT,
     MAX_TRACKED_STOCKS_PER_NEWS,
     _candidate_to_identity,
     _score_prices,
@@ -82,3 +83,7 @@ def test_score_prices_uses_next_trading_day_anchor_and_pending_unmatured_horizon
 
 def test_tracking_stock_limit_constant_is_30() -> None:
     assert MAX_TRACKED_STOCKS_PER_NEWS == 30
+
+
+def test_tracking_price_refresh_default_limit_is_25() -> None:
+    assert DEFAULT_TRACKING_PRICE_REFRESH_LIMIT == 25

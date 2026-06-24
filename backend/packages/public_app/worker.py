@@ -99,6 +99,10 @@ def _stock_news_tracking_price_times() -> list[str]:
     return values or ["08:00", "20:00"]
 
 
+def _stock_news_tracking_price_refresh_limit() -> int:
+    return max(1, _env_int("PUBLIC_WORKER_STOCK_NEWS_TRACKING_PRICE_REFRESH_LIMIT", 25))
+
+
 def _crypto_asset_brief_time() -> str:
     return os.getenv("PUBLIC_WORKER_CRYPTO_ASSET_BRIEF_TIME", "22:50").strip() or "22:50"
 
@@ -1193,7 +1197,7 @@ def run_worker(*, once: bool = False) -> int:
     for value in _stock_news_tracking_price_times():
         price_hour, price_minute = value.split(":", 1)
         scheduler.add_job(
-            lambda: refresh_stock_news_tracking_prices_once(),
+            lambda: refresh_stock_news_tracking_prices_once(limit=_stock_news_tracking_price_refresh_limit()),
             CronTrigger(hour=int(price_hour), minute=int(price_minute), timezone=SHANGHAI_TZ),
             id=f"public-stock-news-tracking-prices-{price_hour}{price_minute}",
             replace_existing=True,
@@ -1224,6 +1228,7 @@ def run_worker(*, once: bool = False) -> int:
         )
         + f"; stock_news_tracking_analysis_minutes={','.join(str(item) for item in _stock_news_tracking_analysis_minutes())}"
         + f"; stock_news_tracking_price_times={','.join(_stock_news_tracking_price_times())}"
+        + f"; stock_news_tracking_price_refresh_limit={_stock_news_tracking_price_refresh_limit()}"
         + f"; crypto_asset_brief_time={_crypto_asset_brief_time()}"
     )
     scheduler.start()

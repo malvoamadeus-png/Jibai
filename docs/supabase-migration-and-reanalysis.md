@@ -343,7 +343,7 @@ results instead of waiting for the scheduler:
 
 ```bash
 /mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-analyze-stock-news-tracking --limit 5
-/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-refresh-stock-news-tracking-prices
+/mnt/d/Software/Code/Anaconda/python.exe backend/src/main.py public-refresh-stock-news-tracking-prices --limit 25
 ```
 
 Generate or refresh crypto asset briefs after the crypto migration or resolver

@@ -20,6 +20,7 @@ MAX_TRACKED_STOCKS_PER_NEWS = 30
 PRICE_WINDOW_DAYS = 180
 PRICE_HORIZONS = (3, 7)
 ALLOWED_BENEFIT_LAYERS = {"self", "peer", "upstream_1", "downstream_1"}
+DEFAULT_TRACKING_PRICE_REFRESH_LIMIT = 25
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,11 +404,12 @@ def _score_prices(candles: list[dict[str, Any]], selected_date: str) -> dict[str
     return payload
 
 
-def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25) -> int:
+def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25, limit: int = DEFAULT_TRACKING_PRICE_REFRESH_LIMIT) -> int:
     import time
 
     refreshed = 0
     errors = 0
+    safe_limit = max(1, min(int(limit), 200))
     with postgres_connection() as conn:
         store = PostgresInsightStore(conn)
         rows = conn.execute(
@@ -425,8 +427,10 @@ def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25) -> i
             FROM public.stock_news_tracking_stocks t
             JOIN public.stock_news_tracking n ON n.id = t.tracking_id
             WHERE n.status = 'succeeded'
-            ORDER BY n.created_at DESC, t.sort_order ASC
-            """
+            ORDER BY t.last_price_checked_at ASC NULLS FIRST, n.event_date ASC NULLS FIRST, n.created_at ASC, t.sort_order ASC
+            LIMIT %s
+            """,
+            (safe_limit,),
         ).fetchall()
         for index, row in enumerate(rows):
             row_id = str(row["row_id"])

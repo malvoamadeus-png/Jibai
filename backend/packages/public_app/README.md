@@ -134,6 +134,8 @@ to the news core object's direct self/peer, upstream-one-hop, and
 downstream-one-hop beneficiaries; parser-side validation drops entries outside
 those layers. Tracked-stock return anchors use the news `event_date` and the
 next available trading-day close when the event lands on a non-trading day.
+Price refreshes are processed in oldest-first batches, defaulting to 25 tracked
+rows per scheduled run via `PUBLIC_WORKER_STOCK_NEWS_TRACKING_PRICE_REFRESH_LIMIT`.
 
 Analysis output is intentionally windowed. `PUBLIC_WORKER_ANALYSIS_WINDOW_DAYS`
 defaults to `30`, matching the initial backfill lookback and using

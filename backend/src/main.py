@@ -241,6 +241,12 @@ def parse_args() -> argparse.Namespace:
         default=0.25,
         help="Delay between symbols. Defaults to 0.25.",
     )
+    public_stock_news_tracking_prices_parser.add_argument(
+        "--limit",
+        type=int,
+        default=25,
+        help="Maximum tracked stock rows to refresh in this run. Defaults to 25.",
+    )
     subparsers.add_parser(
         "public-ensure-stock-blogger-accounts",
         help="Ensure default stock blogger score accounts exist and are approved for stock.",
@@ -366,7 +372,7 @@ def main() -> int:
     if args.command == "public-refresh-stock-news-tracking-prices":
         from packages.public_app.stock_news_tracking import refresh_stock_news_tracking_prices_once  # noqa: PLC0415
 
-        return refresh_stock_news_tracking_prices_once(delay_seconds=args.delay_seconds)
+        return refresh_stock_news_tracking_prices_once(delay_seconds=args.delay_seconds, limit=args.limit)
     if args.command == "public-generate-crypto-asset-briefs":
         from packages.public_app.crypto_asset_narrative import generate_crypto_asset_briefs_once  # noqa: PLC0415
 
