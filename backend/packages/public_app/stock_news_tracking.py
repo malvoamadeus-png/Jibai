@@ -343,17 +343,33 @@ def _replace_tracking_stocks(conn: Any, tracking_id: str, candidates: list[Track
         )
 
 
-def _load_price_candles(conn: Any, security_id: str) -> list[dict[str, Any]]:
+def _load_price_candles(conn: Any, security_key: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT date_key, close_price
-        FROM public.security_daily_prices
-        WHERE security_id = %s
-        ORDER BY date_key ASC
+        SELECT p.date_key, p.close_price
+        FROM public.security_daily_prices p
+        JOIN public.security_entities se ON se.id = p.security_id
+        WHERE se.security_key = %s
+        ORDER BY p.date_key ASC
         """,
-        (security_id,),
+        (security_key,),
     ).fetchall()
     return [{"date": str(row["date_key"]), "close": float(row["close_price"])} for row in rows]
+
+
+def _repair_tracking_stock_security_id(conn: Any, row_id: str, security_key: str) -> None:
+    conn.execute(
+        """
+        UPDATE public.stock_news_tracking_stocks t
+        SET security_id = se.id,
+            updated_at = now()
+        FROM public.security_entities se
+        WHERE t.id = %s
+          AND se.security_key = %s
+          AND t.security_id IS DISTINCT FROM se.id
+        """,
+        (row_id, security_key),
+    )
 
 
 def _return_from(anchor: float | None, target: float | None) -> float | None:
@@ -464,7 +480,8 @@ def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25, limi
                         fetched_at=now_iso(),
                     )
                     conn.commit()
-                price_payload = _score_prices(_load_price_candles(conn, str(row["security_id"])), anchored_selected_date)
+                _repair_tracking_stock_security_id(conn, row_id, security_key)
+                price_payload = _score_prices(_load_price_candles(conn, security_key), anchored_selected_date)
                 conn.execute(
                     """
                     UPDATE public.stock_news_tracking_stocks
@@ -503,8 +520,10 @@ def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25, limi
                     ),
                 )
                 refreshed += 1
+                conn.commit()
             except Exception as exc:
                 errors += 1
+                conn.rollback()
                 conn.execute(
                     """
                     UPDATE public.stock_news_tracking_stocks
@@ -513,9 +532,9 @@ def refresh_stock_news_tracking_prices_once(*, delay_seconds: float = 0.25, limi
                     """,
                     (_clip(exc, 800), row_id),
                 )
+                conn.commit()
             if delay_seconds > 0 and index < len(rows) - 1:
                 time.sleep(delay_seconds)
-        conn.commit()
 
     print(f"[stock-news-tracking] price_refreshed={refreshed} price_errors={errors}")
     return 0 if refreshed or not errors else 1
