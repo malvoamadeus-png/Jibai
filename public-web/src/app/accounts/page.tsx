@@ -20,7 +20,7 @@ export default function AccountsPage({
 }: {
   domain?: "stock" | "crypto";
 }) {
-  const { loading, profile, signIn, supabase } = useAuth();
+  const { loading, profile, signIn, supabase, authAvailable } = useAuth();
   const [query, setQuery] = useState("");
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [requests, setRequests] = useState<RequestListItem[]>([]);
@@ -82,7 +82,7 @@ export default function AccountsPage({
           />
         </div>
         {error ? <div className="empty field-error">数据接口未就绪：{error}</div> : null}
-        {profile ? <SubmitAccountForm onSubmitted={reload} domain={domain} /> : <SignInCta onLogin={signIn} compact />}
+        {profile ? <SubmitAccountForm onSubmitted={reload} domain={domain} /> : <SignInCta onLogin={signIn} compact authAvailable={authAvailable} />}
       </SectionCard>
 
       <section className="table-panel">

@@ -76,7 +76,7 @@ function entityTypeLabel(value: "stock" | "theme") {
 
 export function StockNewsTimeline() {
   const searchParams = useSearchParams();
-  const { loading, profile, signIn, supabase } = useAuth();
+  const { loading, profile, signIn, supabase, authAvailable } = useAuth();
   const [page, setPage] = useState(() => parsePage(searchParams.get("page")));
   const [supplyRiskOnly, setSupplyRiskOnly] = useState(() => readSupplyRiskOnly(searchParams.get("supplyRiskOnly")));
   const [data, setData] = useState<StockNewsTimelineResponse | null>(null);
@@ -191,7 +191,7 @@ export function StockNewsTimeline() {
         }
       />
 
-      {!profile ? <SignInCta onLogin={signIn} compact /> : null}
+      {!profile ? <SignInCta onLogin={signIn} compact authAvailable={authAvailable} /> : null}
 
       <Card>
         <CardHeader className="gap-4 sm:flex sm:flex-row sm:items-end sm:justify-between">

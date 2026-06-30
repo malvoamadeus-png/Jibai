@@ -14,7 +14,7 @@ import { getHomeStats, listFeed as listDirectFeed } from "@/lib/direct-data";
 import type { Domain, FeedDay, HomeStats } from "@/lib/types";
 
 export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
-  const { loading, profile, signIn, supabase } = useAuth();
+  const { loading, profile, signIn, supabase, authAvailable } = useAuth();
   const [stats, setStats] = useState<HomeStats>({ approvedCount: 0, subscribedCount: 0 });
   const [feed, setFeed] = useState<FeedDay[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +84,7 @@ export function HomePageContent({ domain = "stock" }: { domain?: Domain }) {
         }
       />
 
-      {!profile ? <SignInCta onLogin={signIn} compact /> : null}
+      {!profile ? <SignInCta onLogin={signIn} compact authAvailable={authAvailable} /> : null}
 
       <StatGrid>
         <StatCard

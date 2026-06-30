@@ -71,7 +71,7 @@ export function EntityBrowser({
   domain?: "stock" | "crypto";
 }) {
   const searchParams = useSearchParams();
-  const { loading, profile, signIn, supabase } = useAuth();
+  const { loading, profile, signIn, supabase, authAvailable } = useAuth();
   const isCrypto = domain === "crypto" || type === "crypto";
   const paramName = isCrypto ? "asset" : "stock";
   const [query, setQuery] = useState(searchParams.get("q") || "");
@@ -231,7 +231,7 @@ export function EntityBrowser({
         </CardHeader>
       </Card>
 
-      {!profile ? <SignInCta onLogin={signIn} compact /> : null}
+      {!profile ? <SignInCta onLogin={signIn} compact authAvailable={authAvailable} /> : null}
 
       <div className="lg:hidden">
         <Button type="button" variant="secondary" onClick={() => setPanelOpen((current) => !current)}>
@@ -358,7 +358,7 @@ export function EntityBrowser({
               )}
             </>
           ) : null}
-          {!profile && detail ? <SignInCta onLogin={signIn} /> : null}
+          {!profile && detail ? <SignInCta onLogin={signIn} authAvailable={authAvailable} /> : null}
         </section>
       </div>
     </main>

@@ -40,8 +40,9 @@ function domainCopy(pathname: string) {
 
 export function Nav() {
   const pathname = usePathname();
-  const { loading, profile, signIn, signOut } = useAuth();
+  const { loading, profile, signIn, signOut, authAvailable } = useAuth();
   const [open, setOpen] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const isCrypto = pathname.startsWith("/crypto");
   const activeDomain = useMemo(() => domainCopy(pathname), [pathname]);
   const links = isCrypto
@@ -142,9 +143,25 @@ export function Nav() {
                 </Button>
               </>
             ) : (
-              <Button className="w-full justify-center" type="button" disabled={loading} onClick={signIn}>
-                Google 登录
-              </Button>
+              <>
+                <Button
+                  className="w-full justify-center"
+                  type="button"
+                  disabled={loading || !authAvailable}
+                  onClick={() => {
+                    setAuthError(null);
+                    signIn().catch((error) => {
+                      setAuthError(error instanceof Error ? error.message : "登录暂时不可用");
+                    });
+                  }}
+                >
+                  {authAvailable ? "Google 登录" : "登录暂不可用"}
+                </Button>
+                {!authAvailable ? (
+                  <p className="muted mt-2 text-xs">Supabase Auth 当前不可用，但公开数据浏览仍可继续。</p>
+                ) : null}
+                {authError ? <p className="field-error mt-2 text-xs">{authError}</p> : null}
+              </>
             )}
           </div>
         </div>

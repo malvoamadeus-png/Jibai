@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LoadingPanel } from "@/components/page-states";
 import { SignInCta } from "@/components/signin-cta";
@@ -96,6 +96,21 @@ function buildCompactAuthorLabel(author: StockMatrixAuthor) {
   return compact.slice(0, 2);
 }
 
+function getViewTooltipPosition(trigger: HTMLElement) {
+  const rect = trigger.getBoundingClientRect();
+  const width = Math.min(360, window.innerWidth - 48);
+  const halfWidth = width / 2;
+  const x = Math.max(24 + halfWidth, Math.min(rect.left + rect.width / 2, window.innerWidth - 24 - halfWidth));
+  const spaceAbove = rect.top - 24;
+  const spaceBelow = window.innerHeight - rect.bottom - 24;
+  const placement = spaceBelow >= 220 || spaceBelow >= spaceAbove ? "bottom" : "top";
+  const y = placement === "bottom" ? rect.bottom + 12 : rect.top - 12;
+  const maxHeight = Math.max(96, Math.min(320, placement === "bottom" ? spaceBelow : spaceAbove));
+  return { x, y, width, placement, maxHeight } as const;
+}
+
+type ViewTooltipPosition = ReturnType<typeof getViewTooltipPosition>;
+
 function getAuthorsForStock(
   stockKey: string,
   authors: StockMatrixAuthor[],
@@ -105,15 +120,68 @@ function getAuthorsForStock(
   return authors.filter((author) => visibleAuthors.has(author.accountName));
 }
 
-function ViewTooltip({
+function OpinionDot({
   stock,
   view,
+  onActivate,
+  onDeactivate,
 }: {
   stock: StockMatrixStock;
   view: StockMatrixView;
+  onActivate: (stock: StockMatrixStock, view: StockMatrixView, target: HTMLElement) => void;
+  onDeactivate: () => void;
+}) {
+  const positive = view.direction === "positive";
+  return (
+    <span className="inline-flex h-5 w-5 items-center justify-center">
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
+        aria-label={`${stock.displayName} ${view.author_nickname || view.account_name} ${view.date} ${positive ? "正向" : "负向"}`}
+        onPointerEnter={(event) => onActivate(stock, view, event.currentTarget)}
+        onPointerLeave={onDeactivate}
+        onFocus={(event) => onActivate(stock, view, event.currentTarget)}
+        onBlur={onDeactivate}
+      >
+        <span
+          className={cn(
+            "h-3 w-3 rounded-full border shadow-[0_1px_4px_rgba(44,33,22,0.18)]",
+            positive
+              ? "border-[color:rgba(65,122,90,0.42)] bg-[#2f8b57]"
+              : "border-[color:rgba(138,61,61,0.42)] bg-[#c4483f]",
+          )}
+        />
+      </button>
+    </span>
+  );
+}
+
+function ViewTooltip({
+  stock,
+  view,
+  position,
+  onPointerEnter,
+  onPointerLeave,
+}: {
+  stock: StockMatrixStock;
+  view: StockMatrixView;
+  position: ViewTooltipPosition;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
 }) {
   return (
-    <span className="pointer-events-auto absolute left-1/2 top-5 z-30 hidden w-[min(360px,calc(100vw-48px))] -translate-x-1/2 rounded-2xl border border-[color:var(--border-strong)] bg-[color:var(--paper)] p-4 text-left shadow-[0_18px_50px_rgba(44,33,22,0.18)] group-hover:block group-focus-within:block">
+    <div
+      className="pointer-events-auto fixed z-50 max-h-[320px] overflow-auto rounded-2xl border border-[color:var(--border-strong)] bg-[color:var(--paper)] p-4 text-left shadow-[0_18px_50px_rgba(44,33,22,0.18)]"
+      style={{
+        left: position.x,
+        top: position.y,
+        width: position.width,
+        maxHeight: position.maxHeight,
+        transform: position.placement === "top" ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+      }}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
       <span className="mb-2 flex flex-wrap items-center gap-2">
         <Badge variant={view.direction === "positive" ? "positive" : "danger"} className="normal-case">
           {view.date}
@@ -149,43 +217,14 @@ function ViewTooltip({
           ))}
         </span>
       ) : null}
-    </span>
-  );
-}
-
-function OpinionDot({
-  stock,
-  view,
-}: {
-  stock: StockMatrixStock;
-  view: StockMatrixView;
-}) {
-  const positive = view.direction === "positive";
-  return (
-    <span className="group relative inline-flex h-5 w-5 items-center justify-center">
-      <button
-        type="button"
-        className="inline-flex h-5 w-5 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ring)]"
-        aria-label={`${stock.displayName} ${view.author_nickname || view.account_name} ${view.date} ${positive ? "正向" : "负向"}`}
-      >
-        <span
-          className={cn(
-            "h-3 w-3 rounded-full border shadow-[0_1px_4px_rgba(44,33,22,0.18)]",
-            positive
-              ? "border-[color:rgba(65,122,90,0.42)] bg-[#2f8b57]"
-              : "border-[color:rgba(138,61,61,0.42)] bg-[#c4483f]",
-          )}
-        />
-      </button>
-      <ViewTooltip stock={stock} view={view} />
-    </span>
+    </div>
   );
 }
 
 export function StockMatrixOverview() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { loading, profile, signIn, supabase } = useAuth();
+  const { loading, profile, signIn, supabase, authAvailable } = useAuth();
   const endParam = searchParams.get("end");
   const endDate = isDateKey(endParam) ? endParam : null;
   const granularity = readGranularity(searchParams.get("granularity"));
@@ -193,6 +232,12 @@ export function StockMatrixOverview() {
   const [data, setData] = useState<StockMatrixData | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTooltip, setActiveTooltip] = useState<{
+    stock: StockMatrixStock;
+    view: StockMatrixView;
+    position: ViewTooltipPosition;
+  } | null>(null);
+  const tooltipHideTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (loading) return;
@@ -241,6 +286,34 @@ export function StockMatrixOverview() {
     : profile
       ? "当前账号的订阅范围内还没有可见股票观点数据。通常是因为还没订阅任何账号，或已订阅账号暂时没有有效观点。"
       : "暂无公开预览数据";
+
+  useEffect(() => {
+    return () => {
+      if (tooltipHideTimerRef.current !== null) {
+        window.clearTimeout(tooltipHideTimerRef.current);
+        tooltipHideTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  function cancelTooltipHide() {
+    if (tooltipHideTimerRef.current !== null) {
+      window.clearTimeout(tooltipHideTimerRef.current);
+      tooltipHideTimerRef.current = null;
+    }
+  }
+
+  function showTooltip(stock: StockMatrixStock, view: StockMatrixView, target: HTMLElement) {
+    cancelTooltipHide();
+    setActiveTooltip({ stock, view, position: getViewTooltipPosition(target) });
+  }
+
+  function hideTooltipSoon() {
+    cancelTooltipHide();
+    tooltipHideTimerRef.current = window.setTimeout(() => {
+      setActiveTooltip(null);
+    }, 80);
+  }
 
   function navigate(
     nextEndDate: string | null,
@@ -330,7 +403,7 @@ export function StockMatrixOverview() {
         </CardHeader>
       </Card>
 
-      {!profile ? <SignInCta onLogin={signIn} compact /> : null}
+      {!profile ? <SignInCta onLogin={signIn} compact authAvailable={authAvailable} /> : null}
 
       <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-rows-[auto_minmax(0,1fr)]">
         <div className="grid gap-3 md:grid-cols-4">
@@ -408,6 +481,8 @@ export function StockMatrixOverview() {
                                         key={`${stock.securityKey}-${author.accountName}-${view.date}-${index}`}
                                         stock={stock}
                                         view={view}
+                                        onActivate={showTooltip}
+                                        onDeactivate={hideTooltipSoon}
                                       />
                                     ))}
                                   </div>
@@ -473,6 +548,8 @@ export function StockMatrixOverview() {
                                         key={`${stock.securityKey}-${author.accountName}-${view.date}-${index}`}
                                         stock={stock}
                                         view={view}
+                                        onActivate={showTooltip}
+                                        onDeactivate={hideTooltipSoon}
                                       />
                                     ))}
                                   </div>
@@ -511,6 +588,15 @@ export function StockMatrixOverview() {
           </CardContent>
         </Card>
       </div>
+      {activeTooltip ? (
+        <ViewTooltip
+          stock={activeTooltip.stock}
+          view={activeTooltip.view}
+          position={activeTooltip.position}
+          onPointerEnter={cancelTooltipHide}
+          onPointerLeave={hideTooltipSoon}
+        />
+      ) : null}
     </main>
   );
 }

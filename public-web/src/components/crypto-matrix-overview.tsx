@@ -170,7 +170,7 @@ function SignalDot({ asset, view }: { asset: CryptoMatrixAsset; view: CryptoMatr
 export function CryptoMatrixOverview() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { loading, profile, signIn, supabase } = useAuth();
+  const { loading, profile, signIn, supabase, authAvailable } = useAuth();
   const endParam = searchParams.get("end");
   const endDate = isDateKey(endParam) ? endParam : null;
   const granularity = readGranularity(searchParams.get("granularity"));
@@ -289,7 +289,7 @@ export function CryptoMatrixOverview() {
         </CardHeader>
       </Card>
 
-      {!profile ? <SignInCta onLogin={signIn} compact /> : null}
+      {!profile ? <SignInCta onLogin={signIn} compact authAvailable={authAvailable} /> : null}
 
       <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-rows-[auto_minmax(0,1fr)]">
         <div className="grid gap-3 md:grid-cols-4">

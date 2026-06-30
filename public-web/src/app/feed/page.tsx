@@ -42,7 +42,7 @@ function buildFeedUrl(query: string, accountId: string, page: number, domain: "s
 
 function FeedPageContent({ domain = "stock" }: { domain?: "stock" | "crypto" }) {
   const searchParams = useSearchParams();
-  const { loading, profile, signIn, supabase } = useAuth();
+  const { loading, profile, signIn, supabase, authAvailable } = useAuth();
   const [listQuery, setListQuery] = useState(searchParams.get("q") || "");
   const [selectedAccountId, setSelectedAccountId] = useState(searchParams.get("account") || "");
   const [page, setPage] = useState(() => parsePage(searchParams.get("page")));
@@ -160,7 +160,7 @@ function FeedPageContent({ domain = "stock" }: { domain?: "stock" | "crypto" }) 
         </CardHeader>
       </Card>
 
-      {!profile ? <SignInCta onLogin={signIn} compact /> : null}
+      {!profile ? <SignInCta onLogin={signIn} compact authAvailable={authAvailable} /> : null}
 
       <div className="lg:hidden">
         <Button type="button" variant="secondary" onClick={() => setPanelOpen((current) => !current)}>
@@ -231,7 +231,7 @@ function FeedPageContent({ domain = "stock" }: { domain?: "stock" | "crypto" }) 
               )}
             </>
           ) : null}
-          {!profile && detail ? <SignInCta onLogin={signIn} /> : null}
+          {!profile && detail ? <SignInCta onLogin={signIn} authAvailable={authAvailable} /> : null}
         </section>
       </div>
     </main>
