@@ -753,6 +753,19 @@ th {
   box-shadow: none;
 }
 
+.risk-state-table {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.risk-state-table td {
+  min-width: 86px;
+}
+
+.risk-state-table td:first-child {
+  min-width: 130px;
+}
+
 .risk-data-warning {
   display: flex;
   align-items: center;
