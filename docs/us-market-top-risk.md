@@ -42,6 +42,9 @@
 - `warning_active` 表示结构确认。
 - `confirmation_active` 表示价格确认。
 - 详细状态矩阵写入 `metrics.markets`。
+- `/api/public/risk` 的 `history` 是交易日日线快照；历史行同时返回
+  `signals` 和 `metrics`，前端可画总分、结构/价格分项以及每个核心因子的历史。
+  默认同步窗口为最近约 260 个交易日。
 
 ## 指标口径
 

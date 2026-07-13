@@ -31,12 +31,38 @@ const SIGNAL_LABELS: Record<string, string> = {
   china_price_weakness_score: "588200.SH 价格转弱",
 };
 
+const HISTORY_RANGE_OPTIONS = [
+  { label: "20日", value: 20 },
+  { label: "60日", value: 60 },
+  { label: "120日", value: 120 },
+  { label: "全部", value: 260 },
+] as const;
+
+const HISTORY_GROUPS = [
+  { key: "summary", label: "汇总", threshold: 0.70 },
+  { key: "us_structure", label: "美国结构", threshold: 0.80 },
+  { key: "china_structure", label: "中国结构", threshold: 0.80 },
+  { key: "price", label: "价格转弱", threshold: 0.50 },
+] as const;
+
+const HISTORY_COLORS = ["#d94832", "#1f6feb", "#8c5a11", "#25805a", "#6f42c1", "#9a6700"];
+
 const LEVEL_TEXT = {
   low: "低位",
   watch: "观察",
   elevated: "升温",
   high: "高风险",
 } as const;
+
+type HistoryGroupKey = (typeof HISTORY_GROUPS)[number]["key"];
+type HistoryPoint = MarketTopRiskData["history"][number];
+type HistorySeries = {
+  key: string;
+  label: string;
+  color: string;
+  value: number | null;
+  path: string;
+};
 
 const STATE_TEXT: Record<string, string> = {
   healthy_rally: "健康上涨",
@@ -146,8 +172,8 @@ function clampScore(value: number | null) {
 }
 
 function buildHistoryPath(
-  points: MarketTopRiskData["history"],
-  getValue: (point: MarketTopRiskData["history"][number]) => number | null,
+  points: HistoryPoint[],
+  getValue: (point: HistoryPoint) => number | null,
   chart: { left: number; top: number; width: number; height: number },
 ) {
   let started = false;
@@ -163,6 +189,46 @@ function buildHistoryPath(
     })
     .filter(Boolean)
     .join(" ");
+}
+
+function readSignalValue(point: HistoryPoint, key: string) {
+  return point.signals?.[key]?.value ?? null;
+}
+
+function buildHistorySeries(points: HistoryPoint[], group: HistoryGroupKey, chart: { left: number; top: number; width: number; height: number }) {
+  const latest = points.at(-1);
+  const makeSeries = (key: string, label: string, color: string, getValue: (point: HistoryPoint) => number | null): HistorySeries => ({
+    key,
+    label,
+    color,
+    value: latest ? getValue(latest) : null,
+    path: buildHistoryPath(points, getValue, chart),
+  });
+
+  if (group === "us_structure") {
+    return [
+      "rsp_spy_weakness_score",
+      "qqew_qqq_weakness_score",
+      "soxx_qqq_weakness_score",
+      "xly_xlp_weakness_score",
+      "iwm_spy_weakness_score",
+    ].map((key, index) => makeSeries(key, SIGNAL_LABELS[key] || key, HISTORY_COLORS[index], (point) => readSignalValue(point, key)));
+  }
+  if (group === "china_structure") {
+    return ["china_star100_star50_weakness_score", "china_chinext_100_50_weakness_score"].map((key, index) =>
+      makeSeries(key, SIGNAL_LABELS[key] || key, HISTORY_COLORS[index], (point) => readSignalValue(point, key)),
+    );
+  }
+  if (group === "price") {
+    return ["us_price_weakness_score", "china_price_weakness_score"].map((key, index) =>
+      makeSeries(key, SIGNAL_LABELS[key] || key, HISTORY_COLORS[index], (point) => readSignalValue(point, key)),
+    );
+  }
+  return [
+    makeSeries("risk", "总风险", HISTORY_COLORS[0], (point) => point.riskScore),
+    makeSeries("structure", "结构脆弱", HISTORY_COLORS[1], (point) => point.breadthWeaknessScore),
+    makeSeries("price", "价格转弱", HISTORY_COLORS[2], (point) => point.breakageScore),
+  ];
 }
 
 function RiskBar({ value }: { value: number }) {
@@ -209,7 +275,7 @@ function MarketStateRow({ market }: { market: MarketTopRiskMarketState }) {
         <div className="muted">{formatScore(market.priceWeaknessScore)}</div>
       </td>
       <td>
-        <span className={`risk-level risk-level-${market.state === "top_risk" || market.state === "breakdown_confirmed" ? "high" : "watch"}`}>
+        <span className={`risk-state-pill risk-level-${market.state === "top_risk" || market.state === "breakdown_confirmed" ? "high" : "watch"}`}>
           {STATE_TEXT[market.state] || market.state}
         </span>
       </td>
@@ -219,42 +285,23 @@ function MarketStateRow({ market }: { market: MarketTopRiskMarketState }) {
 }
 
 function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }) {
-  const points = history.slice(-80);
+  const [range, setRange] = useState<(typeof HISTORY_RANGE_OPTIONS)[number]["value"]>(60);
+  const [group, setGroup] = useState<HistoryGroupKey>("summary");
+  const points = history.slice(-range);
   if (!points.length) return <div className="empty">暂无历史风险分数</div>;
 
   const first = points[0];
   const latest = points.at(-1);
-  const chart = { left: 46, top: 20, width: 828, height: 268 };
+  const activeGroup = HISTORY_GROUPS.find((item) => item.key === group) ?? HISTORY_GROUPS[0];
+  const chart = { left: 48, top: 22, width: 858, height: 330 };
   const xAxisY = chart.top + chart.height;
-  const series = [
-    {
-      key: "risk",
-      label: "总风险",
-      color: "#e24a3b",
-      value: latest?.riskScore ?? null,
-      path: buildHistoryPath(points, (point) => point.riskScore, chart),
-    },
-    {
-      key: "structure",
-      label: "结构脆弱",
-      color: "#2367c9",
-      value: latest?.breadthWeaknessScore ?? null,
-      path: buildHistoryPath(points, (point) => point.breadthWeaknessScore, chart),
-    },
-    {
-      key: "price",
-      label: "价格转弱",
-      color: "#8a5a11",
-      value: latest?.breakageScore ?? null,
-      path: buildHistoryPath(points, (point) => point.breakageScore, chart),
-    },
-  ];
+  const series = buildHistorySeries(points, group, chart);
   const yTicks = [
     { value: 1, label: "1.0" },
-    { value: 0.7, label: "0.7" },
+    { value: activeGroup.threshold, label: activeGroup.threshold.toFixed(1) },
     { value: 0.5, label: "0.5" },
     { value: 0, label: "0" },
-  ];
+  ].filter((tick, index, ticks) => ticks.findIndex((item) => item.label === tick.label) === index);
 
   return (
     <div className="risk-history-shell">
@@ -263,6 +310,22 @@ function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }
         <span>
           {formatDate(first.week, { year: "numeric" })} 至 {formatDate(latest?.week, { year: "numeric" })}
         </span>
+      </div>
+      <div className="risk-history-controls" aria-label="历史图表缩放与分组">
+        <div className="risk-history-segment">
+          {HISTORY_GROUPS.map((item) => (
+            <button className={item.key === group ? "active" : ""} key={item.key} type="button" onClick={() => setGroup(item.key)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="risk-history-segment">
+          {HISTORY_RANGE_OPTIONS.map((item) => (
+            <button className={item.value === range ? "active" : ""} key={item.value} type="button" onClick={() => setRange(item.value)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="risk-history-legend">
         {series.map((item) => (
@@ -274,7 +337,7 @@ function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }
         ))}
       </div>
       <div className="risk-history-chart">
-        <svg className="risk-history-svg" viewBox="0 0 920 340" role="img" aria-label="总风险、结构脆弱和价格转弱的历史分数">
+        <svg className="risk-history-svg" viewBox="0 0 960 410" role="img" aria-label="风险分数历史">
           <rect x={chart.left} y={chart.top} width={chart.width} height={chart.height} rx="8" />
           {yTicks.map((tick) => {
             const y = chart.top + (1 - tick.value) * chart.height;
@@ -284,9 +347,9 @@ function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }
                 <text x={chart.left - 12} y={y + 4} textAnchor="end">
                   {tick.label}
                 </text>
-                {tick.value === 0.7 ? (
+                {tick.value === activeGroup.threshold ? (
                   <text className="risk-history-threshold" x={chart.left + chart.width - 8} y={y - 6} textAnchor="end">
-                    高风险阈值
+                    {activeGroup.label}阈值
                   </text>
                 ) : null}
               </g>
@@ -308,10 +371,17 @@ function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }
           {series.map((item) => (
             <path key={item.key} d={item.path} stroke={item.color} />
           ))}
+          {series.map((item) => {
+            const value = clampScore(item.value);
+            if (value === null) return null;
+            const x = chart.left + chart.width;
+            const y = chart.top + (1 - value) * chart.height;
+            return <circle key={`${item.key}-latest`} cx={x} cy={y} r="3.5" fill={item.color} />;
+          })}
         </svg>
       </div>
       <p className="risk-history-note">
-        总风险包含“结构脆弱”和“价格转弱”。价格已经确认时，分数会在下跌过程中继续升高；它表示当前风险状态，不等同于单独的提前预警。
+        每个点是一个交易日。13 周相对表现指标也是每日按最新收盘滚动重算；周末和休市日不会新增点。
       </p>
     </div>
   );
@@ -353,7 +423,7 @@ export default function RiskPage() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      setData(await getMarketTopRisk(supabase, 80));
+      setData(await getMarketTopRisk(supabase, 260));
       setError(null);
     } catch (err) {
       setData(null);

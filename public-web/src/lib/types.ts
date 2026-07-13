@@ -536,6 +536,8 @@ export type MarketTopRiskHistoryPoint = {
   riskLevel: MarketTopRiskSnapshot["riskLevel"];
   warningActive: boolean;
   confirmationActive: boolean;
+  signals: Record<string, MarketTopRiskSignal>;
+  metrics: Record<string, unknown>;
 };
 
 export type MarketTopRiskData = {

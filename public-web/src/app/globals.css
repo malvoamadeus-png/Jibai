@@ -760,10 +760,31 @@ th {
 
 .risk-state-table td {
   min-width: 86px;
+  vertical-align: middle;
 }
 
 .risk-state-table td:first-child {
   min-width: 130px;
+}
+
+.risk-state-table td:nth-child(4) {
+  min-width: 116px;
+}
+
+.risk-state-table .status-pill {
+  white-space: nowrap;
+}
+
+.risk-state-pill {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  white-space: nowrap;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .risk-data-warning {
@@ -802,6 +823,41 @@ th {
   gap: 12px;
 }
 
+.risk-history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.risk-history-segment {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(246, 249, 253, 0.92);
+  padding: 4px;
+}
+
+.risk-history-segment button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-ink);
+  cursor: pointer;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.risk-history-segment button.active {
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(18, 29, 43, 0.1);
+}
+
 .risk-history-legend {
   display: flex;
   flex-wrap: wrap;
@@ -829,7 +885,7 @@ th {
 }
 
 .risk-history-chart {
-  min-height: 320px;
+  min-height: 410px;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -840,7 +896,7 @@ th {
 .risk-history-svg {
   display: block;
   width: 100%;
-  min-width: 760px;
+  min-width: 860px;
   height: auto;
   color: var(--muted-ink);
 }
@@ -867,12 +923,17 @@ th {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 2.8;
+  stroke-width: 2.4;
 }
 
 .risk-history-svg text {
   fill: var(--muted-ink);
   font-size: 12px;
+}
+
+.risk-history-svg circle {
+  stroke: #ffffff;
+  stroke-width: 1.5;
 }
 
 .risk-history-svg .risk-history-threshold {

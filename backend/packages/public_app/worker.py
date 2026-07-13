@@ -108,7 +108,7 @@ def _crypto_asset_brief_time() -> str:
 
 
 def _top_risk_history_limit() -> int:
-    return max(1, _env_int("PUBLIC_WORKER_TOP_RISK_HISTORY_LIMIT", 90))
+    return max(1, _env_int("PUBLIC_WORKER_TOP_RISK_HISTORY_LIMIT", 260))
 
 
 def _poll_seconds() -> int:

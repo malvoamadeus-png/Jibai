@@ -614,6 +614,8 @@ function normalizeMarketTopRiskHistoryPoint(rawValue: unknown): MarketTopRiskHis
     riskLevel: normalizeRiskLevel(raw.risk_level ?? raw.riskLevel),
     warningActive: Boolean(raw.warning_active ?? raw.warningActive),
     confirmationActive: Boolean(raw.confirmation_active ?? raw.confirmationActive),
+    signals: normalizeRiskSignals(raw.signals),
+    metrics: asRecord(raw.metrics),
   };
 }
 
