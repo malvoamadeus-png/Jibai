@@ -140,6 +140,31 @@ function isHistoryTick(index: number, length: number) {
   return tickIndexes.has(index);
 }
 
+function clampScore(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(1, value));
+}
+
+function buildHistoryPath(
+  points: MarketTopRiskData["history"],
+  getValue: (point: MarketTopRiskData["history"][number]) => number | null,
+  chart: { left: number; top: number; width: number; height: number },
+) {
+  let started = false;
+  return points
+    .map((point, index) => {
+      const value = clampScore(getValue(point));
+      if (value === null) return null;
+      const x = chart.left + (points.length === 1 ? chart.width : (index / (points.length - 1)) * chart.width);
+      const y = chart.top + (1 - value) * chart.height;
+      const command = started ? "L" : "M";
+      started = true;
+      return `${command} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
 function RiskBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value * 100));
   return (
@@ -194,37 +219,100 @@ function MarketStateRow({ market }: { market: MarketTopRiskMarketState }) {
 }
 
 function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }) {
-  const points = history.slice(-40);
+  const points = history.slice(-80);
   if (!points.length) return <div className="empty">暂无历史风险分数</div>;
 
-  const gridTemplateColumns = `repeat(${points.length}, minmax(8px, 1fr))`;
   const first = points[0];
   const latest = points.at(-1);
+  const chart = { left: 46, top: 20, width: 828, height: 268 };
+  const xAxisY = chart.top + chart.height;
+  const series = [
+    {
+      key: "risk",
+      label: "总风险",
+      color: "#e24a3b",
+      value: latest?.riskScore ?? null,
+      path: buildHistoryPath(points, (point) => point.riskScore, chart),
+    },
+    {
+      key: "structure",
+      label: "结构脆弱",
+      color: "#2367c9",
+      value: latest?.breadthWeaknessScore ?? null,
+      path: buildHistoryPath(points, (point) => point.breadthWeaknessScore, chart),
+    },
+    {
+      key: "price",
+      label: "价格转弱",
+      color: "#8a5a11",
+      value: latest?.breakageScore ?? null,
+      path: buildHistoryPath(points, (point) => point.breakageScore, chart),
+    },
+  ];
+  const yTicks = [
+    { value: 1, label: "1.0" },
+    { value: 0.7, label: "0.7" },
+    { value: 0.5, label: "0.5" },
+    { value: 0, label: "0" },
+  ];
 
   return (
     <div className="risk-history-shell">
       <div className="risk-history-summary">
-        <span>日度风险分数，纵轴 0-1</span>
+        <span>日度分数历史，纵轴 0-1</span>
         <span>
           {formatDate(first.week, { year: "numeric" })} 至 {formatDate(latest?.week, { year: "numeric" })}
         </span>
       </div>
-      <div className="risk-history" style={{ gridTemplateColumns }}>
-        {points.map((point) => (
-          <div
-            className={`risk-history-bar risk-history-${point.riskLevel}`}
-            key={point.week}
-            title={`${point.week} 风险分数 ${formatScore(point.riskScore)}，状态 ${LEVEL_TEXT[point.riskLevel]}`}
-          >
-            <span style={{ height: `${Math.max(4, Math.min(100, point.riskScore * 100))}%` }} />
-          </div>
+      <div className="risk-history-legend">
+        {series.map((item) => (
+          <span className="risk-history-legend-item" key={item.key}>
+            <i style={{ background: item.color }} />
+            {item.label}
+            <strong>{formatScore(item.value)}</strong>
+          </span>
         ))}
       </div>
-      <div className="risk-history-axis" style={{ gridTemplateColumns }}>
-        {points.map((point, index) => (
-          <span key={point.week}>{isHistoryTick(index, points.length) ? formatDate(point.week) : ""}</span>
-        ))}
+      <div className="risk-history-chart">
+        <svg className="risk-history-svg" viewBox="0 0 920 340" role="img" aria-label="总风险、结构脆弱和价格转弱的历史分数">
+          <rect x={chart.left} y={chart.top} width={chart.width} height={chart.height} rx="8" />
+          {yTicks.map((tick) => {
+            const y = chart.top + (1 - tick.value) * chart.height;
+            return (
+              <g key={tick.label}>
+                <line x1={chart.left} x2={chart.left + chart.width} y1={y} y2={y} />
+                <text x={chart.left - 12} y={y + 4} textAnchor="end">
+                  {tick.label}
+                </text>
+                {tick.value === 0.7 ? (
+                  <text className="risk-history-threshold" x={chart.left + chart.width - 8} y={y - 6} textAnchor="end">
+                    高风险阈值
+                  </text>
+                ) : null}
+              </g>
+            );
+          })}
+          {points.map((point, index) => {
+            if (!isHistoryTick(index, points.length)) return null;
+            const x = chart.left + (points.length === 1 ? chart.width : (index / (points.length - 1)) * chart.width);
+            return (
+              <g key={point.week}>
+                <line className="risk-history-xgrid" x1={x} x2={x} y1={chart.top} y2={xAxisY} />
+                <text x={x} y={xAxisY + 28} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>
+                  {formatDate(point.week)}
+                </text>
+              </g>
+            );
+          })}
+          <line className="risk-history-axis-line" x1={chart.left} x2={chart.left + chart.width} y1={xAxisY} y2={xAxisY} />
+          {series.map((item) => (
+            <path key={item.key} d={item.path} stroke={item.color} />
+          ))}
+        </svg>
       </div>
+      <p className="risk-history-note">
+        总风险包含“结构脆弱”和“价格转弱”。价格已经确认时，分数会在下跌过程中继续升高；它表示当前风险状态，不等同于单独的提前预警。
+      </p>
     </div>
   );
 }
@@ -409,7 +497,7 @@ export default function RiskPage() {
             <div className="section-head risk-section-head">
               <div>
                 <h2>最近历史</h2>
-                <p className="muted">每根柱子是一个交易日的风险分数，横轴是快照日期。状态切换使用最近 3 个交易日 2 次确认，结构记忆窗口为 20 个交易日。</p>
+                <p className="muted">总风险由结构脆弱和价格转弱组成。图中拆开显示两类贡献，便于区分“提前变差”和“下跌后确认”。</p>
               </div>
             </div>
             <RiskHistoryChart history={history} />

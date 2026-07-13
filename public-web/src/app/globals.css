@@ -786,7 +786,7 @@ th {
 
 .risk-history-shell {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .risk-history-summary,
@@ -802,44 +802,82 @@ th {
   gap: 12px;
 }
 
-.risk-history {
-  display: grid;
-  height: 160px;
-  align-items: end;
-  gap: 6px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 6px;
-}
-
-.risk-history-bar {
+.risk-history-legend {
   display: flex;
-  height: 100%;
-  align-items: end;
-  border-radius: 999px;
-  background: rgba(242, 246, 252, 0.88);
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  color: var(--muted-ink);
+  font-size: 13px;
 }
 
-.risk-history-bar span {
+.risk-history-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.risk-history-legend-item i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.risk-history-legend-item strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.risk-history-chart {
+  min-height: 320px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.risk-history-svg {
   display: block;
   width: 100%;
-  min-height: 6px;
-  border-radius: 999px;
+  min-width: 760px;
+  height: auto;
+  color: var(--muted-ink);
 }
 
-.risk-history-low span {
-  background: #34c759;
+.risk-history-svg rect {
+  fill: #fbfcfe;
+  stroke: var(--border);
 }
 
-.risk-history-watch span {
-  background: #ffcc00;
+.risk-history-svg line {
+  stroke: rgba(117, 127, 142, 0.22);
+  stroke-width: 1;
 }
 
-.risk-history-elevated span {
-  background: #ff9f0a;
+.risk-history-svg .risk-history-xgrid {
+  stroke: rgba(117, 127, 142, 0.12);
 }
 
-.risk-history-high span {
-  background: #ff453a;
+.risk-history-svg .risk-history-axis-line {
+  stroke: rgba(28, 36, 48, 0.38);
+}
+
+.risk-history-svg path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.8;
+}
+
+.risk-history-svg text {
+  fill: var(--muted-ink);
+  font-size: 12px;
+}
+
+.risk-history-svg .risk-history-threshold {
+  fill: #a35d0a;
+  font-weight: 700;
 }
 
 .risk-history-axis {
@@ -855,6 +893,13 @@ th {
 
 .risk-history-axis span:last-child {
   text-align: right;
+}
+
+.risk-history-note {
+  margin: 0;
+  color: var(--muted-ink);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .risk-guide {
