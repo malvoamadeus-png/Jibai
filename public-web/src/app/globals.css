@@ -823,11 +823,38 @@ th {
   gap: 12px;
 }
 
+.risk-history-subhead {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(31, 111, 235, 0.14);
+  border-radius: 8px;
+  background: rgba(242, 247, 255, 0.8);
+  padding: 10px 12px;
+  color: var(--muted-ink);
+  font-size: 13px;
+}
+
+.risk-history-subhead strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
 .risk-history-controls {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
+}
+
+.risk-history-controls > div {
+  display: grid;
+  gap: 5px;
+}
+
+.risk-history-control-label {
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .risk-history-segment {
@@ -850,6 +877,7 @@ th {
   padding: 0 10px;
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .risk-history-segment button.active {

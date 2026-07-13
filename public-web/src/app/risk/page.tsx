@@ -39,10 +39,28 @@ const HISTORY_RANGE_OPTIONS = [
 ] as const;
 
 const HISTORY_GROUPS = [
-  { key: "summary", label: "汇总", threshold: 0.70 },
-  { key: "us_structure", label: "美国结构", threshold: 0.80 },
-  { key: "china_structure", label: "中国结构", threshold: 0.80 },
-  { key: "price", label: "价格转弱", threshold: 0.50 },
+  { key: "summary", label: "汇总", buttonLabel: "查看汇总分数", description: "总风险、结构脆弱、价格转弱三条线。", threshold: 0.70 },
+  {
+    key: "us_structure",
+    label: "美国结构因子",
+    buttonLabel: "查看美国结构因子",
+    description: "RSP/SPY、QQEW/QQQ、SOXX/QQQ、XLY/XLP、IWM/SPY 的日度历史。",
+    threshold: 0.80,
+  },
+  {
+    key: "china_structure",
+    label: "中国结构因子",
+    buttonLabel: "查看中国结构因子",
+    description: "科创100/科创50、创业板/创业板50 的日度历史。",
+    threshold: 0.80,
+  },
+  {
+    key: "price",
+    label: "价格转弱因子",
+    buttonLabel: "查看价格转弱因子",
+    description: "SOXX 和 588200.SH 的价格转弱分数历史。",
+    threshold: 0.50,
+  },
 ] as const;
 
 const HISTORY_COLORS = ["#d94832", "#1f6feb", "#8c5a11", "#25805a", "#6f42c1", "#9a6700"];
@@ -286,7 +304,7 @@ function MarketStateRow({ market }: { market: MarketTopRiskMarketState }) {
 
 function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }) {
   const [range, setRange] = useState<(typeof HISTORY_RANGE_OPTIONS)[number]["value"]>(60);
-  const [group, setGroup] = useState<HistoryGroupKey>("summary");
+  const [group, setGroup] = useState<HistoryGroupKey>("us_structure");
   const points = history.slice(-range);
   if (!points.length) return <div className="empty">暂无历史风险分数</div>;
 
@@ -306,25 +324,35 @@ function RiskHistoryChart({ history }: { history: MarketTopRiskData["history"] }
   return (
     <div className="risk-history-shell">
       <div className="risk-history-summary">
-        <span>日度分数历史，纵轴 0-1</span>
+        <span>分项历史：{activeGroup.label}</span>
         <span>
           {formatDate(first.week, { year: "numeric" })} 至 {formatDate(latest?.week, { year: "numeric" })}
         </span>
       </div>
+      <div className="risk-history-subhead">
+        <strong>当前显示：{activeGroup.label}</strong>
+        <span>{activeGroup.description}</span>
+      </div>
       <div className="risk-history-controls" aria-label="历史图表缩放与分组">
-        <div className="risk-history-segment">
+        <div>
+          <span className="risk-history-control-label">分项历史</span>
+          <div className="risk-history-segment">
           {HISTORY_GROUPS.map((item) => (
             <button className={item.key === group ? "active" : ""} key={item.key} type="button" onClick={() => setGroup(item.key)}>
-              {item.label}
+              {item.buttonLabel}
             </button>
           ))}
+          </div>
         </div>
-        <div className="risk-history-segment">
-          {HISTORY_RANGE_OPTIONS.map((item) => (
-            <button className={item.value === range ? "active" : ""} key={item.value} type="button" onClick={() => setRange(item.value)}>
-              {item.label}
-            </button>
-          ))}
+        <div>
+          <span className="risk-history-control-label">缩放范围</span>
+          <div className="risk-history-segment">
+            {HISTORY_RANGE_OPTIONS.map((item) => (
+              <button className={item.value === range ? "active" : ""} key={item.value} type="button" onClick={() => setRange(item.value)}>
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="risk-history-legend">
@@ -567,7 +595,7 @@ export default function RiskPage() {
             <div className="section-head risk-section-head">
               <div>
                 <h2>最近历史</h2>
-                <p className="muted">总风险由结构脆弱和价格转弱组成。图中拆开显示两类贡献，便于区分“提前变差”和“下跌后确认”。</p>
+                <p className="muted">下方“分项历史”按钮可以切换到美国结构、中国结构和价格转弱的单项因子历史。</p>
               </div>
             </div>
             <RiskHistoryChart history={history} />
